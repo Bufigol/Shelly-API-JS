@@ -1,0 +1,3 @@
+config/database.json
+config/api-credentials.json
+node_modules/

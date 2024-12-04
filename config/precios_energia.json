@@ -1,0 +1,23 @@
+{
+    "precios_energia": {
+        "precio_kwh": {
+            "valor": 151.85,
+            "moneda": "CLP",
+            "ultima_actualizacion": "2024-01-01"
+        },
+        "configuracion_calculo": {
+            "redondeo_decimales": 2,
+            "intervalo_actualizacion_promedios": {
+                "hora": 3600000,    
+                "dia": 86400000,   
+                "mes": 2592000000   
+            }
+        },
+        "metadatos": {
+            "zona_horaria": "America/Santiago",
+            "proveedor_energia": "Enel Distribución",
+            "tipo_tarifa": "BT1",
+            "notas": "Precio base sin impuestos ni cargos adicionales"
+        }
+    }
+}

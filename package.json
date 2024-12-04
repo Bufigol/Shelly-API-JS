@@ -1,0 +1,24 @@
+{
+  "name": "shelly-javascript",
+  "version": "1.0.0",
+  "description": "Monitor de dispositivo Shelly",
+  "main": "src/js/main.js",
+  "scripts": {
+    "start": "serve src"
+  },
+  "keywords": [
+    "shelly",
+    "api",
+    "monitor"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "mysql2": "^3.11.5",
+    "node-fetch": "^2.7.0",
+    "node-schedule": "^2.1.1",
+    "serve": "^14.2.4"
+  }
+}
