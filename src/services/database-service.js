@@ -113,6 +113,10 @@ class DatabaseService {
         return true;
     }
 
+    ensureNumericValue(value, defaultValue = 0) {
+        return typeof value === 'number' ? value : defaultValue;
+    }
+
     async insertDeviceStatus(data) {
         this.validateDeviceData(data);
         const conn = await this.pool.getConnection();
@@ -130,32 +134,32 @@ class DatabaseService {
             const [emResult] = await conn.query(
                 `INSERT INTO energy_meter SET ?`,
                 {
-                    fase_a_act_power: emData.a_act_power || null,
-                    fase_a_aprt_power: emData.a_aprt_power || null,
-                    fase_a_current: emData.a_current || null,
-                    fase_a_freq: emData.a_freq || null,
-                    fase_a_pf: emData.a_pf || null,
-                    fase_a_voltage: emData.a_voltage || null,
-                    fase_b_act_power: emData.b_act_power || null,
-                    fase_b_aprt_power: emData.b_aprt_power || null,
-                    fase_b_current: emData.b_current || null,
-                    fase_b_freq: emData.b_freq || null,
-                    fase_b_pf: emData.b_pf || null,
-                    fase_b_voltage: emData.b_voltage || null,
-                    fase_c_act_power: emData.c_act_power || null,
-                    fase_c_aprt_power: emData.c_aprt_power || null,
-                    fase_c_current: emData.c_current || null,
-                    fase_c_freq: emData.c_freq || null,
-                    fase_c_pf: emData.c_pf || null,
-                    fase_c_voltage: emData.c_voltage || null,
-                    total_act_power: emData.total_act_power || null,
-                    total_aprt_power: emData.total_aprt_power || null,
-                    total_current: emData.total_current || null,
+                    fase_a_act_power: this.ensureNumericValue(emData.a_act_power),
+                    fase_a_aprt_power: this.ensureNumericValue(emData.a_aprt_power),
+                    fase_a_current: this.ensureNumericValue(emData.a_current),
+                    fase_a_freq: this.ensureNumericValue(emData.a_freq),
+                    fase_a_pf: this.ensureNumericValue(emData.a_pf),
+                    fase_a_voltage: this.ensureNumericValue(emData.a_voltage),
+                    fase_b_act_power: this.ensureNumericValue(emData.b_act_power),
+                    fase_b_aprt_power: this.ensureNumericValue(emData.b_aprt_power),
+                    fase_b_current: this.ensureNumericValue(emData.b_current),
+                    fase_b_freq: this.ensureNumericValue(emData.b_freq),
+                    fase_b_pf: this.ensureNumericValue(emData.b_pf),
+                    fase_b_voltage: this.ensureNumericValue(emData.b_voltage),
+                    fase_c_act_power: this.ensureNumericValue(emData.c_act_power),
+                    fase_c_aprt_power: this.ensureNumericValue(emData.c_aprt_power),
+                    fase_c_current: this.ensureNumericValue(emData.c_current),
+                    fase_c_freq: this.ensureNumericValue(emData.c_freq),
+                    fase_c_pf: this.ensureNumericValue(emData.c_pf),
+                    fase_c_voltage: this.ensureNumericValue(emData.c_voltage),
+                    total_act_power: this.ensureNumericValue(emData.total_act_power),
+                    total_aprt_power: this.ensureNumericValue(emData.total_aprt_power),
+                    total_current: this.ensureNumericValue(emData.total_current),
                     measurement_timestamp: currentTimestamp,
                     interval_seconds: parseInt(this.measurementConfig?.intervalo_medicion || 10),
                     reading_quality: data.device_status.reading_quality || 'GOOD',
                     readings_count: 1,
-                    user_calibrated_phases: emData.user_calibrated_phase?.length > 0 || false
+                    user_calibrated_phases: Boolean(emData.user_calibrated_phase?.length > 0)
                 }
             );
 
@@ -164,8 +168,8 @@ class DatabaseService {
             const [tempResult] = await conn.query(
                 `INSERT INTO temperature SET ?`,
                 {
-                    celsius: tempData.tC || null,
-                    fahrenheit: tempData.tF || null
+                    celsius: this.ensureNumericValue(tempData.tC),
+                    fahrenheit: this.ensureNumericValue(tempData.tF)
                 }
             );
 
@@ -174,14 +178,14 @@ class DatabaseService {
             const [emdataResult] = await conn.query(
                 `INSERT INTO energy_meter_data SET ?`,
                 {
-                    a_total_act_energy: emdData.a_total_act_energy || null,
-                    a_total_act_ret_energy: emdData.a_total_act_ret_energy || null,
-                    b_total_act_energy: emdData.b_total_act_energy || null,
-                    b_total_act_ret_energy: emdData.b_total_act_ret_energy || null,
-                    c_total_act_energy: emdData.c_total_act_energy || null,
-                    c_total_act_ret_energy: emdData.c_total_act_ret_energy || null,
-                    total_act_energy: emdData.total_act || null,
-                    total_act_ret_energy: emdData.total_act_ret || null
+                    a_total_act_energy: this.ensureNumericValue(emdData.a_total_act_energy),
+                    a_total_act_ret_energy: this.ensureNumericValue(emdData.a_total_act_ret_energy),
+                    b_total_act_energy: this.ensureNumericValue(emdData.b_total_act_energy),
+                    b_total_act_ret_energy: this.ensureNumericValue(emdData.b_total_act_ret_energy),
+                    c_total_act_energy: this.ensureNumericValue(emdData.c_total_act_energy),
+                    c_total_act_ret_energy: this.ensureNumericValue(emdData.c_total_act_ret_energy),
+                    total_act_energy: this.ensureNumericValue(emdData.total_act),
+                    total_act_ret_energy: this.ensureNumericValue(emdData.total_act_ret)
                 }
             );
 
@@ -194,25 +198,25 @@ class DatabaseService {
                     temperature0_id: tempResult.insertId,
                     emdata0_id: emdataResult.insertId,
                     updated: currentTimestamp,
-                    cloud_connected: data.device_status.cloud?.connected || false,
+                    cloud_connected: Boolean(data.device_status.cloud?.connected),
                     wifi_sta_ip: data.device_status.wifi?.sta_ip || null,
                     wifi_status: data.device_status.wifi?.status || null,
                     wifi_ssid: data.device_status.wifi?.ssid || null,
-                    wifi_rssi: data.device_status.wifi?.rssi || null,
+                    wifi_rssi: this.ensureNumericValue(data.device_status.wifi?.rssi),
                     sys_mac: data.device_status.sys?.mac || null,
-                    sys_restart_required: data.device_status.sys?.restart_required || false,
+                    sys_restart_required: Boolean(data.device_status.sys?.restart_required),
                     sys_time: data.device_status.sys?.time || null,
                     sys_timestamp: currentTimestamp,
-                    sys_uptime: data.device_status.sys?.uptime || null,
-                    sys_ram_size: data.device_status.sys?.ram_size || null,
-                    sys_ram_free: data.device_status.sys?.ram_free || null,
-                    sys_fs_size: data.device_status.sys?.fs_size || null,
-                    sys_fs_free: data.device_status.sys?.fs_free || null,
-                    sys_cfg_rev: data.device_status.sys?.cfg_rev || null,
-                    sys_kvs_rev: data.device_status.sys?.kvs_rev || null,
-                    sys_schedule_rev: data.device_status.sys?.schedule_rev || null,
-                    sys_webhook_rev: data.device_status.sys?.webhook_rev || null,
-                    sys_reset_reason: data.device_status.sys?.reset_reason || null
+                    sys_uptime: this.ensureNumericValue(data.device_status.sys?.uptime),
+                    sys_ram_size: this.ensureNumericValue(data.device_status.sys?.ram_size),
+                    sys_ram_free: this.ensureNumericValue(data.device_status.sys?.ram_free),
+                    sys_fs_size: this.ensureNumericValue(data.device_status.sys?.fs_size),
+                    sys_fs_free: this.ensureNumericValue(data.device_status.sys?.fs_free),
+                    sys_cfg_rev: this.ensureNumericValue(data.device_status.sys?.cfg_rev),
+                    sys_kvs_rev: this.ensureNumericValue(data.device_status.sys?.kvs_rev),
+                    sys_schedule_rev: this.ensureNumericValue(data.device_status.sys?.schedule_rev),
+                    sys_webhook_rev: this.ensureNumericValue(data.device_status.sys?.webhook_rev),
+                    sys_reset_reason: this.ensureNumericValue(data.device_status.sys?.reset_reason)
                 }
             );
 

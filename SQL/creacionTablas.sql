@@ -1,48 +1,75 @@
--- Tabla para almacenar los datos del medidor de energía (energy meter)
+-- Configuración inicial de la base de datos
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+-- Eliminar tablas si existen para asegurar una instalación limpia
+DROP TABLE IF EXISTS measurement_quality_control;
+DROP TABLE IF EXISTS promedios_energia_mes;
+DROP TABLE IF EXISTS promedios_energia_dia;
+DROP TABLE IF EXISTS promedios_energia_hora;
+DROP TABLE IF EXISTS totales_energia_mes;
+DROP TABLE IF EXISTS totales_energia_dia;
+DROP TABLE IF EXISTS totales_energia_hora;
+DROP TABLE IF EXISTS device_status;
+DROP TABLE IF EXISTS energy_meter;
+DROP TABLE IF EXISTS energy_meter_data;
+DROP TABLE IF EXISTS temperature;
+DROP TABLE IF EXISTS energy_measurement_config;
+
+-- Tabla para almacenar los datos del medidor de energía
 CREATE TABLE energy_meter (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    fase_a_act_power FLOAT,
-    fase_a_aprt_power FLOAT,
-    fase_a_current FLOAT,
-    fase_a_freq FLOAT,
-    fase_a_pf FLOAT,
-    fase_a_voltage FLOAT,
-    fase_b_act_power FLOAT,
-    fase_b_aprt_power FLOAT,
-    fase_b_current FLOAT,
-    fase_b_freq FLOAT,
-    fase_b_pf FLOAT,
-    fase_b_voltage FLOAT,
-    fase_c_act_power FLOAT,
-    fase_c_aprt_power FLOAT,
-    fase_c_current FLOAT,
-    fase_c_freq FLOAT,
-    fase_c_pf FLOAT,
-    fase_c_voltage FLOAT,
-    total_act_power FLOAT,
-    total_aprt_power FLOAT,
-    total_current FLOAT,
-    user_calibrated_phases BOOLEAN DEFAULT FALSE
+    fase_a_act_power FLOAT DEFAULT 0,
+    fase_a_aprt_power FLOAT DEFAULT 0,
+    fase_a_current FLOAT DEFAULT 0,
+    fase_a_freq FLOAT DEFAULT 0,
+    fase_a_pf FLOAT DEFAULT 0,
+    fase_a_voltage FLOAT DEFAULT 0,
+    fase_b_act_power FLOAT DEFAULT 0,
+    fase_b_aprt_power FLOAT DEFAULT 0,
+    fase_b_current FLOAT DEFAULT 0,
+    fase_b_freq FLOAT DEFAULT 0,
+    fase_b_pf FLOAT DEFAULT 0,
+    fase_b_voltage FLOAT DEFAULT 0,
+    fase_c_act_power FLOAT DEFAULT 0,
+    fase_c_aprt_power FLOAT DEFAULT 0,
+    fase_c_current FLOAT DEFAULT 0,
+    fase_c_freq FLOAT DEFAULT 0,
+    fase_c_pf FLOAT DEFAULT 0,
+    fase_c_voltage FLOAT DEFAULT 0,
+    total_act_power FLOAT DEFAULT 0,
+    total_aprt_power FLOAT DEFAULT 0,
+    total_current FLOAT DEFAULT 0,
+    measurement_timestamp TIMESTAMP(3) NOT NULL,
+    interval_seconds INT DEFAULT 10,
+    reading_quality ENUM('GOOD', 'INTERPOLATED', 'SUSPECT', 'BAD') DEFAULT 'GOOD',
+    readings_count INT DEFAULT 1,
+    user_calibrated_phases BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_measurement_timestamp (measurement_timestamp)
 );
 
 -- Tabla para almacenar los datos de temperatura
 CREATE TABLE temperature (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    celsius FLOAT,
-    fahrenheit FLOAT
+    celsius FLOAT DEFAULT 0,
+    fahrenheit FLOAT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabla para almacenar los datos adicionales del medidor de energía
 CREATE TABLE energy_meter_data (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    a_total_act_energy FLOAT,
-    a_total_act_ret_energy FLOAT,
-    b_total_act_energy FLOAT,
-    b_total_act_ret_energy FLOAT,
-    c_total_act_energy FLOAT,
-    c_total_act_ret_energy FLOAT,
-    total_act_energy FLOAT,
-    total_act_ret_energy FLOAT
+    a_total_act_energy FLOAT DEFAULT 0,
+    a_total_act_ret_energy FLOAT DEFAULT 0,
+    b_total_act_energy FLOAT DEFAULT 0,
+    b_total_act_ret_energy FLOAT DEFAULT 0,
+    c_total_act_energy FLOAT DEFAULT 0,
+    c_total_act_ret_energy FLOAT DEFAULT 0,
+    total_act_energy FLOAT DEFAULT 0,
+    total_act_ret_energy FLOAT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabla principal que almacena el estado del dispositivo
@@ -57,110 +84,30 @@ CREATE TABLE device_status (
     wifi_sta_ip VARCHAR(15),
     wifi_status VARCHAR(50),
     wifi_ssid VARCHAR(100),
-    wifi_rssi INT,
+    wifi_rssi INT DEFAULT 0,
     sys_mac VARCHAR(12),
     sys_restart_required BOOLEAN DEFAULT FALSE,
     sys_time TIME,
     sys_timestamp TIMESTAMP,
-    sys_uptime INT,
-    sys_ram_size INT,
-    sys_ram_free INT,
-    sys_fs_size INT,
-    sys_fs_free INT,
-    sys_cfg_rev INT,
-    sys_kvs_rev INT,
-    sys_schedule_rev INT,
-    sys_webhook_rev INT,
-    sys_reset_reason INT,
+    sys_uptime INT DEFAULT 0,
+    sys_ram_size INT DEFAULT 0,
+    sys_ram_free INT DEFAULT 0,
+    sys_fs_size INT DEFAULT 0,
+    sys_fs_free INT DEFAULT 0,
+    sys_cfg_rev INT DEFAULT 0,
+    sys_kvs_rev INT DEFAULT 0,
+    sys_schedule_rev INT DEFAULT 0,
+    sys_webhook_rev INT DEFAULT 0,
+    sys_reset_reason INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (em0_id) REFERENCES energy_meter(id),
     FOREIGN KEY (temperature0_id) REFERENCES temperature(id),
-    FOREIGN KEY (emdata0_id) REFERENCES energy_meter_data(id)
-);
--- Tabla para almacenar promedios de consumo por hora
-CREATE TABLE promedios_energia_hora (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    fecha_hora DATETIME NOT NULL,
-    promedio_watts FLOAT,
-    kwh_consumidos FLOAT,
-    costo DECIMAL(10,2),
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_fecha_hora (fecha_hora)
+    FOREIGN KEY (emdata0_id) REFERENCES energy_meter_data(id),
+    INDEX idx_sys_timestamp (sys_timestamp),
+    INDEX idx_updated (updated)
 );
 
--- Tabla para almacenar promedios de consumo por día
-CREATE TABLE promedios_energia_dia (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    fecha DATE NOT NULL,
-    promedio_watts FLOAT,
-    kwh_consumidos FLOAT,
-    costo DECIMAL(10,2),
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_fecha (fecha)
-);
-
--- Tabla para almacenar promedios de consumo por mes
-CREATE TABLE promedios_energia_mes (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    fecha_mes DATE NOT NULL,  -- Solo se usará el año y mes de esta fecha
-    promedio_watts FLOAT,
-    kwh_consumidos FLOAT,
-    costo DECIMAL(10,2),
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_fecha_mes (fecha_mes)
-);
-
--- Tabla para almacenar totales de consumo por hora
-CREATE TABLE totales_energia_hora (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    fecha_hora DATETIME NOT NULL,
-    total_watts_hora FLOAT,
-    total_kwh FLOAT,
-    costo_total DECIMAL(10,2),
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY idx_fecha_hora (fecha_hora)
-);
-
--- Tabla para almacenar totales de consumo por día
-CREATE TABLE totales_energia_dia (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    fecha DATE NOT NULL,
-    total_watts_dia FLOAT,
-    total_kwh FLOAT,
-    costo_total DECIMAL(10,2),
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY idx_fecha (fecha)
-);
-
--- Tabla para almacenar totales de consumo por mes
-CREATE TABLE totales_energia_mes (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    anio INT NOT NULL,
-    mes INT NOT NULL,
-    total_watts_mes FLOAT,
-    total_kwh FLOAT,
-    costo_total DECIMAL(10,2),
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY idx_anio_mes (anio, mes)
-);
--- Índices para mejorar el rendimiento de las consultas
-CREATE INDEX idx_device_status_timestamp ON device_status(sys_timestamp);
-CREATE INDEX idx_device_status_updated ON device_status(updated);
-CREATE INDEX idx_device_status_code ON device_status(code);
--- Modificaciones a energy_meter para incluir calidad de datos
-ALTER TABLE energy_meter
-ADD COLUMN measurement_timestamp TIMESTAMP(3) NOT NULL,
-ADD COLUMN interval_seconds INT DEFAULT 10,
-ADD COLUMN reading_quality ENUM('GOOD', 'INTERPOLATED', 'SUSPECT', 'BAD') DEFAULT 'GOOD',
-ADD COLUMN readings_count INT DEFAULT 1,
-ADD INDEX idx_measurement_timestamp (measurement_timestamp);
-
--- Nueva tabla para control de calidad de mediciones
+-- Tabla para control de calidad de mediciones
 CREATE TABLE measurement_quality_control (
     id INT PRIMARY KEY AUTO_INCREMENT,
     energy_meter_id INT NOT NULL,
@@ -171,42 +118,102 @@ CREATE TABLE measurement_quality_control (
     missing_intervals INT DEFAULT 0,
     interpolated_readings INT DEFAULT 0,
     quality_score FLOAT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (energy_meter_id) REFERENCES energy_meter(id),
     INDEX idx_timestamp_range (start_timestamp, end_timestamp)
 );
 
--- Modificaciones a las tablas de promedios
-ALTER TABLE promedios_energia_hora
-ADD COLUMN expected_readings INT NOT NULL DEFAULT 360,
-ADD COLUMN actual_readings INT NOT NULL DEFAULT 0,
-ADD COLUMN min_watts FLOAT,
-ADD COLUMN max_watts FLOAT,
-ADD COLUMN quality_score FLOAT DEFAULT 1.0;
+-- Tabla para almacenar promedios por hora
+CREATE TABLE promedios_energia_hora (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    fecha_hora DATETIME NOT NULL,
+    promedio_watts FLOAT DEFAULT 0,
+    min_watts FLOAT DEFAULT 0,
+    max_watts FLOAT DEFAULT 0,
+    kwh_consumidos FLOAT DEFAULT 0,
+    costo DECIMAL(10,2) DEFAULT 0,
+    expected_readings INT NOT NULL DEFAULT 360,
+    actual_readings INT NOT NULL DEFAULT 0,
+    quality_score FLOAT DEFAULT 1.0,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_fecha_hora (fecha_hora)
+);
 
-ALTER TABLE promedios_energia_dia
-ADD COLUMN hours_with_data INT NOT NULL DEFAULT 24,
-ADD COLUMN min_watts FLOAT,
-ADD COLUMN max_watts FLOAT,
-ADD COLUMN quality_score FLOAT DEFAULT 1.0;
+-- Tabla para almacenar promedios por día
+CREATE TABLE promedios_energia_dia (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    fecha DATE NOT NULL,
+    promedio_watts FLOAT DEFAULT 0,
+    min_watts FLOAT DEFAULT 0,
+    max_watts FLOAT DEFAULT 0,
+    kwh_consumidos FLOAT DEFAULT 0,
+    costo DECIMAL(10,2) DEFAULT 0,
+    hours_with_data INT NOT NULL DEFAULT 24,
+    quality_score FLOAT DEFAULT 1.0,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_fecha (fecha)
+);
 
-ALTER TABLE promedios_energia_mes
-ADD COLUMN days_with_data INT NOT NULL DEFAULT 0,
-ADD COLUMN min_watts FLOAT,
-ADD COLUMN max_watts FLOAT,
-ADD COLUMN quality_score FLOAT DEFAULT 1.0;
+-- Tabla para almacenar promedios por mes
+CREATE TABLE promedios_energia_mes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    fecha_mes DATE NOT NULL,
+    promedio_watts FLOAT DEFAULT 0,
+    min_watts FLOAT DEFAULT 0,
+    max_watts FLOAT DEFAULT 0,
+    kwh_consumidos FLOAT DEFAULT 0,
+    costo DECIMAL(10,2) DEFAULT 0,
+    days_with_data INT NOT NULL DEFAULT 0,
+    quality_score FLOAT DEFAULT 1.0,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_fecha_mes (fecha_mes)
+);
 
--- Modificaciones a las tablas de totales
-ALTER TABLE totales_energia_hora
-ADD COLUMN readings_in_period INT NOT NULL DEFAULT 0,
-ADD COLUMN quality_score FLOAT DEFAULT 1.0;
+-- Tabla para almacenar totales por hora
+CREATE TABLE totales_energia_hora (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    fecha_hora DATETIME NOT NULL,
+    total_watts_hora FLOAT DEFAULT 0,
+    total_kwh FLOAT DEFAULT 0,
+    costo_total DECIMAL(10,2) DEFAULT 0,
+    readings_in_period INT NOT NULL DEFAULT 0,
+    quality_score FLOAT DEFAULT 1.0,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_fecha_hora (fecha_hora)
+);
 
-ALTER TABLE totales_energia_dia
-ADD COLUMN hours_with_data INT NOT NULL DEFAULT 0,
-ADD COLUMN quality_score FLOAT DEFAULT 1.0;
+-- Tabla para almacenar totales por día
+CREATE TABLE totales_energia_dia (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    fecha DATE NOT NULL,
+    total_watts_dia FLOAT DEFAULT 0,
+    total_kwh FLOAT DEFAULT 0,
+    costo_total DECIMAL(10,2) DEFAULT 0,
+    hours_with_data INT NOT NULL DEFAULT 0,
+    quality_score FLOAT DEFAULT 1.0,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_fecha (fecha)
+);
 
-ALTER TABLE totales_energia_mes
-ADD COLUMN days_with_data INT NOT NULL DEFAULT 0,
-ADD COLUMN quality_score FLOAT DEFAULT 1.0;
+-- Tabla para almacenar totales por mes
+CREATE TABLE totales_energia_mes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    anio INT NOT NULL,
+    mes INT NOT NULL,
+    total_watts_mes FLOAT DEFAULT 0,
+    total_kwh FLOAT DEFAULT 0,
+    costo_total DECIMAL(10,2) DEFAULT 0,
+    days_with_data INT NOT NULL DEFAULT 0,
+    quality_score FLOAT DEFAULT 1.0,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_anio_mes (anio, mes)
+);
 
 -- Tabla de configuración del sistema
 CREATE TABLE energy_measurement_config (
@@ -219,8 +226,12 @@ CREATE TABLE energy_measurement_config (
 );
 
 -- Insertar configuración inicial
-INSERT INTO energy_measurement_config (parameter_name, parameter_value, description) VALUES
-('precio_kwh', '203', 'Precio del kWh en CLP'),
+INSERT INTO energy_measurement_config 
+(parameter_name, parameter_value, description) 
+VALUES
+('precio_kwh', '151.85', 'Precio del kWh en CLP'),
 ('intervalo_medicion', '10', 'Intervalo esperado entre mediciones en segundos'),
 ('max_desviacion_intervalo', '2', 'Máxima desviación permitida del intervalo en segundos'),
 ('umbral_calidad', '0.8', 'Umbral mínimo de calidad para considerar período válido');
+
+COMMIT;
