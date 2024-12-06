@@ -1,4 +1,3 @@
-// collectors/shelly-collector.js
 const fetch = require('node-fetch');
 const config = require('../config/config-loader');
 const databaseService = require('../src/services/database-service');
@@ -6,213 +5,214 @@ const databaseService = require('../src/services/database-service');
 class ShellyCollector {
     constructor() {
         const { api, collection } = config.getConfig();
-        
-        // Configuración de API
         this.apiUrl = `${api.url}?id=${api.device_id}&auth_key=${api.auth_key}`;
-        
-        // Configuración de intervalos
         this.collectionInterval = collection.interval;
-        this.expectedInterval = 10000; // 10 segundos en milisegundos
-        this.maxIntervalDeviation = 2000; // 2 segundos de desviación máxima permitida
-        
-        // Estado del colector
+        this.expectedInterval = 10000;
+        this.maxIntervalDeviation = 2000;
         this.isRunning = false;
         this.intervalId = null;
         this.lastCollectionTime = null;
         this.lastMeasurement = null;
-        
-        // Configuración de reintentos
         this.retryCount = 0;
         this.maxRetries = 3;
         this.retryDelay = 5000;
-
-        // Métricas de calidad
-        this.successfulCollections = 0;
-        this.failedCollections = 0;
-        this.totalRetries = 0;
+        this.metrics = {
+            successfulCollections: 0,
+            failedCollections: 0,
+            totalRetries: 0,
+            lastError: null,
+            lastSuccessTime: null
+        };
     }
 
-    /**
-     * Inicia el proceso de recolección de datos
-     */
-    start() {
+    validateNumericFields(data, prefix = '') {
+        const result = {};
+        for (const [key, value] of Object.entries(data)) {
+            if (typeof value === 'number') {
+                result[`${prefix}${key}`] = value;
+            } else if (value !== null && value !== undefined) {
+                const parsed = parseFloat(value);
+                result[`${prefix}${key}`] = isNaN(parsed) ? 0 : parsed;
+            } else {
+                result[`${prefix}${key}`] = 0;
+            }
+        }
+        return result;
+    }
+
+    async start() {
         if (this.isRunning) {
-            console.log('El recolector ya está en funcionamiento');
+            console.log('Collector already running');
             return;
         }
 
-        console.log('🚀 Iniciando el recolector de datos Shelly...');
+        console.log('🚀 Starting Shelly data collector...');
         this.isRunning = true;
-        
-        // Primera recolección inmediata
-        this.collect();
-        
-        // Configuración del intervalo para recolecciones posteriores
-        this.intervalId = setInterval(() => {
-            this.collect();
-        }, this.collectionInterval);
+        await this.collect();
+        this.intervalId = setInterval(() => this.collect(), this.collectionInterval);
     }
 
-    /**
-     * Detiene el proceso de recolección de datos
-     */
     stop() {
-        if (!this.isRunning) {
-            console.log('El recolector no está en funcionamiento');
-            return;
-        }
+        if (!this.isRunning) return;
 
-        console.log('🛑 Deteniendo el recolector de datos Shelly...');
+        console.log('🛑 Stopping Shelly data collector...');
         clearInterval(this.intervalId);
         this.isRunning = false;
         this.intervalId = null;
         this.printCollectionStats();
     }
 
-    /**
-     * Evalúa la calidad de la lectura basada en el intervalo de tiempo
-     * @param {number} currentTimestamp - Timestamp actual en milisegundos
-     * @returns {string} - Calidad de la lectura ('GOOD', 'SUSPECT', 'BAD')
-     */
     evaluateReadingQuality(currentTimestamp) {
         if (!this.lastCollectionTime) {
-            this.lastCollectionTime = currentTimestamp;
             return 'GOOD';
         }
 
-        const actualInterval = currentTimestamp - this.lastCollectionTime;
-        const deviation = Math.abs(actualInterval - this.expectedInterval);
-
-        if (deviation <= this.maxIntervalDeviation) {
-            return 'GOOD';
-        } else if (deviation <= this.maxIntervalDeviation * 2) {
-            return 'SUSPECT';
-        } else {
-            return 'BAD';
-        }
+        const interval = currentTimestamp - this.lastCollectionTime;
+        const deviation = Math.abs(interval - this.expectedInterval);
+        const quality = deviation <= this.maxIntervalDeviation ? 'GOOD' :
+                       deviation <= this.maxIntervalDeviation * 2 ? 'SUSPECT' : 
+                       'BAD';
+        
+        console.log(`Reading quality: ${quality} (deviation: ${deviation}ms)`);
+        return quality;
     }
 
-    /**
-     * Realiza el proceso de recolección de datos
-     */
     async collect() {
         try {
-            console.log('📥 Recolectando datos del dispositivo Shelly...');
+            console.log('\n📥 Starting data collection cycle...');
             const currentTimestamp = Date.now();
-            const data = await this.fetchDeviceData();
             
-            if (data && data.isok && data.data) {
-                // Validar y enriquecer los datos
-                const enrichedData = this.enrichData(data, currentTimestamp);
-                
-                // Guardar datos
-                await this.saveData(enrichedData);
-                
-                // Actualizar métricas
-                this.successfulCollections++;
-                this.lastCollectionTime = currentTimestamp;
-                this.lastMeasurement = enrichedData;
-                this.retryCount = 0;
-                
-                console.log('✅ Datos guardados correctamente');
-            } else {
-                throw new Error('Respuesta de API inválida');
+            const data = await this.fetchDeviceData();
+            console.log('Raw API response received');
+            
+            if (!this.validateApiResponse(data)) {
+                throw new Error('Invalid API response structure');
             }
+
+            const enrichedData = this.enrichData(data, currentTimestamp);
+            console.log('Data enrichment completed');
+
+            await this.saveData(enrichedData);
+            
+            this.updateMetrics(true, currentTimestamp);
+            this.lastCollectionTime = currentTimestamp;
+            this.lastMeasurement = enrichedData;
+            this.retryCount = 0;
+
+            console.log('✅ Collection cycle completed successfully\n');
+
         } catch (error) {
-            this.failedCollections++;
-            console.error('❌ Error durante la recolección:', error.message);
-            await this.handleError(error);
+            this.handleCollectionError(error);
         }
     }
 
-    /**
-     * Obtiene los datos de la API de Shelly
-     * @returns {Promise<Object>} Datos del dispositivo
-     */
     async fetchDeviceData() {
+        console.log(`Fetching data from: ${this.apiUrl.replace(/auth_key=([^&]+)/, 'auth_key=****')}`);
         const response = await fetch(this.apiUrl);
+        
         if (!response.ok) {
-            throw new Error(`Error en la API: ${response.status} ${response.statusText}`);
+            throw new Error(`API error: ${response.status} ${response.statusText}`);
         }
-        return await response.json();
+
+        const data = await response.json();
+        return data;
     }
 
-    /**
-     * Enriquece los datos con metadatos y calidad
-     * @param {Object} data - Datos originales
-     * @param {number} timestamp - Timestamp de la recolección
-     * @returns {Object} Datos enriquecidos
-     */
+    validateApiResponse(data) {
+        if (!data || !data.isok || !data.data || !data.data.device_status) {
+            console.error('Invalid API response structure:', JSON.stringify(data, null, 2));
+            return false;
+        }
+        return true;
+    }
+
     enrichData(data, timestamp) {
-        const readingQuality = this.evaluateReadingQuality(timestamp);
-        const interval = this.lastCollectionTime ? timestamp - this.lastCollectionTime : this.expectedInterval;
+        console.log('Enriching data...');
+        
+        const deviceStatus = data.data.device_status;
+        const emData = deviceStatus['em:0'] || {};
+        const tempData = deviceStatus['temperature:0'] || {};
+        const emdData = deviceStatus['emdata:0'] || {};
+
+        // Validar y convertir campos numéricos
+        const validatedEmData = this.validateNumericFields(emData);
+        console.log('Validated EM data:', JSON.stringify(validatedEmData, null, 2));
 
         return {
             device_status: {
-                ...data.data,
-                reading_quality: readingQuality,
+                ...deviceStatus,
+                reading_quality: this.evaluateReadingQuality(timestamp),
                 collection_timestamp: timestamp,
-                interval_ms: interval,
-                sys: {
-                    ...data.data.sys,
+                interval_ms: this.lastCollectionTime ? timestamp - this.lastCollectionTime : this.expectedInterval,
+                sys: deviceStatus.sys ? {
+                    ...deviceStatus.sys,
                     unixtime: Math.floor(timestamp / 1000)
-                }
+                } : undefined,
+                'em:0': validatedEmData,
+                'temperature:0': this.validateNumericFields(tempData),
+                'emdata:0': this.validateNumericFields(emdData)
             }
         };
     }
 
-    /**
-     * Guarda los datos en la base de datos
-     * @param {Object} data Datos a guardar
-     */
     async saveData(data) {
         try {
-            await databaseService.insertDeviceStatus(data);
+            const result = await databaseService.insertDeviceStatus(data);
+            console.log('Data saved successfully:', result);
+            return result;
         } catch (error) {
-            throw new Error(`Error al guardar en la base de datos: ${error.message}`);
+            console.error('Error saving data:', error);
+            throw error;
         }
     }
 
-    /**
-     * Maneja los errores durante la recolección
-     * @param {Error} error Error ocurrido
-     */
-    async handleError(error) {
-        this.retryCount++;
-        this.totalRetries++;
+    updateMetrics(success, timestamp) {
+        if (success) {
+            this.metrics.successfulCollections++;
+            this.metrics.lastSuccessTime = timestamp;
+        } else {
+            this.metrics.failedCollections++;
+        }
+    }
+
+    async handleCollectionError(error) {
+        this.metrics.lastError = error.message;
+        this.updateMetrics(false, Date.now());
         
+        console.error('❌ Collection error:', error.message);
+        
+        this.retryCount++;
+        this.metrics.totalRetries++;
+
         if (this.retryCount <= this.maxRetries) {
-            console.log(`🔄 Reintento ${this.retryCount}/${this.maxRetries} en ${this.retryDelay/1000} segundos...`);
+            console.log(`🔄 Retry ${this.retryCount}/${this.maxRetries} in ${this.retryDelay/1000}s...`);
             await new Promise(resolve => setTimeout(resolve, this.retryDelay));
             await this.collect();
         } else {
-            console.error(`❌ Se alcanzó el máximo número de reintentos. Esperando el siguiente ciclo.`);
+            console.error(`❌ Maximum retries reached (${this.maxRetries}). Waiting for next cycle.`);
             this.retryCount = 0;
         }
     }
 
-    /**
-     * Imprime estadísticas de recolección
-     */
     printCollectionStats() {
-        console.log('\n📊 Estadísticas de Recolección:');
-        console.log(`Recolecciones exitosas: ${this.successfulCollections}`);
-        console.log(`Recolecciones fallidas: ${this.failedCollections}`);
-        console.log(`Total de reintentos: ${this.totalRetries}`);
-        console.log(`Tasa de éxito: ${((this.successfulCollections / (this.successfulCollections + this.failedCollections)) * 100).toFixed(2)}%`);
+        console.log('\n📊 Collection Statistics:');
+        console.log(`Successful collections: ${this.metrics.successfulCollections}`);
+        console.log(`Failed collections: ${this.metrics.failedCollections}`);
+        console.log(`Total retries: ${this.metrics.totalRetries}`);
+        console.log(`Success rate: ${((this.metrics.successfulCollections / 
+            (this.metrics.successfulCollections + this.metrics.failedCollections)) * 100).toFixed(2)}%`);
+        console.log(`Last successful collection: ${this.metrics.lastSuccessTime ? 
+            new Date(this.metrics.lastSuccessTime).toISOString() : 'Never'}`);
+        if (this.metrics.lastError) {
+            console.log(`Last error: ${this.metrics.lastError}`);
+        }
     }
 
-    /**
-     * Obtiene estadísticas actuales del collector
-     */
     getCollectorStats() {
         return {
             isRunning: this.isRunning,
             lastCollectionTime: this.lastCollectionTime,
-            successfulCollections: this.successfulCollections,
-            failedCollections: this.failedCollections,
-            totalRetries: this.totalRetries,
-            retryCount: this.retryCount,
+            ...this.metrics,
             expectedInterval: this.expectedInterval,
             maxIntervalDeviation: this.maxIntervalDeviation,
             lastMeasurementQuality: this.lastMeasurement?.device_status.reading_quality
