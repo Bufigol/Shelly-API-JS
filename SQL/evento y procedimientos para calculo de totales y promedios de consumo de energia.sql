@@ -417,3 +417,8 @@ BEGIN
 END //
 
 DELIMITER ;
+ALTER EVENT calcular_promedios_y_totales_consumo_electrico 
+ON SCHEDULE 
+EVERY 5 MINUTE
+STARTS TIMESTAMP(CURRENT_DATE, '00:00:00')
+ENABLE;

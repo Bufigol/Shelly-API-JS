@@ -1,210 +1,291 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-// Estas rutas son relativas a la raíz del proyecto
 const ShellyCollector = require('./collectors/shelly-collector');
 const databaseService = require('./src/services/database-service');
 const energyAveragesService = require('./src/services/energy-averages-service');
 const totalEnergyService = require('./src/services/total-energy-service');
 
-/**
- * Clase principal del servidor que maneja la configuración, rutas y servicios.
- * Implementa un diseño modular para facilitar el mantenimiento y las pruebas.
- */
 class Server {
     constructor() {
-        // Inicializamos las propiedades básicas del servidor
         this.app = express();
         this.port = process.env.PORT || 3000;
-        
-        // Creamos una instancia del recolector de datos
         this.collector = new ShellyCollector();
-        
-        // Configuramos los componentes del servidor
+        this.services = {
+            database: databaseService,
+            energyAverages: energyAveragesService,
+            totalEnergy: totalEnergyService
+        };
         this.setupMiddleware();
         this.setupRoutes();
         this.setupErrorHandling();
     }
 
-    /**
-     * Configura los middleware necesarios para el servidor.
-     * Incluye CORS, parsing de JSON y servicio de archivos estáticos.
-     */
     setupMiddleware() {
         this.app.use(cors());
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, 'public')));
+        
+        // Logging middleware
+        this.app.use((req, res, next) => {
+            console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+            next();
+        });
+
+        // Validación de fechas middleware
+        this.app.use('/api/energy', (req, res, next) => {
+            if (req.query.start) {
+                const start = new Date(req.query.start);
+                if (isNaN(start.getTime())) {
+                    return res.status(400).json({ error: 'Fecha de inicio inválida' });
+                }
+                req.query.start = start;
+            }
+            if (req.query.end) {
+                const end = new Date(req.query.end);
+                if (isNaN(end.getTime())) {
+                    return res.status(400).json({ error: 'Fecha de fin inválida' });
+                }
+                req.query.end = end;
+            }
+            next();
+        });
     }
 
-    /**
-     * Configura todas las rutas de la API.
-     * Implementa endpoints para consultar y registrar datos del dispositivo.
-     */
     setupRoutes() {
-        // Ruta principal que muestra información de la API
+        // Status endpoint
         this.app.get('/', (req, res) => {
             res.json({ 
                 message: 'Shelly API Server Running',
                 version: '1.0.0',
-                endpoints: {
-                    latest: '/api/device-status/latest',
-                    history: '/api/device-status/history',
-                    postStatus: '/api/device-status'
-                }
+                status: this.getServiceStatus()
             });
         });
 
-        // Endpoint para obtener el último estado del dispositivo
+        // Device status endpoints
         this.app.get('/api/device-status/latest', this.handleAsyncRoute(async (req, res) => {
-            const status = await databaseService.getLatestStatus();
+            const status = await this.services.database.getLatestStatus();
             if (!status) {
-                return res.status(404).json({ 
-                    error: 'No device status found',
-                    message: 'No hay datos disponibles del dispositivo'
-                });
+                return res.status(404).json({ error: 'No device status found' });
             }
             res.json(status);
         }));
 
-        // Endpoint para obtener el historial de datos
         this.app.get('/api/device-status/history', this.handleAsyncRoute(async (req, res) => {
             const { hours = 24 } = req.query;
-            const history = await databaseService.getHistory(parseInt(hours));
+            const history = await this.services.database.getHistory(parseInt(hours));
             res.json(history);
         }));
 
-        // Endpoint para registrar un nuevo estado del dispositivo
         this.app.post('/api/device-status', this.handleAsyncRoute(async (req, res) => {
-            const result = await databaseService.insertDeviceStatus(req.body);
-            res.status(201).json({
-                message: 'Estado del dispositivo registrado correctamente',
-                ...result
-            });
+            const result = await this.services.database.insertDeviceStatus(req.body);
+            res.status(201).json(result);
         }));
+
+        // Energy averages endpoints
+        this.app.get('/api/energy/averages/hourly', this.handleAsyncRoute(async (req, res) => {
+            const { start, end } = req.query;
+            if (!start || !end) {
+                return res.status(400).json({ error: 'Se requieren parámetros start y end' });
+            }
+            const data = await this.services.energyAverages.getHourlyAverages(start, end);
+            res.json(data);
+        }));
+
+        this.app.get('/api/energy/averages/daily', this.handleAsyncRoute(async (req, res) => {
+            const { start, end } = req.query;
+            if (!start || !end) {
+                return res.status(400).json({ error: 'Se requieren parámetros start y end' });
+            }
+            const data = await this.services.energyAverages.getDailyAverages(start, end);
+            res.json(data);
+        }));
+
+        this.app.get('/api/energy/averages/monthly', this.handleAsyncRoute(async (req, res) => {
+            const { start, end } = req.query;
+            if (!start || !end) {
+                return res.status(400).json({ error: 'Se requieren parámetros start y end' });
+            }
+            const data = await this.services.energyAverages.getMonthlyAverages(start, end);
+            res.json(data);
+        }));
+
+        // Energy totals endpoints
+        this.app.get('/api/energy/totals/hourly', this.handleAsyncRoute(async (req, res) => {
+            const { start, end } = req.query;
+            if (!start || !end) {
+                return res.status(400).json({ error: 'Se requieren parámetros start y end' });
+            }
+            const data = await this.services.totalEnergy.getHourlyTotals(start, end);
+            res.json(data);
+        }));
+
+        this.app.get('/api/energy/totals/daily', this.handleAsyncRoute(async (req, res) => {
+            const { start, end } = req.query;
+            if (!start || !end) {
+                return res.status(400).json({ error: 'Se requieren parámetros start y end' });
+            }
+            const data = await this.services.totalEnergy.getDailyTotals(start, end);
+            res.json(data);
+        }));
+
+        this.app.get('/api/energy/totals/monthly', this.handleAsyncRoute(async (req, res) => {
+            const { start, end } = req.query;
+            if (!start || !end) {
+                return res.status(400).json({ error: 'Se requieren parámetros start y end' });
+            }
+            const data = await this.services.totalEnergy.getMonthlyTotals(start, end);
+            res.json(data);
+        }));
+
+        // Latest data and status endpoints
+        this.app.get('/api/energy/latest', this.handleAsyncRoute(async (req, res) => {
+            const totals = await this.services.totalEnergy.getLatestAggregations();
+            res.json(totals);
+        }));
+
+        this.app.get('/api/energy/execution-status', this.handleAsyncRoute(async (req, res) => {
+            const status = await this.services.energyAverages.getLatestExecutionStatus();
+            res.json(status);
+        }));
+
+        // Service status endpoints
+        this.app.get('/api/service/status', (req, res) => {
+            res.json(this.getServiceStatus());
+        });
     }
 
-    /**
-     * Configura los manejadores de errores globales.
-     * Incluye manejo de errores para rutas no encontradas y errores generales.
-     */
+    getServiceStatus() {
+        return {
+            collector: {
+                running: this.collector.isRunning,
+                stats: this.collector.getCollectorStats()
+            },
+            database: {
+                connected: this.services.database.pool !== null
+            },
+            energyAverages: {
+                initialized: this.services.energyAverages.initialized
+            },
+            totalEnergy: {
+                initialized: this.services.totalEnergy.initialized
+            },
+            server: {
+                uptime: process.uptime(),
+                memory: process.memoryUsage(),
+                nodeVersion: process.version
+            }
+        };
+    }
+
     setupErrorHandling() {
-        // Manejador de errores general
+        // Error handler para errores asíncronos
         this.app.use((err, req, res, next) => {
-            console.error('Error no manejado:', err);
+            console.error('Error:', err);
             res.status(500).json({
                 error: 'Error interno del servidor',
-                message: process.env.NODE_ENV === 'development' ? err.message : 'Se produjo un error inesperado'
+                message: process.env.NODE_ENV === 'development' ? err.message : 'Se produjo un error inesperado',
+                timestamp: new Date().toISOString()
             });
         });
 
-        // Manejador de rutas no encontradas
+        // Handler para rutas no encontradas
         this.app.use((req, res) => {
             res.status(404).json({ 
                 error: 'Ruta no encontrada',
-                message: `La ruta ${req.originalUrl} no existe en este servidor`
+                path: req.originalUrl,
+                timestamp: new Date().toISOString()
             });
         });
     }
 
-    /**
-     * Envuelve los controladores de ruta para manejar errores asíncronos.
-     * @param {Function} fn Función controladora a envolver
-     * @returns {Function} Controlador envuelto con manejo de errores
-     */
     handleAsyncRoute(fn) {
         return (req, res, next) => {
             Promise.resolve(fn(req, res, next)).catch(next);
         };
     }
 
-    /**
-     * Inicia el servidor y los servicios asociados.
-     * Verifica la conexión a la base de datos antes de iniciar.
-     */
     async start() {
         try {
-            // Verificamos la conexión a la base de datos
-            const dbConnected = await databaseService.testConnection();
-            if (!dbConnected) {
-                throw new Error('No se pudo establecer conexión con la base de datos');
-            }
-    
-            // Iniciamos el servidor HTTP
+            await this.initializeServices();
+            
             this.server = this.app.listen(this.port, () => {
                 console.log(`🚀 Servidor corriendo en http://localhost:${this.port}`);
             });
-    
-            // Iniciamos el recolector de datos
-            this.collector.start();
-            console.log('✅ Recolector de datos iniciado exitosamente');
-    
-            // Iniciamos el servicio de promedios de energía
-            energyAveragesService.startService();
-            totalEnergyService.startService();
-            console.log('✅ Servicio de promedios de energía iniciado exitosamente');
-    
-            // Configuramos el cierre graceful
+
             this.setupGracefulShutdown();
-    
         } catch (error) {
             console.error('Error fatal al iniciar el servidor:', error);
             process.exit(1);
         }
     }
 
-    /**
-     * Configura el manejo de cierre graceful del servidor.
-     * Asegura que todos los recursos se liberen correctamente al cerrar.
-     */
+    async initializeServices() {
+        console.log('Initializing services...');
+
+        const dbConnected = await this.services.database.testConnection();
+        if (!dbConnected) {
+            throw new Error('Database connection failed');
+        }
+        console.log('✅ Database connected');
+
+        await this.services.energyAverages.initialize();
+        console.log('✅ Energy averages service initialized');
+
+        await this.services.totalEnergy.initialize();
+        console.log('✅ Total energy service initialized');
+
+        await this.collector.start();
+        console.log('✅ Data collector started');
+    }
+
     setupGracefulShutdown() {
         const shutdown = async () => {
-            console.log('\n🛑 Iniciando cierre graceful del servidor...');
+            console.log('\n🛑 Starting graceful shutdown...');
             
-            // Detenemos el servidor HTTP
             if (this.server) {
                 await new Promise(resolve => this.server.close(resolve));
-                console.log('✅ Servidor HTTP detenido');
+                console.log('✅ HTTP server stopped');
             }
 
-            // Detenemos el recolector de datos
             this.collector.stop();
-            console.log('✅ Recolector de datos detenido');
+            console.log('✅ Data collector stopped');
 
-            // Cerramos las conexiones a la base de datos
-            await databaseService.close();
-            console.log('✅ Conexiones de base de datos cerradas');
+            await this.services.energyAverages.stop();
+            console.log('✅ Energy averages service stopped');
 
-            console.log('👋 Servidor cerrado correctamente');
+            await this.services.totalEnergy.stop();
+            console.log('✅ Total energy service stopped');
+
+            await this.services.database.close();
+            console.log('✅ Database connections closed');
+
+            console.log('👋 Server shutdown complete');
             process.exit(0);
         };
 
-        // Manejamos las señales de terminación
         process.on('SIGTERM', shutdown);
         process.on('SIGINT', shutdown);
 
-        // Manejamos errores no capturados
         process.on('uncaughtException', async (error) => {
-            console.error('❌ Error no capturado:', error);
+            console.error('❌ Uncaught exception:', error);
             await shutdown();
         });
 
         process.on('unhandledRejection', async (error) => {
-            console.error('❌ Promesa rechazada no manejada:', error);
+            console.error('❌ Unhandled rejection:', error);
             await shutdown();
         });
     }
 }
 
-// Creamos una instancia del servidor
 const server = new Server();
 
-// Exportamos lo necesario para testing y uso externo
 module.exports = {
     server,
-    app: server.app // Exponemos la app de Express para testing
+    app: server.app
 };
 
-// Iniciamos el servidor solo si este archivo es el punto de entrada
 if (require.main === module) {
     server.start();
 }
