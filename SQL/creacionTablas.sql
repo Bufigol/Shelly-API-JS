@@ -4,6 +4,7 @@ START TRANSACTION;
 SET time_zone = "+00:00";
 
 -- Eliminar tablas si existen para asegurar una instalación limpia
+DROP TABLE IF EXISTS energy_price_history;
 DROP TABLE IF EXISTS measurement_quality_control;
 DROP TABLE IF EXISTS promedios_energia_mes;
 DROP TABLE IF EXISTS promedios_energia_dia;
@@ -225,6 +226,67 @@ CREATE TABLE energy_measurement_config (
     UNIQUE KEY uk_parameter (parameter_name)
 );
 
+-- Nueva tabla para historial de precios
+CREATE TABLE energy_price_history (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    precio_kwh DECIMAL(10,2) NOT NULL,
+    fecha_inicio TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_fin TIMESTAMP NULL,
+    motivo TEXT,
+    usuario VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_fecha_inicio (fecha_inicio),
+    INDEX idx_fecha_fin (fecha_fin)
+);
+
+CREATE TABLE event_execution_log (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    event_name VARCHAR(100) NOT NULL,
+    execution_start TIMESTAMP(3) NOT NULL,
+    execution_end TIMESTAMP(3) NULL,
+    status ENUM('RUNNING', 'COMPLETED', 'ERROR') NOT NULL,
+    records_processed INT DEFAULT 0,
+    error_message TEXT,
+    details JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_event_name (event_name),
+    INDEX idx_execution_start (execution_start),
+    INDEX idx_status (status)
+);
+
+-- Trigger para act
+-- Trigger para actualizar energy_measurement_config cuando se inserta un nuevo precio
+DELIMITER //
+
+CREATE TRIGGER trg_energy_price_history_insert 
+AFTER INSERT ON energy_price_history
+FOR EACH ROW
+BEGIN
+    -- Actualizar el precio en la tabla de configuración
+    UPDATE energy_measurement_config
+    SET parameter_value = CAST(NEW.precio_kwh AS CHAR)
+    WHERE parameter_name = 'precio_kwh';
+
+    -- Actualizar la fecha_fin del registro anterior
+    UPDATE energy_price_history
+    SET fecha_fin = NEW.fecha_inicio
+    WHERE id != NEW.id 
+    AND fecha_fin IS NULL;
+END//
+
+DELIMITER ;
+
+DELIMITER //
+CREATE TRIGGER trg_update_execution_end
+BEFORE UPDATE ON event_execution_log
+FOR EACH ROW
+BEGIN
+    IF NEW.status IN ('COMPLETED', 'ERROR') AND OLD.status = 'RUNNING' THEN
+        SET NEW.execution_end = CURRENT_TIMESTAMP(3);
+    END IF;
+END//
+DELIMITER ;
 -- Insertar configuración inicial
 INSERT INTO energy_measurement_config 
 (parameter_name, parameter_value, description) 
@@ -233,5 +295,9 @@ VALUES
 ('intervalo_medicion', '10', 'Intervalo esperado entre mediciones en segundos'),
 ('max_desviacion_intervalo', '2', 'Máxima desviación permitida del intervalo en segundos'),
 ('umbral_calidad', '0.8', 'Umbral mínimo de calidad para considerar período válido');
+
+-- Insertar el precio inicial en el historial
+INSERT INTO energy_price_history (precio_kwh, motivo, usuario)
+VALUES (151.85, 'Configuración inicial del sistema', 'system');
 
 COMMIT;
