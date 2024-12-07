@@ -3,8 +3,13 @@ SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
 
--- Eliminar tablas si existen para asegurar una instalación limpia
+-- Desactivar verificación de claves foráneas temporalmente
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- Eliminar tablas en orden inverso para evitar problemas de dependencia
+DROP TABLE IF EXISTS event_execution_log;
 DROP TABLE IF EXISTS energy_price_history;
+DROP TABLE IF EXISTS energy_measurement_config;
 DROP TABLE IF EXISTS measurement_quality_control;
 DROP TABLE IF EXISTS promedios_energia_mes;
 DROP TABLE IF EXISTS promedios_energia_dia;
@@ -13,12 +18,45 @@ DROP TABLE IF EXISTS totales_energia_mes;
 DROP TABLE IF EXISTS totales_energia_dia;
 DROP TABLE IF EXISTS totales_energia_hora;
 DROP TABLE IF EXISTS device_status;
-DROP TABLE IF EXISTS energy_meter;
 DROP TABLE IF EXISTS energy_meter_data;
+DROP TABLE IF EXISTS energy_meter;
 DROP TABLE IF EXISTS temperature;
-DROP TABLE IF EXISTS energy_measurement_config;
 
--- Tabla para almacenar los datos del medidor de energía
+-- Tabla de configuración del sistema con validaciones
+CREATE TABLE energy_measurement_config (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    parameter_name VARCHAR(50) NOT NULL,
+    parameter_value VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_editable BOOLEAN DEFAULT TRUE,
+    min_value DECIMAL(10,2) NULL,
+    max_value DECIMAL(10,2) NULL,
+    data_type ENUM('STRING', 'NUMBER', 'BOOLEAN') DEFAULT 'STRING',
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_parameter (parameter_name),
+    CONSTRAINT chk_parameter_value CHECK (
+        (data_type = 'NUMBER' AND CAST(parameter_value AS DECIMAL(10,2)) BETWEEN COALESCE(min_value, -999999) AND COALESCE(max_value, 999999)) OR
+        (data_type = 'STRING') OR
+        (data_type = 'BOOLEAN' AND parameter_value IN ('true', 'false', '0', '1'))
+    )
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Tabla para historial de precios con validaciones más robustas
+CREATE TABLE energy_price_history (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    precio_kwh DECIMAL(10,2) NOT NULL,
+    fecha_inicio TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_fin TIMESTAMP NULL,
+    motivo VARCHAR(255),
+    usuario VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_fecha_inicio (fecha_inicio),
+    INDEX idx_fecha_fin (fecha_fin),
+    CONSTRAINT chk_precio_positivo CHECK (precio_kwh > 0)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Tabla para almacenar los datos del medidor de energía con índices optimizados
 CREATE TABLE energy_meter (
     id INT PRIMARY KEY AUTO_INCREMENT,
     fase_a_act_power FLOAT DEFAULT 0,
@@ -48,20 +86,15 @@ CREATE TABLE energy_meter (
     readings_count INT DEFAULT 1,
     user_calibrated_phases BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_measurement_timestamp (measurement_timestamp)
-);
+    INDEX idx_measurement_timestamp (measurement_timestamp),
+    INDEX idx_created_at (created_at),
+    INDEX idx_reading_quality (reading_quality)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Tabla para almacenar los datos de temperatura
-CREATE TABLE temperature (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    celsius FLOAT DEFAULT 0,
-    fahrenheit FLOAT DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Tabla para almacenar los datos adicionales del medidor de energía
+-- Tabla para datos adicionales del medidor de energía
 CREATE TABLE energy_meter_data (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    energy_meter_id INT,
     a_total_act_energy FLOAT DEFAULT 0,
     a_total_act_ret_energy FLOAT DEFAULT 0,
     b_total_act_energy FLOAT DEFAULT 0,
@@ -70,23 +103,36 @@ CREATE TABLE energy_meter_data (
     c_total_act_ret_energy FLOAT DEFAULT 0,
     total_act_energy FLOAT DEFAULT 0,
     total_act_ret_energy FLOAT DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (energy_meter_id) REFERENCES energy_meter(id) ON DELETE SET NULL,
+    INDEX idx_created_at (created_at),
+    INDEX idx_energy_meter_id (energy_meter_id)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Tabla principal que almacena el estado del dispositivo
+-- Tabla para datos de temperatura
+CREATE TABLE temperature (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    celsius FLOAT DEFAULT 0,
+    fahrenheit FLOAT DEFAULT 0,
+    humidity FLOAT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Tabla de estado del dispositivo con gestión de referencias
 CREATE TABLE device_status (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    code VARCHAR(50),
-    em0_id INT,
-    temperature0_id INT,
-    emdata0_id INT,
-    updated TIMESTAMP,
+    code VARCHAR(50) UNIQUE,
+    energy_meter_id INT,
+    temperature_id INT,
+    energy_meter_data_id INT,
+    updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     cloud_connected BOOLEAN DEFAULT FALSE,
     wifi_sta_ip VARCHAR(15),
     wifi_status VARCHAR(50),
     wifi_ssid VARCHAR(100),
     wifi_rssi INT DEFAULT 0,
-    sys_mac VARCHAR(12),
+    sys_mac VARCHAR(12) UNIQUE,
     sys_restart_required BOOLEAN DEFAULT FALSE,
     sys_time TIME,
     sys_timestamp TIMESTAMP,
@@ -95,18 +141,31 @@ CREATE TABLE device_status (
     sys_ram_free INT DEFAULT 0,
     sys_fs_size INT DEFAULT 0,
     sys_fs_free INT DEFAULT 0,
-    sys_cfg_rev INT DEFAULT 0,
-    sys_kvs_rev INT DEFAULT 0,
-    sys_schedule_rev INT DEFAULT 0,
-    sys_webhook_rev INT DEFAULT 0,
-    sys_reset_reason INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (em0_id) REFERENCES energy_meter(id),
-    FOREIGN KEY (temperature0_id) REFERENCES temperature(id),
-    FOREIGN KEY (emdata0_id) REFERENCES energy_meter_data(id),
+    FOREIGN KEY (energy_meter_id) REFERENCES energy_meter(id) ON DELETE SET NULL,
+    FOREIGN KEY (temperature_id) REFERENCES temperature(id) ON DELETE SET NULL,
+    FOREIGN KEY (energy_meter_data_id) REFERENCES energy_meter_data(id) ON DELETE SET NULL,
     INDEX idx_sys_timestamp (sys_timestamp),
-    INDEX idx_updated (updated)
-);
+    INDEX idx_updated (updated),
+    INDEX idx_sys_mac (sys_mac)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Tabla para registro de ejecución de eventos
+CREATE TABLE event_execution_log (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    event_name VARCHAR(100) NOT NULL,
+    execution_start TIMESTAMP(3) NOT NULL,
+    execution_end TIMESTAMP(3) NULL,
+    status ENUM('RUNNING', 'COMPLETED', 'ERROR') NOT NULL,
+    records_processed INT DEFAULT 0,
+    error_message TEXT,
+    details JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_event_name (event_name),
+    INDEX idx_execution_start (execution_start),
+    INDEX idx_status (status),
+    INDEX idx_event_status (event_name, status)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Tabla para control de calidad de mediciones
 CREATE TABLE measurement_quality_control (
@@ -118,11 +177,12 @@ CREATE TABLE measurement_quality_control (
     actual_readings INT NOT NULL,
     missing_intervals INT DEFAULT 0,
     interpolated_readings INT DEFAULT 0,
-    quality_score FLOAT NOT NULL,
+    quality_score FLOAT NOT NULL DEFAULT 1.0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (energy_meter_id) REFERENCES energy_meter(id),
-    INDEX idx_timestamp_range (start_timestamp, end_timestamp)
-);
+    FOREIGN KEY (energy_meter_id) REFERENCES energy_meter(id) ON DELETE CASCADE,
+    INDEX idx_timestamp_range (start_timestamp, end_timestamp),
+    INDEX idx_energy_meter_id (energy_meter_id)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Tabla para almacenar promedios por hora
 CREATE TABLE promedios_energia_hora (
@@ -139,7 +199,7 @@ CREATE TABLE promedios_energia_hora (
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE INDEX idx_fecha_hora (fecha_hora)
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Tabla para almacenar promedios por día
 CREATE TABLE promedios_energia_dia (
@@ -155,7 +215,7 @@ CREATE TABLE promedios_energia_dia (
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE INDEX idx_fecha (fecha)
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Tabla para almacenar promedios por mes
 CREATE TABLE promedios_energia_mes (
@@ -171,7 +231,7 @@ CREATE TABLE promedios_energia_mes (
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE INDEX idx_fecha_mes (fecha_mes)
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Tabla para almacenar totales por hora
 CREATE TABLE totales_energia_hora (
@@ -185,7 +245,7 @@ CREATE TABLE totales_energia_hora (
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE INDEX idx_fecha_hora (fecha_hora)
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Tabla para almacenar totales por día
 CREATE TABLE totales_energia_dia (
@@ -199,7 +259,7 @@ CREATE TABLE totales_energia_dia (
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE INDEX idx_fecha (fecha)
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Tabla para almacenar totales por mes
 CREATE TABLE totales_energia_mes (
@@ -214,48 +274,8 @@ CREATE TABLE totales_energia_mes (
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE INDEX idx_anio_mes (anio, mes)
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Tabla de configuración del sistema
-CREATE TABLE energy_measurement_config (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    parameter_name VARCHAR(50) NOT NULL,
-    parameter_value VARCHAR(255) NOT NULL,
-    description TEXT,
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_parameter (parameter_name)
-);
-
--- Nueva tabla para historial de precios
-CREATE TABLE energy_price_history (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    precio_kwh DECIMAL(10,2) NOT NULL,
-    fecha_inicio TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    fecha_fin TIMESTAMP NULL,
-    motivo TEXT,
-    usuario VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE INDEX idx_fecha_inicio (fecha_inicio),
-    INDEX idx_fecha_fin (fecha_fin)
-);
-
-CREATE TABLE event_execution_log (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    event_name VARCHAR(100) NOT NULL,
-    execution_start TIMESTAMP(3) NOT NULL,
-    execution_end TIMESTAMP(3) NULL,
-    status ENUM('RUNNING', 'COMPLETED', 'ERROR') NOT NULL,
-    records_processed INT DEFAULT 0,
-    error_message TEXT,
-    details JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_event_name (event_name),
-    INDEX idx_execution_start (execution_start),
-    INDEX idx_status (status)
-);
-
--- Trigger para act
 -- Trigger para actualizar energy_measurement_config cuando se inserta un nuevo precio
 DELIMITER //
 
@@ -263,16 +283,31 @@ CREATE TRIGGER trg_energy_price_history_insert
 AFTER INSERT ON energy_price_history
 FOR EACH ROW
 BEGIN
-    -- Actualizar el precio en la tabla de configuración
-    UPDATE energy_measurement_config
-    SET parameter_value = CAST(NEW.precio_kwh AS CHAR)
-    WHERE parameter_name = 'precio_kwh';
+    IF NEW.precio_kwh > 0 THEN
+        -- Actualizar el precio en la tabla de configuración
+        UPDATE energy_measurement_config
+        SET parameter_value = CAST(NEW.precio_kwh AS CHAR)
+        WHERE parameter_name = 'precio_kwh';
 
-    -- Actualizar la fecha_fin del registro anterior
-    UPDATE energy_price_history
-    SET fecha_fin = NEW.fecha_inicio
-    WHERE id != NEW.id 
-    AND fecha_fin IS NULL;
+        -- Actualizar la fecha_fin del registro anterior usando una consulta separada
+        SET @prev_id = (
+            SELECT id 
+            FROM energy_price_history 
+            WHERE id != NEW.id 
+            AND fecha_fin IS NULL 
+            ORDER BY fecha_inicio DESC 
+            LIMIT 1
+        );
+
+        IF @prev_id IS NOT NULL THEN
+            UPDATE energy_price_history
+            SET fecha_fin = NEW.fecha_inicio
+            WHERE id = @prev_id;
+        END IF;
+    ELSE
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'El precio del kWh debe ser mayor que cero';
+    END IF;
 END//
 
 DELIMITER ;
@@ -287,6 +322,7 @@ BEGIN
     END IF;
 END//
 DELIMITER ;
+
 -- Insertar configuración inicial
 INSERT INTO energy_measurement_config 
 (parameter_name, parameter_value, description) 
@@ -299,5 +335,8 @@ VALUES
 -- Insertar el precio inicial en el historial
 INSERT INTO energy_price_history (precio_kwh, motivo, usuario)
 VALUES (151.85, 'Configuración inicial del sistema', 'system');
+
+-- Reactivar verificación de claves foráneas
+SET FOREIGN_KEY_CHECKS = 1;
 
 COMMIT;
