@@ -44,11 +44,7 @@ CREATE TABLE sem_configuracion (
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (tipo_parametro_id) REFERENCES sem_tipos_parametros(id),
     CHECK (valido_hasta IS NULL OR valido_hasta > valido_desde)
-) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-PARTITION BY RANGE (UNIX_TIMESTAMP(valido_desde)) (
-    PARTITION p_historico VALUES LESS THAN (UNIX_TIMESTAMP('2024-01-01 00:00:00')),
-    PARTITION p_actual VALUES LESS THAN MAXVALUE
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 -- Tabla: Grupos de Dispositivos
@@ -126,13 +122,7 @@ CREATE TABLE sem_registro_auditoria (
     INDEX idx_auditoria_tipo_evento (tipo_evento_id),
     INDEX idx_auditoria_dispositivo (shelly_id),
     INDEX idx_auditoria_grupo (grupo_id)
-) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-PARTITION BY RANGE (UNIX_TIMESTAMP(fecha_evento)) (
-    PARTITION p_2024_01 VALUES LESS THAN (UNIX_TIMESTAMP('2024-02-01 00:00:00')),
-    PARTITION p_2024_02 VALUES LESS THAN (UNIX_TIMESTAMP('2024-03-01 00:00:00')),
-    PARTITION p_2024_03 VALUES LESS THAN (UNIX_TIMESTAMP('2024-04-01 00:00:00')),
-    PARTITION p_futuro VALUES LESS THAN MAXVALUE
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 -- Tabla: Historial de Cambios de Grupo
@@ -153,11 +143,7 @@ CREATE TABLE sem_historial_grupo_dispositivo (
     FOREIGN KEY (registro_auditoria_id) REFERENCES sem_registro_auditoria(id),
     INDEX idx_historial_dispositivo (shelly_id),
     INDEX idx_historial_fecha (fecha_cambio)
-) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-PARTITION BY RANGE (UNIX_TIMESTAMP(fecha_cambio)) (
-    PARTITION p_historico VALUES LESS THAN (UNIX_TIMESTAMP('2024-01-01 00:00:00')),
-    PARTITION p_actual VALUES LESS THAN MAXVALUE
-);
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 -- Inserción de datos iniciales: Tipos de eventos
