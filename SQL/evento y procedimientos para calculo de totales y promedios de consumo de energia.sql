@@ -21,6 +21,12 @@ CREATE PROCEDURE calc_promedios_hora(
 BEGIN
     DECLARE v_hora_actual DATETIME;
     DECLARE v_processed INT DEFAULT 0;
+    DECLARE v_precio_kwh DECIMAL(10,2);
+    
+    -- Obtener el precio actual del kWh
+    SELECT CAST(parameter_value AS DECIMAL(10,2)) INTO v_precio_kwh
+    FROM energy_measurement_config 
+    WHERE parameter_name = 'precio_kwh';
     
     SET v_hora_actual = DATE_FORMAT(p_start_time, '%Y-%m-%d %H:00:00');
     
@@ -34,7 +40,7 @@ BEGIN
                 AVG(total_act_power) as avg_watts,
                 MIN(total_act_power) as min_watts,
                 MAX(total_act_power) as max_watts,
-                SUM(total_act_power * 0.002778 / 1000) as kwh_total
+                SUM(total_act_power * interval_seconds * 0.002778 / 3600) as kwh_total
             FROM energy_meter
             WHERE measurement_timestamp >= v_hora_actual
                 AND measurement_timestamp < v_hora_actual + INTERVAL 1 HOUR
@@ -45,10 +51,10 @@ BEGIN
             min_watts,
             max_watts,
             kwh_total,
-            kwh_total * (SELECT parameter_value FROM energy_measurement_config WHERE parameter_name = 'precio_kwh'),
+            kwh_total * v_precio_kwh,
             360 as expected_readings,
             total_readings,
-            total_readings / 360
+            LEAST(total_readings / 360.0, 1.0)
         FROM HourlyStats
         ON DUPLICATE KEY UPDATE
             promedio_watts = VALUES(promedio_watts),
@@ -82,6 +88,12 @@ CREATE PROCEDURE calc_promedios_dia(
 BEGIN
     DECLARE v_dia_actual DATE;
     DECLARE v_processed INT DEFAULT 0;
+    DECLARE v_precio_kwh DECIMAL(10,2);
+    
+    -- Obtener el precio actual del kWh
+    SELECT CAST(parameter_value AS DECIMAL(10,2)) INTO v_precio_kwh
+    FROM energy_measurement_config 
+    WHERE parameter_name = 'precio_kwh';
     
     SET v_dia_actual = DATE(p_start_time);
     
@@ -95,7 +107,7 @@ BEGIN
                 AVG(total_act_power) as avg_watts,
                 MIN(total_act_power) as min_watts,
                 MAX(total_act_power) as max_watts,
-                SUM(total_act_power * 0.002778 / 1000) as kwh_total
+                SUM(total_act_power * interval_seconds * 0.002778 / 3600) as kwh_total
             FROM energy_meter
             WHERE DATE(measurement_timestamp) = v_dia_actual
         )
@@ -105,9 +117,9 @@ BEGIN
             min_watts,
             max_watts,
             kwh_total,
-            kwh_total * (SELECT parameter_value FROM energy_measurement_config WHERE parameter_name = 'precio_kwh'),
+            kwh_total * v_precio_kwh,
             hours_with_data,
-            hours_with_data / 24
+            LEAST(hours_with_data / 24.0, 1.0)
         FROM DailyStats
         ON DUPLICATE KEY UPDATE
             promedio_watts = VALUES(promedio_watts),
@@ -141,6 +153,12 @@ CREATE PROCEDURE calc_promedios_mes(
 BEGIN
     DECLARE v_mes_actual DATE;
     DECLARE v_processed INT DEFAULT 0;
+    DECLARE v_precio_kwh DECIMAL(10,2);
+    
+    -- Obtener el precio actual del kWh
+    SELECT CAST(parameter_value AS DECIMAL(10,2)) INTO v_precio_kwh
+    FROM energy_measurement_config 
+    WHERE parameter_name = 'precio_kwh';
     
     SET v_mes_actual = DATE_FORMAT(p_start_time, '%Y-%m-01');
     
@@ -154,7 +172,7 @@ BEGIN
                 AVG(total_act_power) as avg_watts,
                 MIN(total_act_power) as min_watts,
                 MAX(total_act_power) as max_watts,
-                SUM(total_act_power * 0.002778 / 1000) as kwh_total
+                SUM(total_act_power * interval_seconds * 0.002778 / 3600) as kwh_total
             FROM energy_meter
             WHERE DATE(measurement_timestamp) >= v_mes_actual
                 AND DATE(measurement_timestamp) < v_mes_actual + INTERVAL 1 MONTH
@@ -164,10 +182,10 @@ BEGIN
             avg_watts,
             min_watts,
             max_watts,
-            kwh_total,
-            kwh_total * (SELECT parameter_value FROM energy_measurement_config WHERE parameter_name = 'precio_kwh'),
+             kwh_total,
+            kwh_total * v_precio_kwh,
             days_with_data,
-            days_with_data / DAY(LAST_DAY(v_mes_actual))
+            LEAST(days_with_data / DAY(LAST_DAY(v_mes_actual)), 1.0)
         FROM MonthlyStats
         ON DUPLICATE KEY UPDATE
             promedio_watts = VALUES(promedio_watts),
@@ -201,6 +219,12 @@ CREATE PROCEDURE calc_totales_hora(
 BEGIN
     DECLARE v_hora_actual DATETIME;
     DECLARE v_processed INT DEFAULT 0;
+    DECLARE v_precio_kwh DECIMAL(10,2);
+    
+    -- Obtener el precio actual del kWh
+    SELECT CAST(parameter_value AS DECIMAL(10,2)) INTO v_precio_kwh
+    FROM energy_measurement_config 
+    WHERE parameter_name = 'precio_kwh';
     
     SET v_hora_actual = DATE_FORMAT(p_start_time, '%Y-%m-%d %H:00:00');
     
@@ -211,7 +235,7 @@ BEGIN
             SELECT 
                 COUNT(*) as total_readings,
                 AVG(total_act_power) as avg_watts,
-                SUM(total_act_power * 0.002778 / 1000) as kwh_total
+                SUM(total_act_power * interval_seconds * 0.002778 / 3600) as kwh_total
             FROM energy_meter
             WHERE measurement_timestamp >= v_hora_actual
                 AND measurement_timestamp < v_hora_actual + INTERVAL 1 HOUR
@@ -220,9 +244,9 @@ BEGIN
             v_hora_actual,
             avg_watts,
             kwh_total,
-            kwh_total * (SELECT parameter_value FROM energy_measurement_config WHERE parameter_name = 'precio_kwh'),
+            kwh_total * v_precio_kwh,
             total_readings,
-            total_readings / 360
+            LEAST(total_readings / 360.0, 1.0)
         FROM HourlyStats
         ON DUPLICATE KEY UPDATE
             total_watts_hora = VALUES(total_watts_hora),
@@ -254,6 +278,12 @@ CREATE PROCEDURE calc_totales_dia(
 BEGIN
     DECLARE v_dia_actual DATE;
     DECLARE v_processed INT DEFAULT 0;
+    DECLARE v_precio_kwh DECIMAL(10,2);
+    
+    -- Obtener el precio actual del kWh
+    SELECT CAST(parameter_value AS DECIMAL(10,2)) INTO v_precio_kwh
+    FROM energy_measurement_config 
+    WHERE parameter_name = 'precio_kwh';
     
     SET v_dia_actual = DATE(p_start_time);
     
@@ -264,17 +294,16 @@ BEGIN
             SELECT 
                 COUNT(DISTINCT HOUR(measurement_timestamp)) as hours_with_data,
                 AVG(total_act_power) as avg_watts,
-                SUM(total_act_power * 0.002778 / 1000) as kwh_total
+                SUM(total_act_power * interval_seconds * 0.002778 / 3600) as kwh_total
             FROM energy_meter
-            WHERE DATE(measurement_timestamp) = v_dia_actual
-        )
+            WHERE DATE(measurement_timestamp) = v_dia_actual )
         SELECT 
             v_dia_actual,
             avg_watts,
             kwh_total,
-            kwh_total * (SELECT parameter_value FROM energy_measurement_config WHERE parameter_name = 'precio_kwh'),
+            kwh_total * v_precio_kwh,
             hours_with_data,
-            hours_with_data / 24
+            LEAST(hours_with_data / 24.0, 1.0)
         FROM DailyStats
         ON DUPLICATE KEY UPDATE
             total_watts_dia = VALUES(total_watts_dia),
@@ -306,6 +335,12 @@ CREATE PROCEDURE calc_totales_mes(
 BEGIN
     DECLARE v_mes_actual DATE;
     DECLARE v_processed INT DEFAULT 0;
+    DECLARE v_precio_kwh DECIMAL(10,2);
+    
+    -- Obtener el precio actual del kWh
+    SELECT CAST(parameter_value AS DECIMAL(10,2)) INTO v_precio_kwh
+    FROM energy_measurement_config 
+    WHERE parameter_name = 'precio_kwh';
     
     SET v_mes_actual = DATE_FORMAT(p_start_time, '%Y-%m-01');
     
@@ -316,7 +351,7 @@ BEGIN
             SELECT 
                 COUNT(DISTINCT DATE(measurement_timestamp)) as days_with_data,
                 AVG(total_act_power) as avg_watts,
-                SUM(total_act_power * 0.002778 / 1000) as kwh_total
+                SUM(total_act_power * interval_seconds * 0.002778 / 3600) as kwh_total
             FROM energy_meter
             WHERE DATE(measurement_timestamp) >= v_mes_actual
                 AND DATE(measurement_timestamp) < v_mes_actual + INTERVAL 1 MONTH
@@ -326,9 +361,9 @@ BEGIN
             MONTH(v_mes_actual),
             avg_watts,
             kwh_total,
-            kwh_total * (SELECT parameter_value FROM energy_measurement_config WHERE parameter_name = 'precio_kwh'),
+            kwh_total * v_precio_kwh,
             days_with_data,
-            days_with_data / DAY(LAST_DAY(v_mes_actual))
+            LEAST(days_with_data / DAY(LAST_DAY(v_mes_actual)), 1.0)
         FROM MonthlyStats
         ON DUPLICATE KEY UPDATE
             total_watts_mes = VALUES(total_watts_mes),
@@ -383,7 +418,7 @@ BEGIN
     SET v_execution_id = LAST_INSERT_ID();
     
     -- Calcular promedios por hora
-    CALL calc_promedios_hora(v_start_time, v_end_time, v_execution_id);
+    CALL calc_promedios_hora(v_start_time, v_end_time , v_execution_id);
     
     -- Calcular totales por hora
     CALL calc_totales_hora(v_start_time, v_end_time, v_execution_id);
