@@ -136,7 +136,6 @@ class ShellyCollector {
 
         // Validar y convertir campos numéricos
         const validatedEmData = this.validateNumericFields(emData);
-        console.log('Validated EM data:', JSON.stringify(validatedEmData, null, 2));
 
         return {
             device_status: {
