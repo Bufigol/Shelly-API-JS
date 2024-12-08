@@ -363,7 +363,7 @@ COMMENT 'Estadísticas de calidad de datos del sistema';
 
 -- --------------------------------------------------------
 
-DELIMITER //
+
 
 -- --------------------------------------------------------
 -- FUNCIONES UTILITARIAS
@@ -372,7 +372,9 @@ DELIMITER //
 -- Función para convertir entre zonas horarias
 
 
-CREATE OR REPLACE FUNCTION sem_convert_timezone(
+DELIMITER //
+
+CREATE FUNCTION sem_convert_timezone(
     ts TIMESTAMP,
     from_zone VARCHAR(50),
     to_zone VARCHAR(50)
@@ -414,7 +416,7 @@ BEGIN
 END //
 
 -- Procedimiento de prueba para verificar que la función funcione correctamente
-CREATE OR REPLACE PROCEDURE test_timezone_conversion()
+CREATE PROCEDURE test_timezone_conversion()
 BEGIN
     DECLARE test_time TIMESTAMP;
     DECLARE converted_time TIMESTAMP;
@@ -438,7 +440,7 @@ BEGIN
 END //
 
 -- Función auxiliar para verificar si una zona horaria está instalada
-CREATE OR REPLACE FUNCTION is_timezone_available(zone_name VARCHAR(50))
+CREATE FUNCTION is_timezone_available(zone_name VARCHAR(50))
 RETURNS BOOLEAN DETERMINISTIC
 BEGIN
     DECLARE zone_exists BOOLEAN;
@@ -451,7 +453,7 @@ BEGIN
 END  //
 
 -- Función para validar período temporal
-CREATE OR REPLACE FUNCTION sem_validar_periodo(
+CREATE FUNCTION sem_validar_periodo(
     inicio TIMESTAMP,
     fin TIMESTAMP,
     tipo ENUM('HORA', 'DIA', 'MES')
@@ -484,7 +486,7 @@ BEGIN
 END //
 
 -- Función para calcular precio promedio ponderado
-CREATE OR REPLACE FUNCTION sem_calcular_precio_promedio(
+CREATE FUNCTION sem_calcular_precio_promedio(
     inicio TIMESTAMP,
     fin TIMESTAMP
 ) 
@@ -516,7 +518,7 @@ BEGIN
 END //
 
 -- Función para validar calidad de datos
-CREATE OR REPLACE FUNCTION sem_validar_calidad(
+CREATE FUNCTION sem_validar_calidad(
     lecturas_validas INT,
     lecturas_esperadas INT
 ) 
@@ -534,7 +536,7 @@ END //
 -- --------------------------------------------------------
 
 -- Procedimiento para calcular promedios horarios
-CREATE OR REPLACE PROCEDURE sem_calcular_promedios_hora(
+CREATE PROCEDURE sem_calcular_promedios_hora(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP
 )
@@ -683,7 +685,7 @@ proc_label:BEGIN
 END //
 
 -- Procedimiento para calcular promedios diarios
-CREATE OR REPLACE PROCEDURE sem_calcular_promedios_dia(
+CREATE PROCEDURE sem_calcular_promedios_dia(
     IN fecha_inicio DATE,
     IN fecha_fin DATE
 )
@@ -839,7 +841,7 @@ END //
 
 -- Procedimiento para calcular promedios mensuales
 
-CREATE OR REPLACE PROCEDURE sem_calcular_promedios_mes(
+CREATE PROCEDURE sem_calcular_promedios_mes(
     IN p_año INT,
     IN p_mes INT
 )
@@ -1011,7 +1013,7 @@ END //
 
 
 
-CREATE OR REPLACE PROCEDURE sem_calcular_totales_hora(
+CREATE PROCEDURE sem_calcular_totales_hora(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP
 )
@@ -1147,10 +1149,10 @@ proc_label:BEGIN
             '$.registros_procesados', ROW_COUNT()
         )
     WHERE id = v_execution_id;
-END 
+END //
 
 -- Procedimiento para calcular totales diarios
-CREATE OR REPLACE PROCEDURE sem_calcular_totales_dia(
+CREATE PROCEDURE sem_calcular_totales_dia(
     IN fecha_inicio DATE,
     IN fecha_fin DATE
 )
@@ -1310,7 +1312,7 @@ END //
 
 
 -- Totales Mensuales (Faltante)
-CREATE OR REPLACE PROCEDURE sem_calcular_totales_mes(
+CREATE PROCEDURE sem_calcular_totales_mes(
     IN p_año INT,
     IN p_mes INT
 )
@@ -1381,7 +1383,9 @@ proc_label:BEGIN
     
     COMMIT;
 END //
-CREATE OR REPLACE PROCEDURE sem_calcular_promedios_grupo_hora(
+
+
+CREATE PROCEDURE sem_calcular_promedios_grupo_hora(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP
 )
@@ -1441,7 +1445,7 @@ END //
 -- PROCEDIMIENTOS DE GRUPO - PROMEDIOS
 -- --------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE sem_calcular_promedios_grupo_dia(
+CREATE PROCEDURE sem_calcular_promedios_grupo_dia(
     IN fecha_inicio DATE,
     IN fecha_fin DATE
 )
@@ -1502,7 +1506,7 @@ proc_label:BEGIN
     COMMIT;
 END //
 
-CREATE OR REPLACE PROCEDURE sem_calcular_promedios_grupo_mes(
+CREATE PROCEDURE sem_calcular_promedios_grupo_mes(
     IN p_año INT,
     IN p_mes INT
 )
@@ -1562,7 +1566,7 @@ END //
 -- PROCEDIMIENTOS DE GRUPO - TOTALES
 -- --------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE sem_calcular_totales_grupo_hora(
+CREATE PROCEDURE sem_calcular_totales_grupo_hora(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP
 )
@@ -1767,7 +1771,7 @@ proc_label:BEGIN
 
 END //
 
-CREATE OR REPLACE PROCEDURE sem_calcular_totales_grupo_dia(
+CREATE PROCEDURE sem_calcular_totales_grupo_dia(
     IN fecha_inicio DATE,
     IN fecha_fin DATE
 )
@@ -1821,7 +1825,7 @@ proc_label:BEGIN
     COMMIT;
 END //
 
-CREATE OR REPLACE PROCEDURE sem_calcular_totales_grupo_mes(
+CREATE PROCEDURE sem_calcular_totales_grupo_mes(
     IN p_año INT,
     IN p_mes INT
 )
@@ -1879,7 +1883,7 @@ END //
 -- MÉTRICAS GLOBALES DEL SISTEMA
 -- --------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE sem_calcular_metricas_sistema_hora(
+CREATE PROCEDURE sem_calcular_metricas_sistema_hora(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP
 )
@@ -1932,7 +1936,7 @@ proc_label:BEGIN
     COMMIT;
 END //
 
-CREATE OR REPLACE PROCEDURE sem_calcular_metricas_sistema_dia(
+CREATE PROCEDURE sem_calcular_metricas_sistema_dia(
     IN fecha_inicio DATE,
     IN fecha_fin DATE
 )
@@ -1986,7 +1990,7 @@ proc_label:BEGIN
     COMMIT;
 END //
 
-CREATE OR REPLACE PROCEDURE sem_calcular_metricas_sistema_mes(
+CREATE PROCEDURE sem_calcular_metricas_sistema_mes(
     IN p_año INT,
     IN p_mes INT
 )
@@ -2044,7 +2048,7 @@ proc_label:BEGIN
 END //
 
 -- Actualización de estadísticas de calidad
-CREATE OR REPLACE PROCEDURE sem_actualizar_estadisticas_calidad(
+CREATE PROCEDURE sem_actualizar_estadisticas_calidad(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP,
     IN tipo_periodo ENUM('HORA', 'DIA', 'MES')
@@ -2120,7 +2124,7 @@ proc_label:BEGIN
 END //
 
 -- Procedimientos de Control
-CREATE OR REPLACE PROCEDURE sem_validar_agregaciones_hora(
+CREATE PROCEDURE sem_validar_agregaciones_hora(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP
 )
@@ -2181,196 +2185,17 @@ proc_label:BEGIN
 END //
 
 -- Las validaciones para día y mes siguen un patrón similar
-CREATE OR REPLACE PROCEDURE sem_validar_agregaciones_dia(
-    IN fecha_inicio DATE,
-    IN fecha_fin DATE
-)
-proc_label:BEGIN
-    DECLARE v_execution_id BIGINT;
-    DECLARE v_error BOOLEAN DEFAULT FALSE;
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET v_error = TRUE;
-    
-    -- Registrar inicio de validación
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento_id,
-        descripcion,
-        detalles
-    ) VALUES (
-        (SELECT id FROM sem_tipos_eventos WHERE nombre = 'VALIDACION_DATOS'),
-        'Inicio validación agregaciones diarias',
-        JSON_OBJECT(
-            'fecha_inicio', fecha_inicio,
-            'fecha_fin', fecha_fin
-        )
-    );
-    SET v_execution_id = LAST_INSERT_ID();
-    
-    START TRANSACTION;
-    
-    -- 1. Validar calidad de promedios diarios
-    SELECT COUNT(*) INTO @anomalias_promedios 
-    FROM sem_promedios_dia pd
-    WHERE pd.fecha_utc BETWEEN fecha_inicio AND fecha_fin
-    AND (
-        pd.calidad_datos < 50 OR                           -- Calidad muy baja
-        pd.horas_con_datos < 12 OR                         -- Menos de 12 horas de datos
-        pd.potencia_activa_promedio < 0 OR                 -- Potencia negativa
-        pd.factor_potencia_promedio > 1 OR                 -- Factor de potencia inválido
-        pd.lecturas_validas < (pd.lecturas_esperadas * 0.5) OR -- Menos del 50% de lecturas válidas
-        pd.lecturas_recibidas > pd.lecturas_esperadas      -- Más lecturas de las esperadas
-    );
-    
-    IF @anomalias_promedios > 0 THEN
-        INSERT INTO sem_registro_auditoria (
-            tipo_evento_id,
-            descripcion,
-            detalles
-        ) VALUES (
-            (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
-            'Anomalías detectadas en promedios diarios',
-            JSON_OBJECT(
-                'fecha_inicio', fecha_inicio,
-                'fecha_fin', fecha_fin,
-                'anomalias', @anomalias_promedios,
-                'tipo', 'PROMEDIOS'
-            )
-        );
-    END IF;
-    
-    -- 2. Validar totales diarios
-    SELECT COUNT(*) INTO @anomalias_totales 
-    FROM sem_totales_dia td
-    WHERE td.fecha_utc BETWEEN fecha_inicio AND fecha_fin
-    AND (
-        td.energia_activa_total < 0 OR                    -- Energía negativa
-        td.potencia_maxima < td.potencia_minima OR        -- Potencia máxima menor que mínima
-        td.costo_total < 0 OR                            -- Costo negativo
-        td.horas_con_datos = 0 OR                        -- Sin datos
-        td.horas_con_datos > 24 OR                       -- Más horas de las posibles
-        td.precio_kwh_promedio <= 0                      -- Precio inválido
-    );
-    
-    IF @anomalias_totales > 0 THEN
-        INSERT INTO sem_registro_auditoria (
-            tipo_evento_id,
-            descripcion,
-            detalles
-        ) VALUES (
-            (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
-            'Anomalías detectadas en totales diarios',
-            JSON_OBJECT(
-                'fecha_inicio', fecha_inicio,
-                'fecha_fin', fecha_fin,
-                'anomalias', @anomalias_totales,
-                'tipo', 'TOTALES'
-            )
-        );
-    END IF;
-    
-    -- 3. Validar consistencia entre promedios y totales
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento_id,
-        descripcion,
-        detalles
-    )
-    SELECT 
-        (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
-        'Inconsistencias entre promedios y totales diarios',
-        JSON_OBJECT(
-            'fecha', pd.fecha_utc,
-            'shelly_id', pd.shelly_id,
-            'diferencia_potencia', diferencia_potencia,
-            'diferencia_horas', ABS(pd.horas_con_datos - td.horas_con_datos)
-        )
-    FROM sem_promedios_dia pd
-    JOIN sem_totales_dia td ON pd.shelly_id = td.shelly_id 
-        AND pd.fecha_utc = td.fecha_utc
-    CROSS JOIN (
-        SELECT ABS(pd2.potencia_activa_promedio - (td2.energia_activa_total / NULLIF(td2.horas_con_datos, 0))) / 
-            NULLIF(pd2.potencia_activa_promedio, 0) * 100 as diferencia_potencia
-        FROM sem_promedios_dia pd2
-        JOIN sem_totales_dia td2 ON pd2.shelly_id = td2.shelly_id 
-            AND pd2.fecha_utc = td2.fecha_utc
-        WHERE pd2.fecha_utc BETWEEN fecha_inicio AND fecha_fin
-        AND td2.horas_con_datos > 0
-    ) as diff
-    WHERE pd.fecha_utc BETWEEN fecha_inicio AND fecha_fin
-    AND (
-        diferencia_potencia > 10 OR                    -- Diferencia de potencia mayor al 10%
-        ABS(pd.horas_con_datos - td.horas_con_datos) > 0  -- Diferencia en horas con datos
-    );
-    
-    -- 4. Verificar secuencia temporal
-    SELECT COUNT(*) INTO @gaps_temporales
-    FROM (
-        SELECT fecha_utc, 
-               DATEDIFF(LEAD(fecha_utc) OVER (ORDER BY fecha_utc), fecha_utc) as diff_dias
-        FROM (
-            SELECT DISTINCT fecha_utc 
-            FROM sem_promedios_dia 
-            WHERE fecha_utc BETWEEN fecha_inicio AND fecha_fin
-        ) fechas
-    ) gaps
-    WHERE diff_dias > 1;
-    
-    IF @gaps_temporales > 0 THEN
-        INSERT INTO sem_registro_auditoria (
-            tipo_evento_id,
-            descripcion,
-            detalles
-        ) VALUES (
-            (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
-            'Gaps detectados en la secuencia temporal diaria',
-            JSON_OBJECT(
-                'fecha_inicio', fecha_inicio,
-                'fecha_fin', fecha_fin,
-                'gaps_detectados', @gaps_temporales
-            )
-        );
-    END IF;
-    
-    IF v_error THEN
-        ROLLBACK;
-        
-        UPDATE sem_registro_auditoria
-        SET descripcion = CONCAT(descripcion, ' - Error'),
-            detalles = JSON_SET(
-                detalles,
-                '$.error', TRUE,
-                '$.fecha_error', CURRENT_TIMESTAMP
-            )
-        WHERE id = v_execution_id;
-        
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Error en validación de agregaciones diarias';
-    END IF;
-    
-    COMMIT;
-    
-    -- Registrar fin de validación
-    UPDATE sem_registro_auditoria
-    SET descripcion = CONCAT(descripcion, ' - Completado'),
-        detalles = JSON_SET(
-            detalles,
-            '$.fecha_fin', CURRENT_TIMESTAMP,
-            '$.anomalias_promedios', @anomalias_promedios,
-            '$.anomalias_totales', @anomalias_totales,
-            '$.gaps_temporales', @gaps_temporales
-        )
-    WHERE id = v_execution_id;
-END //
-
-
-
-CREATE OR REPLACE PROCEDURE sem_validar_agregaciones_mes(
+CREATE PROCEDURE sem_validar_agregaciones_mes(
     IN p_año INT,
     IN p_mes INT
 )
-proc_label:BEGIN
+BEGIN
     DECLARE v_execution_id BIGINT;
     DECLARE v_error BOOLEAN DEFAULT FALSE;
     DECLARE v_fecha_inicio DATE;
     DECLARE v_fecha_fin DATE;
+    DECLARE v_dias_con_datos INT;
+    DECLARE v_energia_total DECIMAL(10,2);
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET v_error = TRUE;
     
     SET v_fecha_inicio = DATE(CONCAT(p_año, '-', p_mes, '-01'));
@@ -2457,104 +2282,92 @@ proc_label:BEGIN
         );
     END IF;
     
-    -- 3. Validar consistencia entre promedios y totales mensuales
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento_id,
-        descripcion,
-        detalles
-    )
-    SELECT 
-        (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
-        'Inconsistencias entre promedios y totales mensuales',
-        JSON_OBJECT(
-            'año', pm.año,
-            'mes', pm.mes,
-            'shelly_id', pm.shelly_id,
-            'diferencia_potencia', diferencia_potencia,
-            'diferencia_horas', ABS(pm.horas_con_datos - tm.horas_con_datos),
-            'diferencia_dias', ABS(pm.dias_con_datos - tm.dias_con_datos)
-        )
-    FROM sem_promedios_mes pm
-    JOIN sem_totales_mes tm ON pm.shelly_id = tm.shelly_id 
-        AND pm.año = tm.año 
-        AND pm.mes = tm.mes
-    CROSS JOIN (
-        SELECT ABS(pm2.potencia_activa_promedio - (tm2.energia_activa_total / NULLIF(tm2.horas_con_datos, 0))) / 
-            NULLIF(pm2.potencia_activa_promedio, 0) * 100 as diferencia_potencia
-        FROM sem_promedios_mes pm2
-        JOIN sem_totales_mes tm2 ON pm2.shelly_id = tm2.shelly_id 
-            AND pm2.año = tm2.año 
-            AND pm2.mes = tm2.mes
-        WHERE pm2.año = p_año AND pm2.mes = p_mes
-        AND tm2.horas_con_datos > 0
-    ) as diff
-    WHERE pm.año = p_año AND pm.mes = p_mes
-    AND (
-        diferencia_potencia > 10 OR                         -- Diferencia de potencia mayor al 10%
-        ABS(pm.horas_con_datos - tm.horas_con_datos) > 0 OR -- Diferencia en horas con datos
-        ABS(pm.dias_con_datos - tm.dias_con_datos) > 0      -- Diferencia en días con datos
-    );
-    
     -- 4. Validar coherencia con agregaciones diarias
     WITH DiasDelMes AS (
-        SELECT dia.fecha_utc,
-               SUM(dia.energia_activa_total) as energia_dia,
-               COUNT(DISTINCT dia.shelly_id) as dispositivos_dia
+        SELECT 
+            MONTH(dia.fecha_utc) as mes,
+            YEAR(dia.fecha_utc) as año,
+            COUNT(DISTINCT dia.fecha_utc) as dias_con_datos,
+            SUM(dia.energia_activa_total) as energia_total
         FROM sem_totales_dia dia
-        WHERE DATE(dia.fecha_utc) BETWEEN v_fecha_inicio AND v_fecha_fin
-        GROUP BY dia.fecha_utc
-    )
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento_id,
-        descripcion,
-        detalles
+        WHERE YEAR(dia.fecha_utc) = p_año AND MONTH(dia.fecha_utc) = p_mes
+        GROUP BY YEAR(dia.fecha_utc), MONTH(dia.fecha_utc)
     )
     SELECT 
-        (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
-        'Inconsistencias con agregaciones diarias',
-        JSON_OBJECT(
-            'año', p_año,
-            'mes', p_mes,
-            'dias_mes', COUNT(*),
-            'dias_con_datos', COUNT(CASE WHEN energia_dia > 0 THEN 1 END),
-            'dias_sin_datos', COUNT(CASE WHEN energia_dia = 0 OR energia_dia IS NULL THEN 1 END),
-            'variacion_dispositivos', MAX(dispositivos_dia) - MIN(dispositivos_dia)
+        dias_con_datos,
+        energia_total
+    INTO 
+        v_dias_con_datos,
+        v_energia_total
+    FROM DiasDelMes;
+    
+    -- Comparar con totales mensuales
+    IF EXISTS (
+        SELECT 1 
+        FROM sem_totales_mes tm
+        WHERE tm.año = p_año 
+        AND tm.mes = p_mes 
+        AND (
+            ABS(tm.dias_con_datos - v_dias_con_datos) > 1 OR
+            ABS(tm.energia_activa_total - v_energia_total) > 1
         )
-    FROM DiasDelMes
-    HAVING COUNT(CASE WHEN energia_dia = 0 OR energia_dia IS NULL THEN 1 END) > 0
-        OR MAX(dispositivos_dia) - MIN(dispositivos_dia) > 0;
+    ) THEN
+        INSERT INTO sem_registro_auditoria (
+            tipo_evento_id,
+            descripcion,
+            detalles
+        ) VALUES (
+            (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
+            'Inconsistencias con agregaciones diarias',
+            JSON_OBJECT(
+                'año', p_año,
+                'mes', p_mes,
+                'dias_diarios', v_dias_con_datos,
+                'energia_diaria', v_energia_total,
+                'dias_mensuales', (SELECT dias_con_datos FROM sem_totales_mes WHERE año = p_año AND mes = p_mes),
+                'energia_mensual', (SELECT energia_activa_total FROM sem_totales_mes WHERE año = p_año AND mes = p_mes)
+            )
+        );
+    END IF;
     
     IF v_error THEN
         ROLLBACK;
-        
-        UPDATE sem_registro_auditoria
-        SET descripcion = CONCAT(descripcion, ' - Error'),
-            detalles = JSON_SET(
-                detalles,
-                '$.error', TRUE,
-                '$.fecha_error', CURRENT_TIMESTAMP
+        -- Registrar error en auditoría
+        INSERT INTO sem_registro_auditoria (
+            tipo_evento_id,
+            descripcion,
+            detalles
+        ) VALUES (
+            (SELECT id FROM sem_tipos_eventos WHERE nombre = 'ERROR_DATOS'),
+            'Error en la validación de agregaciones mensuales',
+            JSON_OBJECT(
+                'año', p_año,
+                'mes', p_mes,
+                'mensaje', 'Se produjo un error durante la validación.'
             )
-        WHERE id = v_execution_id;
-        
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Error en validación de agregaciones mensuales';
+        );
+    ELSE
+        COMMIT;
     END IF;
     
-    COMMIT;
-    
     -- Registrar fin de validación
-    UPDATE sem_registro_auditoria
-    SET descripcion = CONCAT(descripcion, ' - Completado'),
-        detalles = JSON_SET(
-            detalles,
-            '$.fecha_fin', CURRENT_TIMESTAMP,
-            '$.anomalias_promedios', @anomalias_promedios,
-            '$.anomalias_totales', @anomalias_totales
-        )
-    WHERE id = v_execution_id;
+    INSERT INTO sem_registro_auditoria (
+        tipo_evento_id,
+        descripcion,
+        detalles
+    ) VALUES (
+        (SELECT id FROM sem_tipos_eventos WHERE nombre = 'VALIDACION_DATOS'),
+        'Fin validación agregaciones mensuales',
+        JSON_OBJECT(
+            'año', p_año,
+            'mes', p_mes,
+            'resultado', IF(v_error, 'ERROR', 'OK')
+        ) );
 END //
 
-CREATE OR REPLACE PROCEDURE sem_recalcular_periodo_especifico(
+
+
+CREATE  PROCEDURE sem_recalcular_periodo_especifico(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP,
     IN tipo_periodo ENUM('HORA', 'DIA', 'MES')
@@ -2688,7 +2501,7 @@ proc_label:BEGIN
 END //
 
 -- Procedimiento helper para validación de diferencias significativas
-CREATE OR REPLACE PROCEDURE sem_verificar_diferencias_significativas(
+CREATE PROCEDURE sem_verificar_diferencias_significativas(
     IN shelly_id VARCHAR(12),
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP,
@@ -2716,7 +2529,7 @@ proc_label:BEGIN
 END //
 
 -- Procedimiento para verificación periódica de integridad
-CREATE OR REPLACE PROCEDURE sem_verificacion_integridad_periodica(
+CREATE  PROCEDURE sem_verificacion_integridad_periodica(
     IN fecha_inicio TIMESTAMP,
     IN fecha_fin TIMESTAMP
 )
@@ -2783,7 +2596,7 @@ proc_label:BEGIN
 END //
 
 -- Procedimiento para limpiar datos históricos
-CREATE OR REPLACE PROCEDURE sem_limpiar_datos_historicos(
+CREATE PROCEDURE sem_limpiar_datos_historicos(
     IN dias_retencion INT
 )
 proc_label:BEGIN
