@@ -100,6 +100,7 @@ proc_label:BEGIN
     DECLARE v_tabla_destino VARCHAR(100);
     DECLARE v_error BOOLEAN DEFAULT FALSE;
     DECLARE v_control_id BIGINT;
+    DECLARE v_registros_insertados INT DEFAULT 0;
     
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
     BEGIN
@@ -129,31 +130,39 @@ proc_label:BEGIN
     SET v_control_id = LAST_INSERT_ID();
     
     -- Crear tabla histórica si no existe
-    SET @sql = CONCAT(
+    SET @create_sql = CONCAT(
         'CREATE TABLE IF NOT EXISTS ', v_tabla_destino, ' LIKE sem_mediciones'
     );
-    PREPARE stmt FROM @sql;
-    EXECUTE stmt;
-    DEALLOCATE PREPARE stmt;
-    
-    -- Mover datos por lotes
-    SET @sql = CONCAT(
-        'INSERT INTO ', v_tabla_destino, 
-        ' SELECT * FROM sem_mediciones',
-        ' WHERE timestamp_utc < ?',
-        ' LIMIT ?'
-    );
-    PREPARE stmt FROM @sql;
+    PREPARE create_stmt FROM @create_sql;
+    EXECUTE create_stmt;
+    DEALLOCATE PREPARE create_stmt;
     
     START TRANSACTION;
     
-    -- Ejecutar la inserción
-    EXECUTE stmt USING v_fecha_limite, p_batch_size;
+    -- Establecer variables para los parámetros
+    SET @fecha_limite = v_fecha_limite;
+    SET @batch_size = p_batch_size;
+    
+    -- Mover datos por lotes
+    SET @insert_sql = CONCAT(
+        'INSERT INTO ', v_tabla_destino, 
+        ' SELECT * FROM sem_mediciones',
+        ' WHERE timestamp_utc < @fecha_limite LIMIT @batch_size'
+    );
+    
+    PREPARE insert_stmt FROM @insert_sql;
+    EXECUTE insert_stmt;
+    SET v_registros_insertados = ROW_COUNT();
+    DEALLOCATE PREPARE insert_stmt;
     
     -- Eliminar datos originales
-    DELETE FROM sem_mediciones 
-    WHERE timestamp_utc < v_fecha_limite
-    LIMIT p_batch_size;
+    SET @delete_sql = CONCAT(
+        'DELETE FROM sem_mediciones WHERE timestamp_utc < @fecha_limite LIMIT @batch_size'
+    );
+    
+    PREPARE delete_stmt FROM @delete_sql;
+    EXECUTE delete_stmt;
+    DEALLOCATE PREPARE delete_stmt;
     
     IF v_error THEN
         ROLLBACK;
@@ -173,12 +182,13 @@ proc_label:BEGIN
     -- Actualizar control de archivado
     UPDATE sem_control_archivado
     SET estado = 'COMPLETADO',
-        registros_procesados = ROW_COUNT(),
+        registros_procesados = v_registros_insertados,
         fecha_fin = CURRENT_TIMESTAMP
     WHERE id = v_control_id;
-    
-    DEALLOCATE PREPARE stmt;
 END //
+
+
+
 
 -- 4. Auditoría Avanzada
 -- =============================================
