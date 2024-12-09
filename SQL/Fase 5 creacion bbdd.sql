@@ -1,512 +1,365 @@
 -- =============================================
 -- Fase 5: Optimización y Funcionalidades Avanzadas
+-- Versión MySQL
 -- =============================================
 
 -- 1. Optimización de Base
 -- =============================================
 
 -- Índices compuestos para consultas frecuentes
-CREATE INDEX idx_lecturas_dispositivo_fecha ON sem_lecturas_dispositivos(id_dispositivo, fecha_hora);
-CREATE INDEX idx_agregaciones_disp_periodo ON sem_agregaciones_dispositivo(id_dispositivo, periodo, fecha);
-CREATE INDEX idx_agregaciones_grupo_periodo ON sem_agregaciones_grupo(id_grupo, periodo, fecha);
+ALTER TABLE sem_mediciones 
+ADD INDEX idx_mediciones_completo (shelly_id, timestamp_utc, calidad_lectura);
 
--- Vista materializada para datos recientes
-CREATE MATERIALIZED VIEW mv_lecturas_recientes AS
-SELECT l.*, d.nombre as nombre_dispositivo, g.nombre as nombre_grupo
-FROM sem_lecturas_dispositivos l
-JOIN sem_dispositivos d ON l.id_dispositivo = d.id_dispositivo
-JOIN sem_grupos g ON d.id_grupo = g.id_grupo
-WHERE l.fecha_hora >= DATEADD(day, -7, GETDATE())
-WITH DATA;
+ALTER TABLE sem_promedios_hora
+ADD INDEX idx_promedios_hora_completo (shelly_id, hora_utc, calidad_datos);
+
+ALTER TABLE sem_totales_hora
+ADD INDEX idx_totales_hora_completo (shelly_id, hora_utc, energia_activa_total);
+
+-- Vista para datos recientes (MySQL no soporta vistas materializadas)
+CREATE OR REPLACE VIEW v_lecturas_recientes AS
+SELECT 
+    m.*,
+    d.nombre as nombre_dispositivo,
+    g.nombre as nombre_grupo
+FROM sem_mediciones m
+JOIN sem_dispositivos d ON m.shelly_id = d.shelly_id
+JOIN sem_grupos g ON d.grupo_id = g.id
+WHERE m.timestamp_utc >= DATE_SUB(NOW(), INTERVAL 7 DAY);
 
 -- 2. Calidad de Datos
 -- =============================================
 
 -- Tabla de scoring y anomalías
-CREATE TABLE sem_scoring_lecturas (
-    id_scoring BIGINT IDENTITY(1,1) PRIMARY KEY,
-    id_lectura BIGINT,
+CREATE TABLE sem_scoring_mediciones (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    shelly_id VARCHAR(12) NOT NULL,
+    timestamp_utc TIMESTAMP(6) NOT NULL,
     score DECIMAL(5,2),
-    es_anomalia BIT,
+    es_anomalia BOOLEAN DEFAULT FALSE,
     tipo_anomalia VARCHAR(50),
-    fecha_deteccion DATETIME2,
-    CONSTRAINT fk_scoring_lectura FOREIGN KEY (id_lectura) 
-    REFERENCES sem_lecturas_dispositivos(id_lectura)
-);
+    datos_anomalia JSON,
+    fecha_deteccion TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    FOREIGN KEY (shelly_id) REFERENCES sem_dispositivos(shelly_id),
+    INDEX idx_scoring_fecha (timestamp_utc),
+    INDEX idx_scoring_dispositivo (shelly_id)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Función para calcular score de lectura
-CREATE FUNCTION fn_calcular_score_lectura (
-    @valor DECIMAL(18,6),
-    @promedio_historico DECIMAL(18,6),
-    @desviacion_estandar DECIMAL(18,6)
+-- Función para calcular score
+DELIMITER //
+
+CREATE FUNCTION fn_calcular_score_medicion(
+    p_valor DECIMAL(18,6),
+    p_promedio DECIMAL(18,6),
+    p_desviacion DECIMAL(18,6)
 )
 RETURNS DECIMAL(5,2)
-AS
+DETERMINISTIC
 BEGIN
-    DECLARE @score DECIMAL(5,2);
-    DECLARE @z_score DECIMAL(18,6);
+    DECLARE v_score DECIMAL(5,2);
+    DECLARE v_z_score DECIMAL(18,6);
     
-    SET @z_score = ABS((@valor - @promedio_historico) / NULLIF(@desviacion_estandar, 0));
-    SET @score = 100 - (@z_score * 10);
+    IF p_desviacion = 0 OR p_desviacion IS NULL THEN
+        RETURN 100;
+    END IF;
     
-    RETURN CASE 
-        WHEN @score < 0 THEN 0 
-        WHEN @score > 100 THEN 100 
-        ELSE @score 
-    END;
-END;
+    SET v_z_score = ABS((p_valor - p_promedio) / p_desviacion);
+    SET v_score = 100 - (v_z_score * 10);
+    
+    RETURN GREATEST(0, LEAST(100, v_score));
+END //
 
 -- 3. Gestión Datos y Mantenimiento
 -- =============================================
 
--- Tabla de control de archivado
+-- Tabla para control de archivado
 CREATE TABLE sem_control_archivado (
-    id_archivado BIGINT IDENTITY(1,1) PRIMARY KEY,
-    fecha_inicio DATETIME2,
-    fecha_fin DATETIME2,
-    registros_archivados INT,
-    estado VARCHAR(20),
-    fecha_proceso DATETIME2
-);
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    periodo_inicio TIMESTAMP NOT NULL,
+    periodo_fin TIMESTAMP NOT NULL,
+    tabla_origen VARCHAR(50) NOT NULL,
+    tabla_destino VARCHAR(50) NOT NULL,
+    registros_procesados INT DEFAULT 0,
+    estado ENUM('PENDIENTE', 'EN_PROCESO', 'COMPLETADO', 'ERROR') NOT NULL,
+    mensaje_error TEXT,
+    fecha_inicio TIMESTAMP NULL,
+    fecha_fin TIMESTAMP NULL,
+    INDEX idx_archivado_periodo (periodo_inicio, periodo_fin),
+    INDEX idx_archivado_estado (estado)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Procedimiento de archivado
-CREATE PROCEDURE sp_archivar_datos_historicos
-    @dias_antiguedad INT,
-    @batch_size INT = 10000
-AS
-BEGIN
-    SET NOCOUNT ON;
-    
-    DECLARE @fecha_limite DATETIME2 = DATEADD(day, -@dias_antiguedad, GETDATE());
-    DECLARE @registros_procesados INT = 0;
-    
-    BEGIN TRY
-        BEGIN TRANSACTION;
-        
-        INSERT INTO sem_control_archivado (fecha_inicio, fecha_fin, estado, fecha_proceso)
-        VALUES (@fecha_limite, GETDATE(), 'EN_PROCESO', GETDATE());
-        
-        -- Aquí iría la lógica de archivado
-        
-        UPDATE sem_control_archivado 
-        SET estado = 'COMPLETADO', 
-            registros_archivados = @registros_procesados
-        WHERE fecha_proceso = GETDATE();
-        
-        COMMIT;
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK;
-            
-        UPDATE sem_control_archivado 
-        SET estado = 'ERROR'
-        WHERE fecha_proceso = GETDATE();
-        
-        THROW;
-    END CATCH;
-END;
+DELIMITER //
 
--- 4. Funciones y Triggers
+CREATE PROCEDURE sp_archivar_datos_historicos(
+    IN p_dias_antiguedad INT,
+    IN p_batch_size INT
+)
+proc_label:BEGIN
+    DECLARE v_fecha_limite TIMESTAMP;
+    DECLARE v_tabla_destino VARCHAR(100);
+    DECLARE v_error BOOLEAN DEFAULT FALSE;
+    DECLARE v_control_id BIGINT;
+    
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+        SET v_error = TRUE;
+    END;
+    
+    SET v_fecha_limite = DATE_SUB(CURRENT_TIMESTAMP, INTERVAL p_dias_antiguedad DAY);
+    SET v_tabla_destino = CONCAT('sem_historico_', DATE_FORMAT(v_fecha_limite, '%Y%m'));
+    
+    -- Registrar inicio del proceso
+    INSERT INTO sem_control_archivado (
+        periodo_inicio,
+        periodo_fin,
+        tabla_origen,
+        tabla_destino,
+        estado,
+        fecha_inicio
+    ) VALUES (
+        v_fecha_limite,
+        CURRENT_TIMESTAMP,
+        'sem_mediciones',
+        v_tabla_destino,
+        'EN_PROCESO',
+        CURRENT_TIMESTAMP
+    );
+    
+    SET v_control_id = LAST_INSERT_ID();
+    
+    -- Crear tabla histórica si no existe
+    SET @sql = CONCAT(
+        'CREATE TABLE IF NOT EXISTS ', v_tabla_destino, ' LIKE sem_mediciones'
+    );
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+    
+    -- Mover datos por lotes
+    SET @sql = CONCAT(
+        'INSERT INTO ', v_tabla_destino, 
+        ' SELECT * FROM sem_mediciones',
+        ' WHERE timestamp_utc < ?',
+        ' LIMIT ?'
+    );
+    PREPARE stmt FROM @sql;
+    
+    START TRANSACTION;
+    
+    -- Ejecutar la inserción
+    EXECUTE stmt USING v_fecha_limite, p_batch_size;
+    
+    -- Eliminar datos originales
+    DELETE FROM sem_mediciones 
+    WHERE timestamp_utc < v_fecha_limite
+    LIMIT p_batch_size;
+    
+    IF v_error THEN
+        ROLLBACK;
+        
+        UPDATE sem_control_archivado
+        SET estado = 'ERROR',
+            mensaje_error = 'Error durante el proceso de archivado',
+            fecha_fin = CURRENT_TIMESTAMP
+        WHERE id = v_control_id;
+        
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Error en el proceso de archivado';
+    END IF;
+    
+    COMMIT;
+    
+    -- Actualizar control de archivado
+    UPDATE sem_control_archivado
+    SET estado = 'COMPLETADO',
+        registros_procesados = ROW_COUNT(),
+        fecha_fin = CURRENT_TIMESTAMP
+    WHERE id = v_control_id;
+    
+    DEALLOCATE PREPARE stmt;
+END //
+
+-- 4. Auditoría Avanzada
 -- =============================================
 
--- Trigger de auditoría para cambios en configuración
-CREATE TRIGGER tr_auditoria_configuracion
-ON sem_configuracion
-AFTER INSERT, UPDATE, DELETE
-AS
+-- Tabla para auditoría detallada
+CREATE TABLE sem_auditoria_detallada (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    tipo_operacion ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
+    tabla_afectada VARCHAR(100) NOT NULL,
+    registro_id VARCHAR(100) NOT NULL,
+    usuario VARCHAR(100),
+    datos_anteriores JSON,
+    datos_nuevos JSON,
+    fecha_operacion TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    direccion_ip VARCHAR(45),
+    aplicacion VARCHAR(100),
+    INDEX idx_auditoria_fecha (fecha_operacion),
+    INDEX idx_auditoria_tabla (tabla_afectada),
+    INDEX idx_auditoria_tipo (tipo_operacion)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Trigger de auditoría para cambios en dispositivos
+DELIMITER //
+
+CREATE TRIGGER trg_auditoria_dispositivos
+AFTER INSERT ON sem_dispositivos
+FOR EACH ROW
 BEGIN
-    SET NOCOUNT ON;
-    
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento,
-        fecha_hora,
-        descripcion,
-        datos_anteriores,
+    INSERT INTO sem_auditoria_detallada (
+        tipo_operacion,
+        tabla_afectada,
+        registro_id,
         datos_nuevos
     )
-    SELECT 
-        CASE 
-            WHEN EXISTS(SELECT * FROM INSERTED) AND EXISTS(SELECT * FROM DELETED) THEN 'UPDATE'
-            WHEN EXISTS(SELECT * FROM INSERTED) THEN 'INSERT'
-            ELSE 'DELETE'
-        END,
-        GETDATE(),
-        'Modificación en configuración',
-        (SELECT * FROM DELETED FOR JSON PATH),
-        (SELECT * FROM INSERTED FOR JSON PATH);
-END;
-
--- 5. Monitoreo y Alertas
--- =============================================
-
--- Tabla de alertas
-CREATE TABLE sem_alertas (
-    id_alerta BIGINT IDENTITY(1,1) PRIMARY KEY,
-    tipo_alerta VARCHAR(50),
-    nivel_severidad TINYINT,
-    mensaje VARCHAR(500),
-    fecha_deteccion DATETIME2,
-    fecha_resolucion DATETIME2 NULL,
-    estado VARCHAR(20),
-    datos_contexto NVARCHAR(MAX)
-);
-
--- Procedimiento para generar alertas
-CREATE PROCEDURE sp_generar_alerta
-    @tipo_alerta VARCHAR(50),
-    @nivel_severidad TINYINT,
-    @mensaje VARCHAR(500),
-    @datos_contexto NVARCHAR(MAX) = NULL
-AS
-BEGIN
-    INSERT INTO sem_alertas (
-        tipo_alerta,
-        nivel_severidad,
-        mensaje,
-        fecha_deteccion,
-        estado,
-        datos_contexto
-    )
     VALUES (
-        @tipo_alerta,
-        @nivel_severidad,
-        @mensaje,
-        GETDATE(),
-        'ACTIVA',
-        @datos_contexto
+        'INSERT',
+        'sem_dispositivos',
+        NEW.shelly_id,
+        JSON_OBJECT(
+            'shelly_id', NEW.shelly_id,
+            'grupo_id', NEW.grupo_id,
+            'nombre', NEW.nombre,
+            'activo', NEW.activo
+        )
     );
-END;
+END //
 
--- 6. Seguridad y Auditoría
+-- 5. Mantenimiento Automático
 -- =============================================
 
--- Roles de base de datos
-CREATE ROLE rol_lectura;
-CREATE ROLE rol_escritura;
-CREATE ROLE rol_administrador;
-
--- Asignación de permisos básicos
-GRANT SELECT ON SCHEMA::dbo TO rol_lectura;
-GRANT SELECT, INSERT, UPDATE ON SCHEMA::dbo TO rol_escritura;
-GRANT CONTROL ON SCHEMA::dbo TO rol_administrador;
-
--- Función para encriptar datos sensibles
-CREATE FUNCTION fn_encriptar_dato(@dato NVARCHAR(MAX))
-RETURNS VARBINARY(MAX)
-AS
-BEGIN
-    -- Aquí iría la lógica de encriptación
-    RETURN CAST(@dato AS VARBINARY(MAX));
-END;
-
--- 7. Testing
--- =============================================
-
--- Tabla de registro de tests
-CREATE TABLE sem_registro_tests (
-    id_test BIGINT IDENTITY(1,1) PRIMARY KEY,
-    nombre_test VARCHAR(100),
-    tipo_test VARCHAR(50),
-    resultado VARCHAR(20),
-    duracion_ms INT,
-    fecha_ejecucion DATETIME2,
-    detalles NVARCHAR(MAX)
-);
-
--- Procedimiento para ejecutar test de rendimiento
-CREATE PROCEDURE sp_test_rendimiento
-    @descripcion_test VARCHAR(100)
-AS
-BEGIN
-    DECLARE @inicio DATETIME2 = GETDATE();
-    DECLARE @resultado VARCHAR(20) = 'EXITOSO';
-    DECLARE @detalles NVARCHAR(MAX);
-    
-    BEGIN TRY
-        -- Aquí irían las pruebas de rendimiento
-        
-        SET @detalles = 'Test completado correctamente';
-    END TRY
-    BEGIN CATCH
-        SET @resultado = 'FALLIDO';
-        SET @detalles = ERROR_MESSAGE();
-    END CATCH;
-    
-    INSERT INTO sem_registro_tests (
-        nombre_test,
-        tipo_test,
-        resultado,
-        duracion_ms,
-        fecha_ejecucion,
-        detalles
-    )
-    VALUES (
-        @descripcion_test,
-        'RENDIMIENTO',
-        @resultado,
-        DATEDIFF(MILLISECOND, @inicio, GETDATE()),
-        GETDATE(),
-        @detalles
-    );
-END;
-
--- =============================================
--- 8. Eventos de Mantenimiento
--- =============================================
-
--- Tabla para gestionar particiones de datos históricos
-CREATE TABLE sem_particiones_historicas (
-    id_particion BIGINT IDENTITY(1,1) PRIMARY KEY,
-    fecha_inicio DATETIME2,
-    fecha_fin DATETIME2,
-    estado VARCHAR(20),
-    ubicacion_archivo NVARCHAR(500),
-    fecha_creacion DATETIME2 DEFAULT GETDATE(),
-    comprimido BIT DEFAULT 0
-);
-
--- Evento para actualizar estadísticas de la base de datos
-CREATE EVENT sp_actualizar_estadisticas
+-- Evento para limpieza periódica
+CREATE EVENT evt_limpieza_periodica
 ON SCHEDULE EVERY 1 DAY
-STARTS (GETDATE() AT '03:00:00')
-AS
+STARTS CURRENT_TIMESTAMP + INTERVAL 1 DAY
+DO
 BEGIN
-    EXEC sp_updatestats;
+    -- Limpiar alertas antiguas resueltas
+    DELETE FROM sem_registro_alertas
+    WHERE estado = 'RESUELTA'
+    AND fecha_deteccion < DATE_SUB(NOW(), INTERVAL 6 MONTH);
     
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento,
-        fecha_hora,
-        descripcion
-    )
-    VALUES (
-        'MANTENIMIENTO',
-        GETDATE(),
-        'Actualización de estadísticas completada'
+    -- Limpiar auditoría antigua no crítica
+    DELETE FROM sem_registro_auditoria
+    WHERE fecha_creacion < DATE_SUB(NOW(), INTERVAL 6 MONTH)
+    AND tipo_evento_id NOT IN (
+        SELECT id FROM sem_tipos_eventos 
+        WHERE severidad IN ('ERROR', 'CRITICO')
     );
-END;
+    
+    -- Archivar mediciones antiguas
+    CALL sp_archivar_datos_historicos(90, 10000);
+END //
 
--- Evento para gestionar datos históricos
-CREATE EVENT sp_gestionar_datos_historicos
-ON SCHEDULE EVERY 1 WEEK
-STARTS (GETDATE() AT '02:00:00')
-AS
+-- 6. Monitoreo y Verificación
+-- =============================================
+
+-- Procedimiento para verificación de integridad
+CREATE PROCEDURE sp_verificar_integridad()
 BEGIN
-    DECLARE @fecha_limite DATETIME2 = DATEADD(month, -6, GETDATE());
-    DECLARE @partition_name NVARCHAR(100);
-    DECLARE @sql NVARCHAR(MAX);
+    DECLARE v_error_count INT DEFAULT 0;
     
-    -- Crear nueva tabla para datos históricos si no existe
-    SET @partition_name = 'sem_historico_' + FORMAT(GETDATE(), 'yyyyMM');
+    -- Verificar referencias huérfanas
+    SELECT COUNT(*) INTO v_error_count
+    FROM sem_mediciones m
+    LEFT JOIN sem_dispositivos d ON m.shelly_id = d.shelly_id
+    WHERE d.shelly_id IS NULL;
     
-    -- Verificar si ya existe una partición para este período
-    IF NOT EXISTS (
-        SELECT 1 
-        FROM sem_particiones_historicas 
-        WHERE YEAR(fecha_inicio) = YEAR(@fecha_limite) 
-        AND MONTH(fecha_inicio) = MONTH(@fecha_limite)
-    )
-    BEGIN
-        -- Crear nueva tabla histórica
-        SET @sql = '
-        SELECT *
-        INTO ' + @partition_name + '
-        FROM sem_lecturas_dispositivos
-        WHERE fecha_hora < ''' + CONVERT(VARCHAR, @fecha_limite, 121) + '''';
-        
-        EXEC sp_executesql @sql;
-        
-        -- Registrar la nueva partición
-        INSERT INTO sem_particiones_historicas (
-            fecha_inicio,
-            fecha_fin,
-            estado,
-            ubicacion_archivo
+    IF v_error_count > 0 THEN
+        INSERT INTO sem_registro_alertas (
+            tipo_alerta_id,
+            mensaje,
+            valor_detectado
         )
         VALUES (
-            DATEFROMPARTS(YEAR(@fecha_limite), MONTH(@fecha_limite), 1),
-            EOMONTH(@fecha_limite),
-            'ACTIVA',
-            @partition_name
+            (SELECT id FROM sem_tipos_alertas WHERE nombre = 'ERROR_INTEGRIDAD'),
+            'Se detectaron referencias huérfanas en mediciones',
+            v_error_count
         );
-        
-        -- Crear índices en la tabla histórica
-        SET @sql = '
-        CREATE INDEX idx_' + @partition_name + '_fecha 
-        ON ' + @partition_name + '(fecha_hora);
-        CREATE INDEX idx_' + @partition_name + '_dispositivo 
-        ON ' + @partition_name + '(id_dispositivo);';
-        
-        EXEC sp_executesql @sql;
-    END;
+    END IF;
+    
+    -- Verificar inconsistencias en promedios
+    SELECT COUNT(*) INTO v_error_count
+    FROM sem_promedios_hora ph
+    WHERE ph.lecturas_recibidas > ph.lecturas_esperadas
+    OR ph.calidad_datos > 100
+    OR ph.calidad_datos < 0;
+    
+    IF v_error_count > 0 THEN
+        INSERT INTO sem_registro_alertas (
+            tipo_alerta_id,
+            mensaje,
+            valor_detectado
+        )
+        VALUES (
+            (SELECT id FROM sem_tipos_alertas WHERE nombre = 'ERROR_INTEGRIDAD'),
+            'Se detectaron inconsistencias en promedios horarios',
+            v_error_count
+        );
+    END IF;
+END //
 
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento,
-        fecha_hora,
-        descripcion
-    )
-    VALUES (
-        'MANTENIMIENTO',
-        GETDATE(),
-        'Gestión de datos históricos completada'
-    );
-END;
+-- 7. Optimización de índices
+-- =============================================
 
--- Evento para mantenimiento de índices
-CREATE EVENT sp_mantener_indices
-ON SCHEDULE EVERY 1 WEEK
-STARTS (GETDATE() AT '01:00:00')
-AS
+-- Procedimiento para análisis de índices
+CREATE PROCEDURE sp_analizar_indices()
 BEGIN
-    -- Reorganizar o reconstruir índices según la fragmentación
-    DECLARE @TableName NVARCHAR(128)
-    DECLARE @IndexName NVARCHAR(128)
-    DECLARE @Fragmentation FLOAT
-
-    DECLARE index_cursor CURSOR FOR
+    -- Actualizar estadísticas
+    ANALYZE TABLE sem_mediciones, sem_promedios_hora, sem_totales_hora;
+    
+    -- Registrar tablas fragmentadas
+    INSERT INTO sem_registro_auditoria (
+        tipo_evento_id,
+        descripcion,
+        detalles
+    )
     SELECT 
-        OBJECT_NAME(ips.object_id) AS TableName,
-        i.name AS IndexName,
-        ips.avg_fragmentation_in_percent
-    FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') ips
-    JOIN sys.indexes i ON ips.object_id = i.object_id AND ips.index_id = i.index_id
-    WHERE ips.avg_fragmentation_in_percent > 5
+        (SELECT id FROM sem_tipos_eventos WHERE nombre = 'MANTENIMIENTO'),
+        'Análisis de fragmentación de índices',
+        JSON_OBJECT(
+            'tabla', t.TABLE_NAME,
+            'tamano_datos', t.DATA_LENGTH,
+            'tamano_indice', t.INDEX_LENGTH
+        )
+    FROM information_schema.TABLES t
+    WHERE t.TABLE_SCHEMA = DATABASE()
+    AND t.TABLE_NAME LIKE 'sem_%';
+END //
 
-    OPEN index_cursor
-    FETCH NEXT FROM index_cursor INTO @TableName, @IndexName, @Fragmentation
+DELIMITER ;
 
-    WHILE @@FETCH_STATUS = 0
-    BEGIN
-        IF @Fragmentation >= 30
-            EXEC('ALTER INDEX ' + @IndexName + ' ON ' + @TableName + ' REBUILD')
-        ELSE
-            EXEC('ALTER INDEX ' + @IndexName + ' ON ' + @TableName + ' REORGANIZE')
+-- 8. Datos iniciales para monitoreo
+-- =============================================
 
-        FETCH NEXT FROM index_cursor INTO @TableName, @IndexName, @Fragmentation
+-- Insertar tipos de alertas para monitoreo
+INSERT INTO sem_tipos_alertas 
+(nombre, descripcion, nivel_severidad, requiere_accion)
+VALUES 
+('ERROR_INTEGRIDAD', 'Error de integridad en datos', 'ALTA', TRUE),
+('ERROR_ARCHIVADO', 'Error en proceso de archivado', 'ALTA', TRUE),
+('FRAGMENTACION_ALTA', 'Alta fragmentación detectada', 'MEDIA', FALSE),
+('ERROR_INCONSISTENCIA', 'Inconsistencia en datos agregados', 'ALTA', TRUE);
+
+-- Configurar umbrales para monitoreo
+INSERT INTO sem_umbrales_alertas 
+(tipo_alerta_id, umbral_minimo, umbral_maximo, porcentaje_variacion)
+SELECT 
+    id,
+    CASE 
+        WHEN nombre = 'ERROR_INTEGRIDAD' THEN 0
+        WHEN nombre = 'FRAGMENTACION_ALTA' THEN 30
+        ELSE NULL 
+    END,
+    CASE 
+        WHEN nombre = 'ERROR_INTEGRIDAD' THEN 0
+        WHEN nombre = 'FRAGMENTACION_ALTA' THEN 100
+        ELSE NULL
+    END,
+    CASE 
+        WHEN nombre = 'ERROR_INCONSISTENCIA' THEN 5.0
+        ELSE NULL
     END
-
-    CLOSE index_cursor
-    DEALLOCATE index_cursor
-
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento,
-        fecha_hora,
-        descripcion
-    )
-    VALUES (
-        'MANTENIMIENTO',
-        GETDATE(),
-        'Mantenimiento de índices completado'
-    );
-END;
-
--- Evento para actualizar vistas materializadas
-CREATE EVENT sp_actualizar_vistas_materializadas
-ON SCHEDULE EVERY 1 HOUR
-STARTS (GETDATE())
-AS
-BEGIN
-    -- Actualizar vista de datos recientes y históricos
-    EXEC('
-    ALTER VIEW mv_lecturas_completas AS
-    SELECT * FROM sem_lecturas_dispositivos
-    UNION ALL
-    SELECT l.* 
-    FROM sem_particiones_historicas p
-    CROSS APPLY (
-        SELECT * 
-        FROM ' + p.ubicacion_archivo + '
-    ) l
-    WHERE p.estado = ''ACTIVA''
-    ');
-
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento,
-        fecha_hora,
-        descripcion
-    )
-    VALUES (
-        'MANTENIMIENTO',
-        GETDATE(),
-        'Actualización de vistas materializadas completada'
-    );
-END;
-
--- Evento para monitoreo de espacio en disco
-CREATE EVENT sp_monitorear_espacio_disco
-ON SCHEDULE EVERY 6 HOUR
-STARTS (GETDATE())
-AS
-BEGIN
-    DECLARE @espacio_libre_mb DECIMAL(10,2)
-    
-    SELECT @espacio_libre_mb = available_bytes/1024/1024
-    FROM sys.dm_os_volume_stats(DB_ID(), 1);
-
-    IF @espacio_libre_mb < 5000  -- Alerta si hay menos de 5GB libres
-    BEGIN
-        EXEC sp_generar_alerta
-            @tipo_alerta = 'ESPACIO_DISCO',
-            @nivel_severidad = 2,
-            @mensaje = 'Espacio en disco bajo: ' + CAST(@espacio_libre_mb AS VARCHAR(20)) + ' MB disponibles',
-            @datos_contexto = NULL;
-    END
-
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento,
-        fecha_hora,
-        descripcion
-    )
-    VALUES (
-        'MONITOREO',
-        GETDATE(),
-        'Verificación de espacio en disco completada'
-    );
-END;
-
--- Evento para verificar integridad de la base de datos
-CREATE EVENT sp_verificar_integridad
-ON SCHEDULE EVERY 1 WEEK
-STARTS (GETDATE() AT '00:00:00')
-AS
-BEGIN
-    DECLARE @DatabaseName NVARCHAR(128) = DB_NAME()
-    
-    -- Verificar integridad de la base de datos
-    DBCC CHECKDB (@DatabaseName) WITH NO_INFOMSGS;
-    
-    -- Verificar consistencia de tablas críticas
-    DBCC CHECKTABLE('sem_lecturas_dispositivos') WITH NO_INFOMSGS;
-    DBCC CHECKTABLE('sem_agregaciones_dispositivo') WITH NO_INFOMSGS;
-    DBCC CHECKTABLE('sem_agregaciones_grupo') WITH NO_INFOMSGS;
-    
-    -- Verificar tablas históricas
-    DECLARE @tabla_historica NVARCHAR(500)
-    DECLARE historico_cursor CURSOR FOR
-    SELECT ubicacion_archivo
-    FROM sem_particiones_historicas
-    WHERE estado = 'ACTIVA'
-
-    OPEN historico_cursor
-    FETCH NEXT FROM historico_cursor INTO @tabla_historica
-
-    WHILE @@FETCH_STATUS = 0
-    BEGIN
-        EXEC('DBCC CHECKTABLE(''' + @tabla_historica + ''') WITH NO_INFOMSGS');
-        FETCH NEXT FROM historico_cursor INTO @tabla_historica
-    END
-
-    CLOSE historico_cursor
-    DEALLOCATE historico_cursor
-
-    INSERT INTO sem_registro_auditoria (
-        tipo_evento,
-        fecha_hora,
-        descripcion
-    )
-    VALUES (
-        'MANTENIMIENTO',
-        GETDATE(),
-        'Verificación de integridad de base de datos completada'
-    );
-END;
+FROM sem_tipos_alertas
+WHERE nombre IN ('ERROR_INTEGRIDAD', 'FRAGMENTACION_ALTA', 'ERROR_INCONSISTENCIA');
