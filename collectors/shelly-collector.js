@@ -1,5 +1,5 @@
 const fetch = require('node-fetch');
-const config = require('../config/config-loader');
+const config = require('../src/config/config-loader');
 const databaseService = require('../src/services/database-service');
 
 class ShellyCollector {
