@@ -156,6 +156,7 @@ class ShellyCollector {
 
     async saveData(data) {
         try {
+            console.log('Attempting to save data:', JSON.stringify(data, null, 2));
             const result = await databaseService.insertDeviceStatus(data);
             console.log('Data saved successfully:', result);
             return result;

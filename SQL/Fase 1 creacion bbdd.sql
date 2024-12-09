@@ -104,6 +104,10 @@ COMMENT 'Catálogo de tipos de eventos del sistema';
 -- Tabla: Registro de Auditoría
 -- Descripción: Log de eventos y cambios del sistema
 -- --------------------------------------------------------
+-- --------------------------------------------------------
+-- Tabla: Registro de Auditoría
+-- --------------------------------------------------------
+
 CREATE TABLE sem_registro_auditoria (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     tipo_evento_id INT NOT NULL,
@@ -145,33 +149,25 @@ CREATE TABLE sem_historial_grupo_dispositivo (
     INDEX idx_historial_fecha (fecha_cambio)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+
+CREATE TABLE sem_auditoria_detallada (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    tipo_operacion ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
+    tabla_afectada VARCHAR(100) NOT NULL,
+    registro_id VARCHAR(100) NOT NULL,
+    usuario VARCHAR(100),
+    datos_anteriores JSON,
+    datos_nuevos JSON,
+    fecha_operacion TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    direccion_ip VARCHAR(45),
+    aplicacion VARCHAR(100),
+    INDEX idx_auditoria_fecha (fecha_operacion),
+    INDEX idx_auditoria_tabla (tabla_afectada),
+    INDEX idx_auditoria_tipo (tipo_operacion)
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 -- --------------------------------------------------------
 -- Inserción de datos iniciales: Tipos de eventos
 -- --------------------------------------------------------
-INSERT INTO sem_tipos_eventos (nombre, categoria, descripcion, severidad) VALUES
-('INICIO_SISTEMA', 'SISTEMA', 'Sistema iniciado', 'INFORMACION'),
-('DETENCION_SISTEMA', 'SISTEMA', 'Sistema detenido', 'INFORMACION'),
-('CAMBIO_CONFIGURACION', 'CONFIGURACION', 'Cambio en configuración', 'INFORMACION'),
-('ALTA_DISPOSITIVO', 'DISPOSITIVO', 'Dispositivo agregado', 'INFORMACION'),
-('BAJA_DISPOSITIVO', 'DISPOSITIVO', 'Dispositivo eliminado', 'ADVERTENCIA'),
-('ACTUALIZACION_DISPOSITIVO', 'DISPOSITIVO', 'Dispositivo actualizado', 'INFORMACION'),
-('ALTA_GRUPO', 'GRUPO', 'Grupo agregado', 'INFORMACION'),
-('BAJA_GRUPO', 'GRUPO', 'Grupo eliminado', 'ADVERTENCIA'),
-('ACTUALIZACION_GRUPO', 'GRUPO', 'Grupo actualizado', 'INFORMACION'),
-('ERROR_DATOS', 'ERROR', 'Error en datos', 'ERROR'),
-('ERROR_SISTEMA', 'ERROR', 'Error de sistema', 'CRITICO'),
-('ALERTA_SEGURIDAD', 'SEGURIDAD', 'Alerta de seguridad', 'ADVERTENCIA');
-
--- --------------------------------------------------------
--- Inserción de datos iniciales: Tipos de parámetros
--- --------------------------------------------------------
-INSERT INTO sem_tipos_parametros (nombre, descripcion, tipo_dato, reglas_validacion) VALUES
-('INTERVALO_RECOLECCION', 'Intervalo de recolección de datos en segundos', 'ENTERO', '{"min": 1, "max": 3600}'),
-('PRECIO_KWH', 'Precio del kWh en la moneda local', 'DECIMAL', '{"min": 0, "decimales": 2}'),
-('ZONA_HORARIA', 'Zona horaria por defecto', 'TEXTO', '{"patron": "^America/[A-Za-z_]+$"}'),
-('UMBRAL_CALIDAD', 'Umbral de calidad de datos', 'DECIMAL', '{"min": 0, "max": 1, "decimales": 2}'),
-('DIAS_RETENCION', 'Días de retención para datos detallados', 'ENTERO', '{"min": 1}'),
-('CONFIG_ALERTAS', 'Configuración de alertas', 'JSON', '{"requeridos": ["habilitado", "umbrales"]}');
 
 /*
 NOTA: En la Fase 4 se implementará el siguiente procedimiento:

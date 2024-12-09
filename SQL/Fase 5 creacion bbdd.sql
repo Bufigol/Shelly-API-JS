@@ -193,25 +193,9 @@ END //
 -- 4. Auditoría Avanzada
 -- =============================================
 
--- Tabla para auditoría detallada
-CREATE TABLE sem_auditoria_detallada (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    tipo_operacion ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
-    tabla_afectada VARCHAR(100) NOT NULL,
-    registro_id VARCHAR(100) NOT NULL,
-    usuario VARCHAR(100),
-    datos_anteriores JSON,
-    datos_nuevos JSON,
-    fecha_operacion TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
-    direccion_ip VARCHAR(45),
-    aplicacion VARCHAR(100),
-    INDEX idx_auditoria_fecha (fecha_operacion),
-    INDEX idx_auditoria_tabla (tabla_afectada),
-    INDEX idx_auditoria_tipo (tipo_operacion)
-) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 
 -- Trigger de auditoría para cambios en dispositivos
-DELIMITER //
 
 CREATE TRIGGER trg_auditoria_dispositivos
 AFTER INSERT ON sem_dispositivos
@@ -373,3 +357,5 @@ SELECT
     END
 FROM sem_tipos_alertas
 WHERE nombre IN ('ERROR_INTEGRIDAD', 'FRAGMENTACION_ALTA', 'ERROR_INCONSISTENCIA');
+
+
