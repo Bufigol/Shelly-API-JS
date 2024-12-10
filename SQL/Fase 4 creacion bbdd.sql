@@ -468,42 +468,6 @@ END //
 
 DELIMITER ;
 
--- --------------------------------------------------------
--- DATOS INICIALES
--- --------------------------------------------------------
 
--- Insertar tipos de alertas básicos
-INSERT INTO sem_tipos_alertas 
-    (nombre, descripcion, nivel_severidad, requiere_accion)
-VALUES
-    ('VOLTAJE_FUERA_RANGO', 'Voltaje fuera del rango normal de operación', 'ALTA', TRUE),
-    ('CONSUMO_ANORMAL', 'Consumo de energía anormalmente alto o bajo', 'MEDIA', TRUE),
-    ('FACTOR_POTENCIA_BAJO', 'Factor de potencia por debajo del umbral recomendado', 'MEDIA', FALSE),
-    ('DISPOSITIVO_OFFLINE', 'Dispositivo no ha reportado datos en el tiempo esperado', 'ALTA', TRUE),
-    ('ERROR_COMUNICACION', 'Errores de comunicación con el dispositivo', 'ALTA', TRUE),
-    ('CALIDAD_DATOS_BAJA', 'Baja calidad en los datos recibidos', 'MEDIA', FALSE);
 
--- Insertar umbrales de alertas por defecto
-INSERT INTO sem_umbrales_alertas 
-    (tipo_alerta_id, umbral_minimo, umbral_maximo, porcentaje_variacion, tiempo_validacion)
-SELECT 
-    id,
-    CASE 
-        WHEN nombre = 'VOLTAJE_FUERA_RANGO' THEN 190
-        WHEN nombre = 'FACTOR_POTENCIA_BAJO' THEN 0.92
-        ELSE NULL
-    END,
-    CASE 
-        WHEN nombre = 'VOLTAJE_FUERA_RANGO' THEN 240
-        ELSE NULL
-    END,
-    CASE 
-        WHEN nombre = 'CONSUMO_ANORMAL' THEN 25.0
-        ELSE NULL
-    END,
-    CASE 
-        WHEN nombre = 'DISPOSITIVO_OFFLINE' THEN 15
-        WHEN nombre = 'ERROR_COMUNICACION' THEN 5
-        ELSE NULL
-    END
-FROM sem_tipos_alertas;
+
