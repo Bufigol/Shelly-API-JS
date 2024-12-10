@@ -93,12 +93,14 @@ class DatabaseService {
             const phases = ['a', 'b', 'c'];
             for (const phase of phases) {
                 let calidadLectura = this.mapReadingQuality(data.device_status.reading_quality);
-    
+
+                const localTimestamp = timestamp;
+                const utcTimestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
                 // Primero creamos el objeto measurementData sin el validacion_detalle
                 const measurementData = {
                     shelly_id: device.shelly_id,
-                    timestamp_utc: timestamp,
-                    timestamp_local: new Date().toISOString().slice(0, 19).replace('T', ' '),
+                    timestamp_utc: utcTimestamp,
+                    timestamp_local: localTimestamp,
                     fase: phase.toUpperCase(),
                     voltaje: emData[`${phase}_voltage`] || 0,
                     corriente: emData[`${phase}_current`] || 0,
