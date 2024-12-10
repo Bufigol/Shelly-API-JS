@@ -84,56 +84,36 @@ class DatabaseService {
             await conn.beginTransaction();
     
             const timestamp = this.getTimestamp(data);
-            
-            console.log('Attempting to validate device:', {
-                deviceId: data.device_status.code,
-                timestamp: timestamp
-            });
-    
             const device = await this.ensureDeviceExists(conn, data);
             
-            console.log('Device validated successfully:', {
-                deviceId: device.shelly_id,
-                name: device.nombre
-            });
-    
+            // Obtener los datos de energía del dispositivo
+            const emData = data.device_status['em:0'] || {};
+            
             // Preparar datos para la inserción por fase
             const phases = ['a', 'b', 'c'];
             for (const phase of phases) {
-                // Map reading_quality to ENUM values
-                let calidadLectura;
-                switch (data.device_status.reading_quality) {
-                    case 'GOOD':
-                        calidadLectura = 'NORMAL';
-                        break;
-                    case 'WARN':
-                        calidadLectura = 'ALERTA';
-                        break;
-                    case 'BAD':
-                        calidadLectura = 'ERROR';
-                        break;
-                    default:
-                        calidadLectura = 'NORMAL'; // Default case
-                }
+                let calidadLectura = this.mapReadingQuality(data.device_status.reading_quality);
     
-                // Generar timestamp local en el formato correcto
-                const timestampLocal = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    
+                // Primero creamos el objeto measurementData sin el validacion_detalle
                 const measurementData = {
                     shelly_id: device.shelly_id,
                     timestamp_utc: timestamp,
-                    timestamp_local: timestampLocal, // Asegúrate de que este valor esté en el formato correcto
+                    timestamp_local: new Date().toISOString().slice(0, 19).replace('T', ' '),
                     fase: phase.toUpperCase(),
-                    voltaje: data.device_status['em:0'][`${phase}_voltage`],
-                    corriente: data.device_status['em:0'][`${phase}_current`],
-                    potencia_activa: data.device_status['em:0'][`${phase}_act_power`],
-                    potencia_aparente: data.device_status['em:0'][`${phase}_aprt_power`],
-                    factor_potencia: data.device_status['em:0'][`${phase}_pf`],
-                    frecuencia: data.device_status['em:0'].c_freq, // Assuming frequency is same for all phases
+                    voltaje: emData[`${phase}_voltage`] || 0,
+                    corriente: emData[`${phase}_current`] || 0,
+                    potencia_activa: emData[`${phase}_act_power`] || 0,
+                    potencia_aparente: emData[`${phase}_aprt_power`] || 0,
+                    factor_potencia: emData[`${phase}_pf`] || 0,
+                    frecuencia: emData.c_freq || 50,
+                    energia_activa: emData[`${phase}_act_energy`] || 0,
+                    energia_reactiva: emData[`${phase}_react_energy`] || 0,
                     calidad_lectura: calidadLectura
                 };
     
-                // Insertar datos en la tabla sem_mediciones
+                // Ahora agregamos el validacion_detalle
+                measurementData.validacion_detalle = this.generateValidationDetails(measurementData);
+    
                 const query = `INSERT INTO sem_mediciones SET ?`;
                 await conn.query(query, measurementData);
             }
@@ -320,6 +300,51 @@ class DatabaseService {
             this.connected = false;
             throw new DatabaseError('Database connection test failed', error);
         }
+    }
+
+    mapReadingQuality(quality) {
+        const qualityMap = {
+            'GOOD': 'NORMAL',
+            'WARN': 'ALERTA',
+            'BAD': 'ERROR'
+        };
+        return qualityMap[quality] || 'NORMAL';
+    }
+    generateValidationDetails(data) {
+        return JSON.stringify({
+            voltaje: {
+                valor: data.voltaje,
+                calidad: this.validateVoltage(data.voltaje)
+            },
+            corriente: {
+                valor: data.corriente,
+                calidad: this.validateCurrent(data.corriente)
+            },
+            frecuencia: {
+                valor: data.frecuencia,
+                calidad: this.validateFrequency(data.frecuencia)
+            },
+            factor_potencia: {
+                valor: data.factor_potencia,
+                calidad: this.validatePowerFactor(data.factor_potencia)
+            }
+        });
+    }
+
+    validateVoltage(voltage) {
+        return voltage >= 180 && voltage <= 260 ? 'NORMAL' : 'ERROR';
+    }
+
+    validateCurrent(current) {
+        return current >= 0 && current <= 200 ? 'NORMAL' : 'ERROR';
+    }
+
+    validateFrequency(freq) {
+        return freq >= 49 && freq <= 51 ? 'NORMAL' : 'ERROR';
+    }
+
+    validatePowerFactor(pf) {
+        return pf >= -1 && pf <= 1 ? 'NORMAL' : 'ERROR';
     }
 }
 

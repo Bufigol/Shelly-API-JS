@@ -134,8 +134,19 @@ class ShellyCollector {
         const tempData = deviceStatus['temperature:0'] || {};
         const emdData = deviceStatus['emdata:0'] || {};
 
-        // Validar y convertir campos numéricos
-        const validatedEmData = this.validateNumericFields(emData);
+        // Validar y convertir campos numéricos incluyendo energía
+        const validatedEmData = {
+            ...this.validateNumericFields(emData),
+            // Agregar campos de energía para cada fase
+            a_act_energy: this.getEnergyValue(emData, 'a_act_energy'),
+            b_act_energy: this.getEnergyValue(emData, 'b_act_energy'),
+            c_act_energy: this.getEnergyValue(emData, 'c_act_energy'),
+            a_react_energy: this.getEnergyValue(emData, 'a_react_energy'),
+            b_react_energy: this.getEnergyValue(emData, 'b_react_energy'),
+            c_react_energy: this.getEnergyValue(emData, 'c_react_energy'),
+            total_act_energy: this.getEnergyValue(emData, 'total_act_energy'),
+            total_react_energy: this.getEnergyValue(emData, 'total_react_energy')
+        };
 
         return {
             device_status: {
@@ -152,6 +163,11 @@ class ShellyCollector {
                 'emdata:0': this.validateNumericFields(emdData)
             }
         };
+    }
+
+    getEnergyValue(data, field) {
+        const value = parseFloat(data[field]);
+        return isNaN(value) ? 0 : value;
     }
 
     async saveData(data) {
