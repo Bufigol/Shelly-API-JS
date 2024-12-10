@@ -142,7 +142,7 @@ proc_label:BEGIN
         descripcion,
         detalles
     ) VALUES (
-        9, -- ID para CALCULO_TOTALES
+        9,
         'Inicio cálculo totales horarios',
         JSON_OBJECT(
             'fecha_inicio', v_fecha_inicio,
@@ -153,10 +153,17 @@ proc_label:BEGIN
     
     SET v_execution_id = LAST_INSERT_ID();
 
+    -- Calculamos totales por hora y fase
     INSERT INTO sem_totales_hora (
         shelly_id,
         hora_utc,
         hora_local,
+        fase_a_energia_activa,
+        fase_a_energia_reactiva,
+        fase_b_energia_activa,
+        fase_b_energia_reactiva,
+        fase_c_energia_activa,
+        fase_c_energia_reactiva,
         energia_activa_total,
         energia_reactiva_total,
         potencia_maxima,
@@ -168,29 +175,37 @@ proc_label:BEGIN
     )
     SELECT 
         m.shelly_id,
-        DATE_FORMAT(m.timestamp_utc, '%Y-%m-%d %H:00:00'),
-        ADDTIME(DATE_FORMAT(m.timestamp_utc, '%Y-%m-%d %H:00:00'), '03:00:00'),
-        SUM(m.energia_activa),
-        SUM(m.energia_reactiva),
-        MAX(m.potencia_activa),
-        MIN(m.potencia_activa),
-        (SELECT valor FROM sem_configuracion sc 
-         JOIN sem_tipos_parametros stp ON sc.tipo_parametro_id = stp.id 
-         WHERE stp.nombre = 'PRECIO_KWH' AND sc.activo = TRUE 
-         LIMIT 1),
-        SUM(m.energia_activa) * (
-            SELECT valor FROM sem_configuracion sc 
-            JOIN sem_tipos_parametros stp ON sc.tipo_parametro_id = stp.id 
-            WHERE stp.nombre = 'PRECIO_KWH' AND sc.activo = TRUE 
-            LIMIT 1
-        ),
-        SUM(CASE WHEN m.calidad_lectura = 'NORMAL' THEN 1 ELSE 0 END),
-        (SUM(CASE WHEN m.calidad_lectura = 'NORMAL' THEN 1 ELSE 0 END) * 100.0) / COUNT(*)
-    FROM sem_mediciones m
-    WHERE m.timestamp_utc BETWEEN v_fecha_inicio AND v_fecha_fin
+        hora_utc,
+        SUBTIME(hora_utc, '03:00:00') as hora_local,
+        SUM(CASE WHEN fase = 'A' THEN energia_activa ELSE 0 END) as fase_a_energia_activa,
+        SUM(CASE WHEN fase = 'A' THEN energia_reactiva ELSE 0 END) as fase_a_energia_reactiva,
+        SUM(CASE WHEN fase = 'B' THEN energia_activa ELSE 0 END) as fase_b_energia_activa,
+        SUM(CASE WHEN fase = 'B' THEN energia_reactiva ELSE 0 END) as fase_b_energia_reactiva,
+        SUM(CASE WHEN fase = 'C' THEN energia_activa ELSE 0 END) as fase_c_energia_activa,
+        SUM(CASE WHEN fase = 'C' THEN energia_reactiva ELSE 0 END) as fase_c_energia_reactiva,
+        SUM(energia_activa) as energia_activa_total,
+        SUM(energia_reactiva) as energia_reactiva_total,
+        MAX(potencia_activa) as potencia_maxima,
+        MIN(potencia_activa) as potencia_minima,
+        151.85 as precio_kwh_periodo,
+        SUM(energia_activa) * 151.85 as costo_total,
+        SUM(CASE WHEN calidad_lectura = 'NORMAL' THEN 1 ELSE 0 END) as lecturas_validas,
+        (SUM(CASE WHEN calidad_lectura = 'NORMAL' THEN 1 ELSE 0 END) * 100.0) / COUNT(*) as calidad_datos
+    FROM (
+        SELECT 
+            shelly_id,
+            fase,
+            DATE_FORMAT(timestamp_utc, '%Y-%m-%d %H:00:00') as hora_utc,
+            energia_activa,
+            energia_reactiva,
+            potencia_activa,
+            calidad_lectura
+        FROM sem_mediciones
+        WHERE timestamp_utc BETWEEN v_fecha_inicio AND v_fecha_fin
+    ) m
     GROUP BY 
         m.shelly_id,
-        DATE_FORMAT(m.timestamp_utc, '%Y-%m-%d %H:00:00');
+        m.hora_utc;
 
     IF v_error THEN
         ROLLBACK;
