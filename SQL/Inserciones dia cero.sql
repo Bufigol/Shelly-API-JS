@@ -1,25 +1,25 @@
 -- --------------------------------------------------------
--- Script de Inserción Inicial para Base de Datos SEM
+-- Script de Inserción Inicial Actualizado para Base de Datos SEM
 -- --------------------------------------------------------
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
-SET time_zone = "+00:00";
+SET time_zone = "-03:00";
 
 -- --------------------------------------------------------
--- Inserción de Grupos Básicos
+-- Inserción de Grupos Básicos (con manejo de duplicados)
 -- --------------------------------------------------------
-INSERT INTO sem_grupos (nombre, descripcion, activo) VALUES
-('General', 'Grupo general por defecto', TRUE),
-('Oficinas', 'Dispositivos en áreas de oficina', TRUE),
-('Producción', 'Dispositivos en área de producción', TRUE),
-('Almacén', 'Dispositivos en área de almacenamiento', TRUE),
-('Servicios', 'Dispositivos en áreas de servicios', TRUE);
+INSERT INTO sem_grupos (id, nombre, descripcion, activo) 
+VALUES (1, 'General', 'Grupo general por defecto', TRUE)
+ON DUPLICATE KEY UPDATE
+    descripcion = VALUES(descripcion),
+    activo = VALUES(activo);
 
 -- --------------------------------------------------------
 -- Inserción de Tipos de Parámetros del Sistema
 -- --------------------------------------------------------
-INSERT INTO sem_tipos_parametros (nombre, descripcion, tipo_dato, reglas_validacion) VALUES
+INSERT INTO sem_tipos_parametros (nombre, descripcion, tipo_dato, reglas_validacion) 
+VALUES
 ('INTERVALO_RECOLECCION', 'Intervalo de recolección de datos en segundos', 'ENTERO', '{"min": 1, "max": 3600}'),
 ('PRECIO_KWH', 'Precio del kWh en la moneda local', 'DECIMAL', '{"min": 0, "decimales": 2}'),
 ('ZONA_HORARIA', 'Zona horaria por defecto', 'TEXTO', '{"patron": "^America/[A-Za-z_]+$"}'),
@@ -28,132 +28,42 @@ INSERT INTO sem_tipos_parametros (nombre, descripcion, tipo_dato, reglas_validac
 ('VOLTAJE_NOMINAL', 'Voltaje nominal del sistema', 'ENTERO', '{"min": 100, "max": 400}'),
 ('MAX_DESVIACION_VOLTAJE', 'Máxima desviación permitida del voltaje nominal', 'DECIMAL', '{"min": 1, "max": 20}'),
 ('FACTOR_POTENCIA_MIN', 'Factor de potencia mínimo aceptable', 'DECIMAL', '{"min": 0.1, "max": 1.0}'),
-('CONFIG_ALERTAS', 'Configuración de alertas', 'JSON', '{"requeridos": ["habilitado", "umbrales"]}');
+('CONFIG_ALERTAS', 'Configuración de alertas', 'JSON', '{"requeridos": ["habilitado", "umbrales"]}')
+ON DUPLICATE KEY UPDATE
+    descripcion = VALUES(descripcion),
+    tipo_dato = VALUES(tipo_dato),
+    reglas_validacion = VALUES(reglas_validacion);
 
 -- --------------------------------------------------------
 -- Configuración Inicial del Sistema
 -- --------------------------------------------------------
-INSERT INTO sem_configuracion (tipo_parametro_id, valor, activo) 
-SELECT id, 
-    CASE 
-        WHEN nombre = 'INTERVALO_RECOLECCION' THEN '10'
-        WHEN nombre = 'PRECIO_KWH' THEN '151.85'
-        WHEN nombre = 'ZONA_HORARIA' THEN 'America/Santiago'
-        WHEN nombre = 'UMBRAL_CALIDAD' THEN '0.8'
-        WHEN nombre = 'DIAS_RETENCION' THEN '90'
-        WHEN nombre = 'VOLTAJE_NOMINAL' THEN '220'
-        WHEN nombre = 'MAX_DESVIACION_VOLTAJE' THEN '10'
-        WHEN nombre = 'FACTOR_POTENCIA_MIN' THEN '0.93'
-    END,
-    TRUE
-FROM sem_tipos_parametros;
-
--- --------------------------------------------------------
--- Tipos de Eventos del Sistema
--- --------------------------------------------------------
-INSERT INTO sem_tipos_eventos (nombre, categoria, descripcion, severidad) VALUES
-('INICIO_SISTEMA', 'SISTEMA', 'Inicio del sistema', 'INFORMACION'),
-('DETENCION_SISTEMA', 'SISTEMA', 'Detención del sistema', 'INFORMACION'),
-('CAMBIO_CONFIGURACION', 'CONFIGURACION', 'Cambio en la configuración', 'INFORMACION'),
-('ERROR_CONEXION', 'ERROR', 'Error de conexión con dispositivo', 'ERROR'),
-('ERROR_DATOS', 'ERROR', 'Error en datos recibidos', 'ERROR'),
-('ALERTA_VOLTAJE', 'DISPOSITIVO', 'Alerta de voltaje fuera de rango', 'ADVERTENCIA'),
-('ALERTA_CONSUMO', 'DISPOSITIVO', 'Alerta de consumo anormal', 'ADVERTENCIA'),
-('CALCULO_PROMEDIOS', 'SISTEMA', 'Cálculo de promedios completado', 'INFORMACION'),
-('CALCULO_TOTALES', 'SISTEMA', 'Cálculo de totales completado', 'INFORMACION'),
-('VALIDACION_DATOS', 'DATOS', 'Validación de datos completada', 'INFORMACION'),
-('ERROR_CRITICO', 'ERROR', 'Error crítico del sistema', 'CRITICO'),
-('MANTENIMIENTO', 'SISTEMA', 'Tarea de mantenimiento', 'INFORMACION'),
-('ALTA_DISPOSITIVO', 'DISPOSITIVO', 'Dispositivo agregado', 'INFORMACION'),
-('BAJA_DISPOSITIVO', 'DISPOSITIVO', 'Dispositivo eliminado', 'ADVERTENCIA'),
-('ACTUALIZACION_DISPOSITIVO', 'DISPOSITIVO', 'Dispositivo actualizado', 'INFORMACION'),
-('ALTA_GRUPO', 'GRUPO', 'Grupo agregado', 'INFORMACION'),
-('BAJA_GRUPO', 'GRUPO', 'Grupo eliminado', 'ADVERTENCIA'),
-('ACTUALIZACION_GRUPO', 'GRUPO', 'Grupo actualizado', 'INFORMACION'),
-('ALERTA_SEGURIDAD', 'SEGURIDAD', 'Alerta de seguridad', 'ADVERTENCIA');
-
--- --------------------------------------------------------
--- Tipos de Alertas y sus Umbrales
--- --------------------------------------------------------
-INSERT INTO sem_tipos_alertas (nombre, descripcion, nivel_severidad, requiere_accion) VALUES
-('VOLTAJE_ALTO', 'Voltaje por encima del umbral máximo', 'ALTA', TRUE),
-('VOLTAJE_BAJO', 'Voltaje por debajo del umbral mínimo', 'ALTA', TRUE),
-('CONSUMO_EXCESIVO', 'Consumo de energía anormalmente alto', 'MEDIA', TRUE),
-('FACTOR_POTENCIA_BAJO', 'Factor de potencia por debajo del mínimo', 'MEDIA', TRUE),
-('PERDIDA_CONEXION', 'Pérdida de conexión con el dispositivo', 'ALTA', TRUE),
-('ERROR_LECTURA', 'Error en la lectura de datos', 'ALTA', TRUE),
-('CALIDAD_BAJA', 'Baja calidad en los datos recibidos', 'MEDIA', FALSE),
-('DESBALANCE_FASES', 'Desbalance detectado entre fases', 'ALTA', TRUE),
-('VOLTAJE_FUERA_RANGO', 'Voltaje fuera del rango normal de operación', 'ALTA', TRUE),
-('CONSUMO_ANORMAL', 'Consumo de energía anormalmente alto o bajo', 'MEDIA', TRUE),
-('DISPOSITIVO_OFFLINE', 'Dispositivo no ha reportado datos en el tiempo esperado', 'ALTA', TRUE),
-('ERROR_COMUNICACION', 'Errores de comunicación con el dispositivo', 'ALTA', TRUE),
-('CALIDAD_DATOS_BAJA', 'Baja calidad en los datos recibidos', 'MEDIA', FALSE);
-
--- --------------------------------------------------------
--- Umbrales de Alertas
--- --------------------------------------------------------
-INSERT INTO sem_umbrales_alertas (
-    tipo_alerta_id, 
-    umbral_minimo, 
-    umbral_maximo, 
-    porcentaje_variacion, 
-    tiempo_validacion
-)
+INSERT INTO sem_configuracion (tipo_parametro_id, valor, activo, valido_desde) 
 SELECT 
-    id,
+    tp.id,
     CASE 
-        WHEN nombre = 'VOLTAJE_ALTO' THEN 220
-        WHEN nombre = 'VOLTAJE_BAJO' THEN 200
-        WHEN nombre = 'FACTOR_POTENCIA_BAJO' THEN 0.92
-        WHEN nombre = 'VOLTAJE_FUERA_RANGO' THEN 190
-        ELSE NULL
+        WHEN tp.nombre = 'INTERVALO_RECOLECCION' THEN '10'
+        WHEN tp.nombre = 'PRECIO_KWH' THEN '151.85'
+        WHEN tp.nombre = 'ZONA_HORARIA' THEN 'America/Santiago'
+        WHEN tp.nombre = 'UMBRAL_CALIDAD' THEN '0.8'
+        WHEN tp.nombre = 'DIAS_RETENCION' THEN '90'
+        WHEN tp.nombre = 'VOLTAJE_NOMINAL' THEN '220'
+        WHEN tp.nombre = 'MAX_DESVIACION_VOLTAJE' THEN '10'
+        WHEN tp.nombre = 'FACTOR_POTENCIA_MIN' THEN '0.93'
+        WHEN tp.nombre = 'CONFIG_ALERTAS' THEN '{"habilitado": true, "umbrales": {"voltaje": 10, "corriente": 20}}'
     END,
-    CASE 
-        WHEN nombre = 'VOLTAJE_ALTO' THEN 240
-        WHEN nombre = 'VOLTAJE_BAJO' THEN 220
-        WHEN nombre = 'VOLTAJE_FUERA_RANGO' THEN 240
-        ELSE NULL
-    END,
-    CASE 
-        WHEN nombre = 'CONSUMO_EXCESIVO' THEN 20.0
-        WHEN nombre = 'DESBALANCE_FASES' THEN 5.0
-        WHEN nombre = 'CONSUMO_ANORMAL' THEN 25.0
-        ELSE NULL
-    END,
-    CASE 
-        WHEN nombre = 'PERDIDA_CONEXION' THEN 300
-        WHEN nombre = 'ERROR_LECTURA' THEN 60
-        WHEN nombre = 'DISPOSITIVO_OFFLINE' THEN 15
-        WHEN nombre = 'ERROR_COMUNICACION' THEN 5
-        ELSE NULL
-    END
-FROM sem_tipos_alertas;
+    TRUE,
+    CURRENT_TIMESTAMP
+FROM sem_tipos_parametros tp
+WHERE NOT EXISTS (
+    SELECT 1 
+    FROM sem_configuracion sc 
+    WHERE sc.tipo_parametro_id = tp.id 
+    AND sc.activo = TRUE
+);
 
 -- --------------------------------------------------------
--- Registro Inicial de Auditoría
+-- Insertar dispositivo Shelly por defecto
 -- --------------------------------------------------------
-INSERT INTO sem_registro_auditoria (
-    tipo_evento_id,
-    descripcion,
-    detalles
-)
-SELECT 
-    id,
-    'Inicialización del sistema',
-    JSON_OBJECT(
-        'tipo', 'INSTALACION_INICIAL',
-        'timestamp', CURRENT_TIMESTAMP,
-        'version', '1.0.0'
-    )
-FROM sem_tipos_eventos
-WHERE nombre = 'INICIO_SISTEMA';
-
-INSERT INTO sem_grupos (id, nombre, descripcion, activo) 
-SELECT 1, 'Default', 'Grupo por defecto para dispositivos', true
-WHERE NOT EXISTS (SELECT 1 FROM sem_grupos WHERE id = 1);
-
--- Insertar el dispositivo Shelly en la tabla sem_dispositivos
 INSERT INTO sem_dispositivos (
     shelly_id,
     grupo_id,
@@ -165,16 +75,58 @@ INSERT INTO sem_dispositivos (
     fecha_instalacion,
     activo
 ) VALUES (
-    'fce8c0d82d08',  -- ID del dispositivo según el error
-    1,               -- ID del grupo por defecto
+    'fce8c0d82d08',
+    1,
     'Shelly Pro 3EM',
     'Medidor de energía trifásico',
     'Principal',
-    'FC:E8:C0:D8:2D:08',  -- MAC derivada del shelly_id
+    'FC:E8:C0:D8:2D:08',
     'America/Santiago',
     CURRENT_TIMESTAMP,
     true
 ) ON DUPLICATE KEY UPDATE
-    activo = true,
+    grupo_id = VALUES(grupo_id),
+    nombre = VALUES(nombre),
+    descripcion = VALUES(descripcion),
+    ubicacion = VALUES(ubicacion),
+    zona_horaria = VALUES(zona_horaria),
+    activo = VALUES(activo),
     fecha_actualizacion = CURRENT_TIMESTAMP;
+
+-- --------------------------------------------------------
+-- Registro de Control de Calidad Inicial
+-- --------------------------------------------------------
+INSERT INTO sem_control_calidad (
+    shelly_id,
+    inicio_periodo,
+    fin_periodo,
+    lecturas_esperadas,
+    lecturas_recibidas,
+    lecturas_validas,
+    lecturas_alertas,
+    lecturas_error,
+    lecturas_interpoladas,
+    porcentaje_calidad,
+    estado_validacion
+)
+SELECT
+    d.shelly_id,
+    CURRENT_TIMESTAMP,
+    DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 1 HOUR),
+    360, -- Para intervalos de 10 segundos
+    0,
+    0,
+    0,
+    0,
+    0,
+    0.00,
+    'PENDIENTE'
+FROM sem_dispositivos d
+WHERE NOT EXISTS (
+    SELECT 1 
+    FROM sem_control_calidad cc 
+    WHERE cc.shelly_id = d.shelly_id 
+    AND cc.inicio_periodo > DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 1 HOUR)
+);
+
 COMMIT;

@@ -3,47 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor Shelly</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        .device-info {
-            border: 1px solid #ccc;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 5px;
-        }
-    </style>
+    <title>Dashboard Shelly Energy Monitor</title>
+    <link rel="stylesheet" href="./css/index.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Monitor Shelly</h1>
-        
-        <div id="device-status" class="device-info">
-            <h2>Estado del Dispositivo</h2>
-            <p id="status-text">Cargando...</p>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="./images/general/home_white.png" alt="Logo" class="logo">
+                <span class="app-name">Shelly Energy Monitor</span>
+            </div>
+            <h1 class="dashboard-title">Dashboard Shelly Energy Monitor</h1>
         </div>
+    </header>
 
-        <h2>Configuración del Dispositivo</h2>
-        <form id="device-config-form">
-            <div class="form-group">
-                <label for="deviceId">ID del Dispositivo</label>
-                <input type="text" class="form-control" id="deviceId" placeholder="Ingrese el ID del dispositivo" required>
+    <main class="dashboard-container">
+        <div class="cards-grid">
+            <!-- Dashboard de medición eléctrica -->
+            <div class="card">
+                <img src="./images/Iconos Index/electric-generator_2256476.png" alt="Dashboard Icon" class="card-icon">
+                <h2 class="card-title">Dashboard de medición eléctrica</h2>
+                <button class="card-button">Ir a la App</button>
             </div>
-            <div class="form-group">
-                <label for="config">Configuración</label>
-                <textarea class="form-control" id="config" rows="3" placeholder="Ingrese la configuración JSON"></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary">Actualizar Configuración</button>
-        </form>
-    </div>
 
-    <script src="js/main.js"></script>
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+            <!-- Consumo Eléctrico -->
+            <div class="card">
+                <img src="./images/Iconos Index/power-meter_5557246.png" alt="Energy Consumption Icon" class="card-icon">
+                <h2 class="card-title">Consumo Eléctrico</h2>
+                <button class="card-button">Ir a la App</button>
+            </div>
+
+            <!-- Parámetros medición eléctrica -->
+            <div class="card">
+                <img src="./images/Iconos Index/parametros.png" alt="Parameters Icon" class="card-icon">
+                <h2 class="card-title">Parámetros medición eléctrica</h2>
+                <button class="card-button">Ir a la App</button>
+            </div>
+
+            <!-- Grupos de medición eléctrica -->
+            <div class="card">
+                <img src="./images/Iconos Index/speedometer_3622517.png" alt="Groups Icon" class="card-icon">
+                <h2 class="card-title">Grupos de medición eléctrica</h2>
+                <button class="card-button">Ir a la App</button>
+            </div>
+        </div>
+    </main>
 </body>
 </html>
