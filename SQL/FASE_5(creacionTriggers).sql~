@@ -1,0 +1,86 @@
+create definer = root@localhost trigger trg_auditoria_dispositivos
+    after insert
+    on sem_dispositivos
+    for each row
+BEGIN
+    INSERT INTO sem_auditoria_detallada (
+        tipo_operacion,
+        tabla_afectada,
+        registro_id,
+        datos_nuevos
+    )
+    VALUES (
+               'INSERT',
+               'sem_dispositivos',
+               NEW.shelly_id,
+               JSON_OBJECT(
+                       'shelly_id', NEW.shelly_id,
+                       'grupo_id', NEW.grupo_id,
+                       'nombre', NEW.nombre,
+                       'activo', NEW.activo
+               )
+           );
+END;
+
+
+create definer = root@localhost trigger sem_validar_medicion_before_insert
+    before insert
+    on sem_mediciones
+    for each row
+BEGIN
+    DECLARE v_calidad_voltaje VARCHAR(10);
+    DECLARE v_calidad_corriente VARCHAR(10);
+    DECLARE v_calidad_fp VARCHAR(10);
+    DECLARE v_calidad_freq VARCHAR(10);
+    DECLARE v_peor_calidad VARCHAR(10) DEFAULT 'NORMAL';
+    DECLARE v_detalles JSON;
+
+    -- Validar cada parámetro
+    SET v_calidad_voltaje = sem_validar_voltaje(NEW.voltaje);
+    SET v_calidad_corriente = sem_validar_corriente(NEW.corriente);
+    SET v_calidad_fp = sem_validar_factor_potencia(NEW.factor_potencia);
+    SET v_calidad_freq = sem_validar_frecuencia(NEW.frecuencia);
+
+    -- Determinar la peor calidad
+    IF v_calidad_voltaje = 'ERROR' OR v_calidad_corriente = 'ERROR' OR
+       v_calidad_fp = 'ERROR' OR v_calidad_freq = 'ERROR' THEN
+        SET v_peor_calidad = 'ERROR';
+    ELSEIF v_calidad_voltaje = 'ALERTA' OR v_calidad_corriente = 'ALERTA' OR
+           v_calidad_fp = 'ALERTA' OR v_calidad_freq = 'ALERTA' THEN
+        SET v_peor_calidad = 'ALERTA';
+    END IF;
+
+    -- Crear objeto JSON con detalles de validación
+    SET v_detalles = JSON_OBJECT(
+            'voltaje', JSON_OBJECT('valor', NEW.voltaje, 'calidad', v_calidad_voltaje),
+            'corriente', JSON_OBJECT('valor', NEW.corriente, 'calidad', v_calidad_corriente),
+            'factor_potencia', JSON_OBJECT('valor', NEW.factor_potencia, 'calidad', v_calidad_fp),
+            'frecuencia', JSON_OBJECT('valor', NEW.frecuencia, 'calidad', v_calidad_freq)
+                     );
+
+    -- Actualizar la medición con la calidad y detalles
+    SET NEW.calidad_lectura = v_peor_calidad;
+    SET NEW.validacion_detalle = v_detalles;
+
+    -- Si hay problemas, registrar en errores_medicion
+    IF v_peor_calidad IN ('ALERTA', 'ERROR') THEN
+        INSERT INTO sem_errores_medicion (
+            shelly_id,
+            timestamp_utc,
+            tipo_error,
+            nivel_error,
+            descripcion,
+            datos_error
+        ) VALUES (
+                     NEW.shelly_id,
+                     NEW.timestamp_utc,
+                     'DATO_INVALIDO',
+                     v_peor_calidad,
+                     CASE v_peor_calidad
+                         WHEN 'ALERTA' THEN 'Medición fuera de rangos normales'
+                         ELSE 'Medición con valores inválidos'
+                         END,
+                     v_detalles
+                 );
+    END IF;
+END;
