@@ -1,0 +1,147 @@
+create index idx_auditoria_fecha
+    on sem_auditoria_detallada (fecha_operacion);
+
+create index idx_auditoria_tabla
+    on sem_auditoria_detallada (tabla_afectada);
+
+create index idx_auditoria_tipo
+    on sem_auditoria_detallada (tipo_operacion);
+
+create index tipo_parametro_id
+    on sem_configuracion (tipo_parametro_id);
+
+create index idx_calidad_dispositivo
+    on sem_control_calidad (shelly_id);
+
+create index idx_calidad_estado
+    on sem_control_calidad (estado_validacion);
+
+create index idx_calidad_periodo
+    on sem_control_calidad (inicio_periodo, fin_periodo);
+
+create index idx_dispositivo_activo
+    on sem_dispositivos (activo);
+
+create index idx_dispositivo_grupo
+    on sem_dispositivos (grupo_id);
+
+create index idx_errores_dispositivo
+    on sem_errores_medicion (shelly_id);
+
+create index idx_errores_nivel
+    on sem_errores_medicion (nivel_error);
+
+create index idx_errores_resuelto
+    on sem_errores_medicion (resuelto);
+
+create index idx_errores_timestamp
+    on sem_errores_medicion (timestamp_utc);
+
+create index idx_errores_tipo
+    on sem_errores_medicion (tipo_error);
+
+create index idx_estado_dispositivo
+    on sem_estado_dispositivo (shelly_id);
+
+create index idx_estado_timestamp
+    on sem_estado_dispositivo (timestamp_utc);
+
+create index idx_periodo_completo
+    on sem_grupo_promedios (periodo_inicio, periodo_fin, periodo_tipo);
+
+create index idx_periodo_completo
+    on sem_grupo_totales (periodo_inicio, periodo_fin, periodo_tipo);
+
+create index grupo_anterior_id
+    on sem_historial_grupo_dispositivo (grupo_anterior_id);
+
+create index grupo_nuevo_id
+    on sem_historial_grupo_dispositivo (grupo_nuevo_id);
+
+create index idx_historial_dispositivo
+    on sem_historial_grupo_dispositivo (shelly_id);
+
+create index idx_historial_fecha
+    on sem_historial_grupo_dispositivo (fecha_cambio);
+
+create index registro_auditoria_id
+    on sem_historial_grupo_dispositivo (registro_auditoria_id);
+
+create index idx_mediciones_calidad
+    on sem_mediciones (calidad_lectura);
+
+create index idx_mediciones_completo
+    on sem_mediciones (shelly_id, timestamp_utc, calidad_lectura);
+
+create index idx_mediciones_dispositivo
+    on sem_mediciones (shelly_id);
+
+create index idx_mediciones_timestamp
+    on sem_mediciones (timestamp_utc);
+
+create index idx_calidad
+    on sem_promedios_dia (calidad_datos);
+
+create index idx_fecha_local
+    on sem_promedios_dia (fecha_local);
+
+
+create index idx_calidad
+    on sem_promedios_hora (calidad_datos);
+
+create index idx_hora_local
+    on sem_promedios_hora (hora_local);
+
+create index idx_año_mes
+    on sem_promedios_mes (año, mes);
+
+create index idx_calidad
+    on sem_promedios_mes (calidad_datos);
+
+create index grupo_id
+    on sem_registro_alertas (grupo_id);
+
+create index idx_estado_fecha
+    on sem_registro_alertas (estado, fecha_deteccion);
+
+create index shelly_id
+    on sem_registro_alertas (shelly_id);
+
+create index tipo_alerta_id
+    on sem_registro_alertas (tipo_alerta_id);
+
+create index idx_auditoria_dispositivo
+    on sem_registro_auditoria (shelly_id);
+
+create index idx_auditoria_grupo
+    on sem_registro_auditoria (grupo_id);
+
+create index idx_auditoria_timestamp
+    on sem_registro_auditoria (fecha_evento);
+
+create index idx_auditoria_tipo_evento
+    on sem_registro_auditoria (tipo_evento_id);
+
+create index idx_scoring_dispositivo
+    on sem_scoring_mediciones (shelly_id);
+
+create index idx_scoring_fecha
+    on sem_scoring_mediciones (timestamp_utc);
+
+create index idx_fecha_local
+    on sem_totales_dia (fecha_local);
+
+create index idx_calidad
+    on sem_totales_hora (calidad_datos);
+
+create index idx_hora_local
+    on sem_totales_hora (hora_local);
+
+create index idx_timestamp_range
+    on sem_totales_hora (hora_utc, hora_local);
+
+create index idx_totales_hora_completo
+    on sem_totales_hora (shelly_id, hora_utc, energia_activa_total);
+
+create index idx_año_mes
+    on sem_totales_mes (año, mes);
