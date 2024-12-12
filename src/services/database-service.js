@@ -1,18 +1,23 @@
 const mysql = require('mysql2/promise');
-const config = require('../../config/config-loader');
+const { DateTime } = require('luxon'); // Agregamos importación de Luxon
+const config = require('../config/config-loader');
+const { ValidationError, DatabaseError, NotFoundError } = require('../utils/errors');
+const transformUtils = require('../utils/transformUtils');
+
 
 class DatabaseService {
     constructor() {
         this.pool = null;
-        this.measurementConfig = null;
         this.initialized = false;
         this.connected = false;
+        this.config = config.getConfig();
+        this.timezone = this.config.measurement.zona_horaria || 'America/Santiago';
     }
 
     async initialize() {
         if (this.initialized) return;
 
-        const { database: dbConfig } = config.getConfig();
+        const { database: dbConfig } = this.config;
         this.pool = mysql.createPool({
             host: dbConfig.host,
             port: dbConfig.port,
@@ -27,270 +32,390 @@ class DatabaseService {
             keepAliveInitialDelay: 0
         });
 
-        await this.loadMeasurementConfig();
+        await this.validateDatabaseSchema();
         this.initialized = true;
     }
 
-    validateNumericField(value, fieldName, defaultValue = 0) {
-        if (value === null || value === undefined) {
-            console.warn(`Field ${fieldName} is null/undefined, using default: ${defaultValue}`);
-            return defaultValue;
-        }
-        
-        const numValue = Number(value);
-        if (isNaN(numValue)) {
-            console.warn(`Field ${fieldName} invalid number: ${value}, using default: ${defaultValue}`);
-            return defaultValue;
-        }
-        
-        return numValue;
-    }
+    async validateDatabaseSchema() {
+        const requiredTables = [
+            'sem_dispositivos',
+            'sem_grupos',
+            'sem_mediciones',
+            'sem_estado_dispositivo',
+            'sem_control_calidad',
+            'sem_promedios_hora',
+            'sem_promedios_dia',
+            'sem_promedios_mes',
+            'sem_totales_hora',
+            'sem_totales_dia',
+            'sem_totales_mes'
+        ];
 
-    async loadMeasurementConfig() {
-        if (!this.pool) await this.initialize();
+        const [tables] = await this.pool.query(`
+            SELECT TABLE_NAME 
+            FROM information_schema.TABLES 
+            WHERE TABLE_SCHEMA = DATABASE()
+        `);
 
-        try {
-            const [rows] = await this.pool.query('SELECT parameter_name, parameter_value FROM energy_measurement_config');
-            this.measurementConfig = rows.reduce((config, row) => ({
-                ...config,
-                [row.parameter_name]: row.parameter_value
-            }), {});
-            console.log('✅ Measurement config loaded');
-        } catch (error) {
-            console.error('❌ Error loading measurement config:', error);
-            throw error;
-        }
-    }
+        const existingTables = tables.map(t => t.TABLE_NAME);
+        const missingTables = requiredTables.filter(t => !existingTables.includes(t));
 
-    async testConnection() {
-        try {
-            if (!this.pool) await this.initialize();
-            const conn = await this.pool.getConnection();
-            await conn.query('SELECT 1');
-            conn.release();
-            this.connected = true;
-            return true;
-        } catch (error) {
-            console.error('❌ Database connection error:', error);
-            this.connected = false;
-            return false;
+        if (missingTables.length > 0) {
+            throw new Error(`Missing required tables: ${missingTables.join(', ')}`);
         }
     }
 
     async insertDeviceStatus(data) {
-        if (!this.pool) await this.initialize();
         if (!this.validateDeviceData(data)) {
-            throw new Error('Invalid device data structure');
+            throw new ValidationError('Invalid device data structure');
         }
 
         const conn = await this.pool.getConnection();
         try {
             await conn.beginTransaction();
 
-            const currentTimestamp = data.device_status.sys?.unixtime ? 
-                new Date(data.device_status.sys.unixtime * 1000) : 
-                new Date();
+            const timestamp = this.getTimestamp(data);
+            const device = await this.ensureDeviceExists(conn, data);
 
-            const emData = this.prepareEnergyMeterData(data.device_status['em:0'] || {}, currentTimestamp);
-            const [emResult] = await conn.query('INSERT INTO energy_meter SET ?', emData);
-
-            const tempData = data.device_status['temperature:0'] || {};
-            const [tempResult] = await conn.query('INSERT INTO temperature SET ?', {
-                celsius: this.validateNumericField(tempData.tC, 'temperature_celsius'),
-                fahrenheit: this.validateNumericField(tempData.tF, 'temperature_fahrenheit')
-            });
-
+            const emData = data.device_status['em:0'] || {};
             const emdData = data.device_status['emdata:0'] || {};
-            const [emdataResult] = await conn.query('INSERT INTO energy_meter_data SET ?', {
-                a_total_act_energy: this.validateNumericField(emdData.a_total_act_energy),
-                a_total_act_ret_energy: this.validateNumericField(emdData.a_total_act_ret_energy),
-                b_total_act_energy: this.validateNumericField(emdData.b_total_act_energy),
-                b_total_act_ret_energy: this.validateNumericField(emdData.b_total_act_ret_energy),
-                c_total_act_energy: this.validateNumericField(emdData.c_total_act_energy),
-                c_total_act_ret_energy: this.validateNumericField(emdData.c_total_act_ret_energy),
-                total_act_energy: this.validateNumericField(emdData.total_act),
-                total_act_ret_energy: this.validateNumericField(emdData.total_act_ret)
+
+            // Insertar mediciones por fase
+            const phases = ['a', 'b', 'c'];
+            for (const phase of phases) {
+                const phaseKey = phase.toLowerCase();
+                const measurementData = {
+                    shelly_id: device.shelly_id,
+                    timestamp_local: timestamp,
+                    fase: phase,
+                    voltaje: parseFloat(emData[`${phaseKey}_voltage`] || 0),
+                    corriente: parseFloat(emData[`${phaseKey}_current`] || 0),
+                    potencia_activa: parseFloat(emData[`${phaseKey}_act_power`] || 0),
+                    potencia_aparente: parseFloat(emData[`${phaseKey}_aprt_power`] || 0),
+                    factor_potencia: parseFloat(emData[`${phaseKey}_pf`] || 0),
+                    frecuencia: parseFloat(emData.c_freq || 50),
+                    // Actualización: usar datos de energía del objeto emdata:0
+                    energia_activa: parseFloat(emdData[`${phaseKey}_total_act_energy`] || 0),
+                    energia_reactiva: parseFloat(emdData[`${phaseKey}_total_act_ret_energy`] || 0),
+                    calidad_lectura: this.evaluateReadingQuality(data),
+                    intervalo_segundos: 10
+                };
+
+                measurementData.validacion_detalle = this.generateValidationDetails({
+                    voltaje: measurementData.voltaje,
+                    corriente: measurementData.corriente,
+                    factor_potencia: measurementData.factor_potencia
+                });
+
+                await conn.query('INSERT INTO sem_mediciones SET ?', measurementData);
+            }
+
+            // Insertar medición total con datos actualizados
+            const totalMeasurement = {
+                shelly_id: device.shelly_id,
+                timestamp_local: timestamp,
+                fase: 'TOTAL',
+                voltaje: ((parseFloat(emData.a_voltage || 0) +
+                    parseFloat(emData.b_voltage || 0) +
+                    parseFloat(emData.c_voltage || 0)) / 3).toFixed(2),
+                corriente: parseFloat(emData.total_current || 0),
+                potencia_activa: parseFloat(emData.total_act_power || 0),
+                potencia_aparente: parseFloat(emData.total_aprt_power || 0),
+                factor_potencia: this.calculateTotalPowerFactor(emData),
+                frecuencia: parseFloat(emData.c_freq || 50),
+                // Actualización: usar datos totales de energía del objeto emdata:0
+                energia_activa: parseFloat(emdData.total_act || 0),
+                energia_reactiva: parseFloat(emdData.total_act_ret || 0),
+                calidad_lectura: this.evaluateReadingQuality(data),
+                intervalo_segundos: 10
+            };
+
+            totalMeasurement.validacion_detalle = this.generateValidationDetails({
+                voltaje: totalMeasurement.voltaje,
+                corriente: totalMeasurement.corriente,
+                factor_potencia: totalMeasurement.factor_potencia
             });
 
-            const [deviceResult] = await conn.query('INSERT INTO device_status SET ?', {
-                code: data.device_status.code,
-                em0_id: emResult.insertId,
-                temperature0_id: tempResult.insertId,
-                emdata0_id: emdataResult.insertId,
-                updated: currentTimestamp,
-                cloud_connected: Boolean(data.device_status.cloud?.connected),
-                wifi_sta_ip: data.device_status.wifi?.sta_ip,
-                wifi_status: data.device_status.wifi?.status,
-                wifi_ssid: data.device_status.wifi?.ssid,
-                wifi_rssi: this.validateNumericField(data.device_status.wifi?.rssi),
-                sys_mac: data.device_status.sys?.mac,
-                sys_restart_required: Boolean(data.device_status.sys?.restart_required),
-                sys_time: data.device_status.sys?.time,
-                sys_timestamp: currentTimestamp,
-                sys_uptime: this.validateNumericField(data.device_status.sys?.uptime),
-                sys_ram_size: this.validateNumericField(data.device_status.sys?.ram_size),
-                sys_ram_free: this.validateNumericField(data.device_status.sys?.ram_free),
-                sys_fs_size: this.validateNumericField(data.device_status.sys?.fs_size),
-                sys_fs_free: this.validateNumericField(data.device_status.sys?.fs_free),
-                sys_cfg_rev: this.validateNumericField(data.device_status.sys?.cfg_rev),
-                sys_kvs_rev: this.validateNumericField(data.device_status.sys?.kvs_rev),
-                sys_schedule_rev: this.validateNumericField(data.device_status.sys?.schedule_rev),
-                sys_webhook_rev: this.validateNumericField(data.device_status.sys?.webhook_rev),
-                sys_reset_reason: this.validateNumericField(data.device_status.sys?.reset_reason)
+            await conn.query('INSERT INTO sem_mediciones SET ?', totalMeasurement);
+
+            // Actualizar control de calidad
+            await this.updateQualityControl(conn, device.shelly_id, timestamp, {
+                calidadLectura: this.evaluateReadingQuality(data),
+                voltajePromedio: totalMeasurement.voltaje,
+                corrienteTotal: totalMeasurement.corriente
             });
 
-            await this.updateMeasurementQualityControl(conn, emResult.insertId, currentTimestamp);
             await conn.commit();
 
-            return { 
-                success: true, 
-                deviceId: deviceResult.insertId,
-                timestamp: currentTimestamp,
-                readings: {
-                    energy_meter_id: emResult.insertId,
-                    temperature_id: tempResult.insertId,
-                    emdata_id: emdataResult.insertId
+            return {
+                success: true,
+                deviceId: device.shelly_id,
+                timestamp: timestamp,
+                measurements: {
+                    total: totalMeasurement,
+                    quality: await this.getQualityStatus(device.shelly_id, timestamp)
                 }
             };
+
         } catch (error) {
             await conn.rollback();
-            console.error('Error in insertDeviceStatus:', error);
-            throw error;
+            console.error('Error in insertDeviceStatus:', {
+                error: error.message,
+                stack: error.stack,
+                deviceId: data?.device_status?.id
+            });
+            throw new DatabaseError('Error inserting device status', error);
         } finally {
             conn.release();
         }
     }
 
+    async updateDeviceState(conn, shellyId, data) {
+        const deviceStatus = data.device_status;
+        const stateData = {
+            shelly_id: shellyId,
+            timestamp_local: new Date(),
+            estado_conexion: deviceStatus.cloud?.connected ? 'CONECTADO' : 'DESCONECTADO',
+            rssi_wifi: deviceStatus.wifi?.rssi || null,
+            direccion_ip: deviceStatus.wifi?.sta_ip || null,
+            temperatura_celsius: deviceStatus['temperature:0']?.tC || null,
+            uptime_segundos: deviceStatus.sys?.uptime || null
+        };
+
+        await conn.query('INSERT INTO sem_estado_dispositivo SET ?', stateData);
+    }
+
+    async updateQualityControl(conn, shellyId, timestamp, measurementData) {
+        const hourStart = new Date(timestamp);
+        hourStart.setMinutes(0, 0, 0);
+
+        const hourEnd = new Date(hourStart);
+        hourEnd.setHours(hourStart.getHours() + 1);
+
+        const [existingControl] = await conn.query(
+            `SELECT * FROM sem_control_calidad 
+         WHERE shelly_id = ? 
+         AND inicio_periodo = ?`,
+            [shellyId, hourStart]
+        );
+
+        if (existingControl.length === 0) {
+            // Crear nuevo registro de control de calidad
+            const controlData = {
+                shelly_id: shellyId,
+                inicio_periodo: hourStart,
+                fin_periodo: hourEnd,
+                lecturas_esperadas: 360, // 10 segundos = 360 lecturas por hora
+                lecturas_recibidas: 1,
+                lecturas_validas: measurementData.calidadLectura === 'NORMAL' ? 1 : 0,
+                lecturas_alertas: measurementData.calidadLectura === 'ALERTA' ? 1 : 0,
+                lecturas_error: measurementData.calidadLectura === 'ERROR' ? 1 : 0,
+                lecturas_interpoladas: 0,
+                porcentaje_calidad: 100,
+                estado_validacion: 'PENDIENTE',
+                detalles_validacion: JSON.stringify({
+                    ultima_lectura: {
+                        timestamp: timestamp,
+                        voltaje_promedio: measurementData.voltajePromedio,
+                        corriente_total: measurementData.corrienteTotal
+                    }
+                })
+            };
+
+            await conn.query('INSERT INTO sem_control_calidad SET ?', controlData);
+        } else {
+            // Actualizar registro existente
+            const control = existingControl[0];
+            const updateData = {
+                lecturas_recibidas: control.lecturas_recibidas + 1,
+                lecturas_validas: control.lecturas_validas + (measurementData.calidadLectura === 'NORMAL' ? 1 : 0),
+                lecturas_alertas: control.lecturas_alertas + (measurementData.calidadLectura === 'ALERTA' ? 1 : 0),
+                lecturas_error: control.lecturas_error + (measurementData.calidadLectura === 'ERROR' ? 1 : 0)
+            };
+
+            updateData.porcentaje_calidad =
+                (updateData.lecturas_validas / control.lecturas_esperadas) * 100;
+
+            await conn.query(
+                `UPDATE sem_control_calidad
+                 SET ?
+                 WHERE shelly_id = ? AND inicio_periodo = ?`,
+                [updateData, shellyId, hourStart]
+            );
+        }
+    }
+
+
+    evaluateReadingQuality(data) {
+        if (!data.device_status || !data.device_status.reading_quality) {
+            return 'NORMAL';
+        }
+
+        const qualityMap = {
+            'GOOD': 'NORMAL',
+            'WARN': 'ALERTA',
+            'BAD': 'ERROR'
+        };
+
+        return qualityMap[data.device_status.reading_quality] || 'NORMAL';
+    }
+
+    generateValidationDetails(data) {
+        const validationDetails = {
+            voltaje: {
+                valor: data.voltaje,
+                calidad: this.validateVoltage(data.voltaje)
+            },
+            corriente: {
+                valor: data.corriente,
+                calidad: this.validateCurrent(data.corriente)
+            }
+        };
+
+        if (data.factor_potencia !== undefined) {
+            validationDetails.factor_potencia = {
+                valor: data.factor_potencia,
+                calidad: this.validatePowerFactor(data.factor_potencia)
+            };
+        }
+
+        return JSON.stringify(validationDetails);
+    }
+
+    validateVoltage(voltage) {
+        const minVoltage = 198; // 220V -10%
+        const maxVoltage = 242; // 220V +10%
+
+        if (voltage === null || voltage === undefined || voltage === 0) {
+            return 'ERROR';
+        }
+
+        if (voltage >= minVoltage && voltage <= maxVoltage) {
+            return 'NORMAL';
+        }
+
+        if (voltage > 0 && (voltage < minVoltage || voltage > maxVoltage)) {
+            return 'ALERTA';
+        }
+
+        return 'ERROR';
+    }
+
+    validateCurrent(current) {
+        if (current === null || current === undefined) {
+            return 'ERROR';
+        }
+
+        if (current >= 0 && current <= 100) {
+            return 'NORMAL';
+        }
+
+        if (current > 100) {
+            return 'ALERTA';
+        }
+
+        return 'ERROR';
+    }
+
+    validatePowerFactor(pf) {
+        if (pf === null || pf === undefined) {
+            return 'ERROR';
+        }
+
+        if (Math.abs(pf) >= 0.93) {
+            return 'NORMAL';
+        }
+
+        if (Math.abs(pf) >= 0.85) {
+            return 'ALERTA';
+        }
+
+        return 'ERROR';
+    }
+
+    calculateTotalPowerFactor(emData) {
+        if (!emData.total_act_power || !emData.total_aprt_power) return 0;
+        return emData.total_act_power / emData.total_aprt_power;
+    }
+
     validateDeviceData(data) {
-        if (!data?.device_status) {
-            console.error('Missing device_status object');
+        if (!data || !data.device_status) {
             return false;
         }
-        return true;
+
+        const requiredFields = ['id', 'em:0', 'sys'];
+        return requiredFields.every(field => data.device_status[field] !== undefined);
     }
 
-    prepareEnergyMeterData(emData, timestamp) {        
-        return {
-            fase_a_act_power: this.validateNumericField(emData.a_act_power),
-            fase_a_aprt_power: this.validateNumericField(emData.a_aprt_power),
-            fase_a_current: this.validateNumericField(emData.a_current),
-            fase_a_freq: this.validateNumericField(emData.a_freq),
-            fase_a_pf: this.validateNumericField(emData.a_pf),
-            fase_a_voltage: this.validateNumericField(emData.a_voltage),
-            fase_b_act_power: this.validateNumericField(emData.b_act_power),
-            fase_b_aprt_power: this.validateNumericField(emData.b_aprt_power),
-            fase_b_current: this.validateNumericField(emData.b_current),
-            fase_b_freq: this.validateNumericField(emData.b_freq),
-            fase_b_pf: this.validateNumericField(emData.b_pf),
-            fase_b_voltage: this.validateNumericField(emData.b_voltage),
-            fase_c_act_power: this.validateNumericField(emData.c_act_power),
-            fase_c_aprt_power: this.validateNumericField(emData.c_aprt_power),
-            fase_c_current: this.validateNumericField(emData.c_current),
-            fase_c_freq: this.validateNumericField(emData.c_freq),
-            fase_c_pf: this.validateNumericField(emData.c_pf),
-            fase_c_voltage: this.validateNumericField(emData.c_voltage),
-            total_act_power: this.validateNumericField(emData.total_act_power),
-            total_aprt_power: this.validateNumericField(emData.total_aprt_power),
-            total_current: this.validateNumericField(emData.total_current),
-            measurement_timestamp: timestamp,
-            interval_seconds: 10,
-            reading_quality: 'GOOD',
-            readings_count: 1,
-            user_calibrated_phases: Array.isArray(emData.user_calibrated_phase) && emData.user_calibrated_phase.length > 0
-        };
-    }
+    async ensureDeviceExists(conn, data) {
+        const deviceId = data.device_status.id;
+        const [rows] = await conn.query(
+            'SELECT * FROM sem_dispositivos WHERE shelly_id = ?',
+            [deviceId]
+        );
 
-    async updateMeasurementQualityControl(conn, energyMeterId, timestamp) {
-        try {
-            const startTime = new Date(timestamp);
-            startTime.setHours(startTime.getHours() - 1);
-            
-            const [rows] = await conn.query(`
-                SELECT 
-                    COUNT(*) as total_readings,
-                    COUNT(CASE WHEN reading_quality = 'GOOD' THEN 1 END) as good_readings,
-                    COUNT(CASE WHEN reading_quality = 'INTERPOLATED' THEN 1 END) as interpolated_readings,
-                    MIN(measurement_timestamp) as start_timestamp,
-                    MAX(measurement_timestamp) as end_timestamp
-                FROM energy_meter
-                WHERE measurement_timestamp BETWEEN ? AND ?
-            `, [startTime, timestamp]);
-
-            if (rows[0].total_readings > 0) {
-                const { total_readings, good_readings, interpolated_readings, start_timestamp, end_timestamp } = rows[0];
-                const expectedReadings = Math.floor((timestamp - startTime) / (parseInt(this.measurementConfig?.intervalo_medicion || 10) * 1000));
-                const missingIntervals = Math.max(0, expectedReadings - total_readings);
-                const qualityScore = good_readings / expectedReadings;
-
-                await conn.query(`
-                    INSERT INTO measurement_quality_control 
-                    (energy_meter_id, start_timestamp, end_timestamp, expected_readings, 
-                     actual_readings, missing_intervals, interpolated_readings, quality_score)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                    actual_readings = VALUES(actual_readings),
-                    missing_intervals = VALUES(missing_intervals),
-                    interpolated_readings = VALUES(interpolated_readings),
-                    quality_score = VALUES(quality_score)
-                `, [energyMeterId, start_timestamp, end_timestamp, expectedReadings, 
-                    total_readings, missingIntervals, interpolated_readings, qualityScore]);
-            }
-        } catch (error) {
-            console.error('Error updating measurement quality control:', error);
-            throw error;
+        if (!rows || rows.length === 0) {
+            throw new NotFoundError(`Device ${deviceId} not found in database`);
         }
+
+        return rows[0];
+    }
+
+    /**
+     * Convierte el timestamp unix a hora local
+     * @param {Object} data - Datos del dispositivo
+     * @returns {Date} Fecha en hora local
+     */
+    getTimestamp(data) {
+        let timestamp;
+
+        if (data.device_status.sys?.unixtime) {
+            // Convertir unixtime (segundos) a milisegundos y crear objeto DateTime
+            const utcDateTime = DateTime.fromMillis(data.device_status.sys.unixtime * 1000)
+                .setZone('UTC');
+
+            // Convertir a la zona horaria local configurada
+            const localDateTime = utcDateTime.setZone(this.timezone);
+
+            // Verificar si la conversión fue exitosa
+            if (!localDateTime.isValid) {
+                console.error('Error converting timestamp:', localDateTime.invalidReason);
+                // Si hay error, usar la hora actual local
+                timestamp = DateTime.local().setZone(this.timezone).toJSDate();
+            } else {
+                timestamp = localDateTime.toJSDate();
+            }
+        } else {
+            // Si no hay unixtime, usar la hora actual en la zona horaria configurada
+            timestamp = DateTime.local().setZone(this.timezone).toJSDate();
+        }
+
+        console.log('Timestamp conversion:', {
+            original_unixtime: data.device_status.sys?.unixtime,
+            converted_local: timestamp,
+            timezone: this.timezone
+        });
+
+        return timestamp;
     }
 
     async getLatestStatus() {
-        if (!this.pool) await this.initialize();
-        
-        try {
-            const [rows] = await this.pool.query(`
-                SELECT 
-                    ds.*, em.*, t.*, emd.*,
-                    ds.id as device_status_id,
-                    em.id as energy_meter_id,
-                    t.id as temperature_id,
-                    emd.id as emdata_id
-                FROM device_status ds
-                LEFT JOIN energy_meter em ON ds.em0_id = em.id
-                LEFT JOIN temperature t ON ds.temperature0_id = t.id
-                LEFT JOIN energy_meter_data emd ON ds.emdata0_id = emd.id
-                ORDER BY ds.sys_timestamp DESC
-                LIMIT 1
-            `);
-            return rows[0] || null;
-        } catch (error) {
-            console.error('Error getting latest status:', error);
-            throw error;
-        }
-    }
+        const [rows] = await this.pool.query(`
+            SELECT m.*, d.nombre as device_name, g.nombre as group_name,
+                   ed.temperatura_celsius, ed.rssi_wifi
+            FROM sem_mediciones m
+            JOIN sem_dispositivos d ON m.shelly_id = d.shelly_id
+            JOIN sem_grupos g ON d.grupo_id = g.id
+            JOIN sem_estado_dispositivo ed ON m.shelly_id = ed.shelly_id
+            WHERE m.fase = 'TOTAL'
+            AND m.timestamp_local = (
+                SELECT MAX(timestamp_local) 
+                FROM sem_mediciones 
+                WHERE shelly_id = m.shelly_id
+            )
+        `);
 
-    async getHistory(hours = 24) {
-        if (!this.pool) await this.initialize();
-        
-        try {
-            const [rows] = await this.pool.query(`
-                SELECT 
-                    ds.sys_timestamp, 
-                    em.total_act_power, 
-                    em.total_current, 
-                    em.reading_quality,
-                    t.celsius, 
-                    emd.total_act_energy
-                FROM device_status ds
-                LEFT JOIN energy_meter em ON ds.em0_id = em.id
-                LEFT JOIN temperature t ON ds.temperature0_id = t.id
-                LEFT JOIN energy_meter_data emd ON ds.emdata0_id = emd.id
-                WHERE ds.sys_timestamp >= NOW() - INTERVAL ? HOUR
-                    AND em.reading_quality = 'GOOD'
-                ORDER BY ds.sys_timestamp ASC
-            `, [hours]);
-            return rows;
-        } catch (error) {
-            console.error('Error getting history:', error);
-            throw error;
-        }
+        return transformUtils.transformApiResponse(rows);
     }
 
     async close() {
@@ -299,9 +424,32 @@ class DatabaseService {
             this.pool = null;
             this.initialized = false;
             this.connected = false;
-            console.log('✅ Database connections closed');
         }
     }
+
+    async testConnection() {
+        try {
+            if (!this.pool) await this.initialize();
+            await this.pool.query('SELECT 1');
+            this.connected = true;
+            return true;
+        } catch (error) {
+            this.connected = false;
+            throw new DatabaseError('Database connection test failed', error);
+        }
+    }
+
+    async getQualityStatus(deviceId, timestamp) {
+        const [qualityRows] = await this.pool.query(
+            `SELECT * FROM sem_control_calidad 
+         WHERE shelly_id = ? 
+         AND inicio_periodo <= ? 
+         AND fin_periodo >= ?`,
+            [deviceId, timestamp, timestamp]
+        );
+        return qualityRows[0] || null;
+    }
+
 }
 
 module.exports = new DatabaseService();
