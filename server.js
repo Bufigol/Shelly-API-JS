@@ -5,6 +5,7 @@ const ShellyCollector = require('./collectors/shelly-collector');
 const databaseService = require('./src/services/database-service');
 const energyAveragesService = require('./src/services/energy-averages-service');
 const totalEnergyService = require('./src/services/total-energy-service');
+const deviceRoutes = require('./src/routes/deviceRoutes');
 
 class Server {
     constructor() {
@@ -52,6 +53,7 @@ class Server {
             res.json(status);
         }));
 
+        this.app.use('/api/devices', deviceRoutes);
         // Add other routes here...
     }
 
