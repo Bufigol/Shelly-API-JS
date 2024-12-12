@@ -1,0 +1,70 @@
+alter table sem_configuracion
+    add constraint sem_configuracion_ibfk_1
+        foreign key (tipo_parametro_id) references sem_tipos_parametros (id);
+
+alter table sem_errores_medicion
+    add constraint sem_errores_medicion_ibfk_1
+        foreign key (shelly_id) references sem_dispositivos (shelly_id);
+
+alter table sem_estadisticas_calidad
+    add constraint idx_fecha_periodo
+        unique (fecha_analisis, periodo_tipo);
+
+alter table sem_estado_dispositivo
+    add constraint sem_estado_dispositivo_ibfk_1
+        foreign key (shelly_id) references sem_dispositivos (shelly_id);
+
+alter table sem_grupo_promedios
+    add constraint idx_grupo_periodo
+        unique (grupo_id, periodo_tipo, periodo_inicio),
+    add constraint sem_grupo_promedios_ibfk_1
+        foreign key (grupo_id) references sem_grupos (id);
+
+alter table sem_grupo_totales
+    add constraint idx_grupo_periodo
+        unique (grupo_id, periodo_tipo, periodo_inicio),
+    add constraint sem_grupo_totales_ibfk_1
+        foreign key (grupo_id) references sem_grupos (id);
+
+alter table sem_historial_grupo_dispositivo
+    add constraint sem_historial_grupo_dispositivo_ibfk_1
+        foreign key (shelly_id) references sem_dispositivos (shelly_id),
+    add constraint sem_historial_grupo_dispositivo_ibfk_2
+        foreign key (grupo_anterior_id) references sem_grupos (id),
+    add constraint sem_historial_grupo_dispositivo_ibfk_3
+        foreign key (grupo_nuevo_id) references sem_grupos (id),
+    add constraint sem_historial_grupo_dispositivo_ibfk_4
+        foreign key (registro_auditoria_id) references sem_registro_auditoria (id);
+
+alter table sem_promedios_dia
+    add constraint idx_fecha_dispositivo
+        unique (shelly_id, fecha_utc),
+    add constraint sem_promedios_dia_ibfk_1
+        foreign key (shelly_id) references sem_dispositivos (shelly_id);
+
+alter table sem_registro_alertas
+    add constraint sem_registro_alertas_ibfk_1
+        foreign key (tipo_alerta_id) references sem_tipos_alertas (id),
+    add constraint sem_registro_alertas_ibfk_2
+        foreign key (shelly_id) references sem_dispositivos (shelly_id),
+    add constraint sem_registro_alertas_ibfk_3
+        foreign key (grupo_id) references sem_grupos (id);
+
+alter table sem_registro_auditoria
+    add constraint sem_registro_auditoria_ibfk_1
+        foreign key (tipo_evento_id) references sem_tipos_eventos (id),
+    add constraint sem_registro_auditoria_ibfk_2
+        foreign key (shelly_id) references sem_dispositivos (shelly_id),
+    add constraint sem_registro_auditoria_ibfk_3
+        foreign key (grupo_id) references sem_grupos (id);
+
+alter table sem_scoring_mediciones
+    add constraint sem_scoring_mediciones_ibfk_1
+        foreign key (shelly_id) references sem_dispositivos (shelly_id);
+alter table sem_totales_dia
+    add constraint sem_totales_dia_ibfk_1
+        foreign key (shelly_id) references sem_dispositivos (shelly_id);
+
+alter table sem_totales_hora
+    add constraint sem_totales_hora_ibfk_1
+        foreign key (shelly_id) references sem_dispositivos (shelly_id);
