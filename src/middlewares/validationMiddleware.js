@@ -1,5 +1,6 @@
 const { ValidationError } = require('../utils/errors');
 const dateUtils = require('../utils/dateUtils');
+const { DateTime } = require('luxon'); 
 
 class ValidationMiddleware {
     // Mantener el método existente para validar rangos de fecha
@@ -32,7 +33,6 @@ class ValidationMiddleware {
         }
     }
 
-    // Nuevo método para validar una única fecha
     validateDateParams(req, res, next) {
         try {
             const date = req.params.date;
@@ -41,28 +41,21 @@ class ValidationMiddleware {
                 throw new ValidationError('El parámetro date es requerido');
             }
 
-            const parsedDate = new Date(date);
-            if (isNaN(parsedDate.getTime())) {
+            // Crear fecha en zona horaria de Santiago
+            const parsedDate = DateTime.fromFormat(date, 'yyyy-MM-dd', { zone: 'America/Santiago' });
+            
+            if (!parsedDate.isValid) {
                 throw new ValidationError('Fecha inválida');
             }
 
-            // Obtener el rango del día completo
-            const startOfDay = new Date(parsedDate);
-            startOfDay.setHours(0, 0, 0, 0);
-
-            const endOfDay = new Date(parsedDate);
-            endOfDay.setHours(23, 59, 59, 999);
-
-            // Si es el día actual, usar la hora actual como fin
-            const now = new Date();
-            if (endOfDay > now) {
-                endOfDay.setTime(now.getTime());
-            }
+            // Obtener inicio y fin del día en hora local
+            const startOfDay = parsedDate.startOf('day');
+            const endOfDay = parsedDate.endOf('day');
 
             req.validatedDates = {
-                start: startOfDay,
-                end: endOfDay,
-                date: parsedDate
+                start: startOfDay.toJSDate(),
+                end: endOfDay.toJSDate(),
+                date: parsedDate.toFormat('yyyy-MM-dd')
             };
 
             next();
@@ -70,6 +63,7 @@ class ValidationMiddleware {
             next(error);
         }
     }
+
 
     // Método para validar ID de dispositivo
     validateDeviceId(req, res, next) {

@@ -94,15 +94,31 @@ class EnergyController {
                     d.shelly_id,
                     d.nombre as device_name,
                     d.ubicacion as location,
-                    m.timestamp_local,
-                    m.potencia_activa,
-                    m.intervalo_segundos
+                    DATE_FORMAT(
+                        DATE_SUB(m.timestamp_local, 
+                                INTERVAL MOD(MINUTE(m.timestamp_local), 5) MINUTE
+                        ), 
+                        '%Y-%m-%d %H:%i:00'
+                    ) as interval_start,
+                    COALESCE(ROUND(AVG(m.potencia_activa) / 1000, 3), 0) as potencia_promedio_kw,
+                    COALESCE(ROUND(AVG(m.potencia_activa) * 300 / (3600 * 1000), 6), 0) as consumo_kwh
                 FROM sem_mediciones m
                 JOIN sem_dispositivos d ON m.shelly_id = d.shelly_id
                 WHERE d.activo = 1
-                AND m.fase = 'TOTAL'
-                AND m.timestamp_local BETWEEN ? AND ?
-                ORDER BY m.shelly_id, m.timestamp_local`;
+                    AND m.fase = 'TOTAL'
+                    AND m.timestamp_local >= ?
+                    AND m.timestamp_local < ?
+                GROUP BY 
+                    d.shelly_id,
+                    d.nombre,
+                    d.ubicacion,
+                    DATE_FORMAT(
+                        DATE_SUB(m.timestamp_local, 
+                                INTERVAL MOD(MINUTE(m.timestamp_local), 5) MINUTE
+                        ),
+                        '%Y-%m-%d %H:%i:00'
+                    )
+                ORDER BY d.shelly_id, interval_start`;
     
             const [rows] = await databaseService.pool.query(query, [start, end]);
             const deviceData = this.processConsumptionData(rows);
@@ -150,13 +166,14 @@ class EnergyController {
             const fileName = `${deviceInfo[0].device_name}_${deviceInfo[0].location}_${startOfDay.toFormat('yyyy-MM-dd')}.csv`;
             res.setHeader('Content-Type', 'text/csv');
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-            res.write('Timestamp,Potencia Promedio (W),Consumo (kWh)\n');
+            // Actualizado el encabezado para reflejar kW
+            res.write('Timestamp,Potencia Promedio (kW),Consumo (kWh)\n');
 
-            // Query principal optimizada
+            // Query principal optimizada con conversión a kW
             const query = `
                 SELECT 
                     DATE_FORMAT(?, '%Y-%m-%d %H:%i:00') as interval_start,
-                    COALESCE(ROUND(AVG(m.potencia_activa), 2), 0) as potencia_promedio,
+                    COALESCE(ROUND(AVG(m.potencia_activa) / 1000, 3), 0) as potencia_promedio_kw,
                     COALESCE(ROUND(AVG(m.potencia_activa) * 300 / (3600 * 1000), 6), 0) as consumo_kwh
                 FROM sem_mediciones m
                 WHERE m.shelly_id = ?
@@ -180,10 +197,10 @@ class EnergyController {
                 ]);
 
                 // Convertir explícitamente a números y manejar valores nulos
-                const potencia = Number(data[0]?.potencia_promedio || 0);
+                const potenciaKw = Number(data[0]?.potencia_promedio_kw || 0);
                 const consumo = Number(data[0]?.consumo_kwh || 0);
                 
-                const line = `${currentInterval.toFormat('yyyy-MM-dd HH:mm:ss')},${potencia.toFixed(2)},${consumo.toFixed(6)}\n`;
+                const line = `${currentInterval.toFormat('yyyy-MM-dd HH:mm:ss')},${potenciaKw.toFixed(3)},${consumo.toFixed(6)}\n`;
                 res.write(line);
 
                 currentInterval = intervalEnd;
@@ -217,14 +234,13 @@ class EnergyController {
                     data: []
                 };
             }
-
-            const kWh = (row.potencia_activa * row.intervalo_segundos) / (3600 * 1000);
-            
+    
             acc[row.shelly_id].data.push({
-                timestamp: row.timestamp_local,
-                consumption: kWh
+                timestamp: row.interval_start,
+                potencia_kw: row.potencia_promedio_kw,
+                consumo_kwh: row.consumo_kwh
             });
-
+    
             return acc;
         }, {});
     }

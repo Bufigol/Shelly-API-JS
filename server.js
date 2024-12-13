@@ -6,6 +6,7 @@ const databaseService = require('./src/services/database-service');
 const energyAveragesService = require('./src/services/energy-averages-service');
 const totalEnergyService = require('./src/services/total-energy-service');
 const deviceRoutes = require('./src/routes/deviceRoutes');
+const configRoutes = require('./src/routes/configRoutes');
 
 class Server {
     constructor() {
@@ -43,7 +44,7 @@ class Server {
                 status: this.getServiceStatus()
             });
         });
-
+    
         // Device status endpoints
         this.app.get('/api/device-status/latest', this.handleAsyncRoute(async (req, res) => {
             const status = await this.services.database.getLatestStatus();
@@ -52,8 +53,10 @@ class Server {
             }
             res.json(status);
         }));
-
+    
         this.app.use('/api/devices', deviceRoutes);
+        // Agregar la nueva ruta de configuración aquí
+        this.app.use('/api/config', require('./routes/configRoutes'));
         // Add other routes here...
     }
 
