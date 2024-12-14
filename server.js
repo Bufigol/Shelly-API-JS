@@ -56,7 +56,7 @@ class Server {
     
         this.app.use('/api/devices', deviceRoutes);
         // Agregar la nueva ruta de configuración aquí
-        this.app.use('/api/config', require('./routes/configRoutes'));
+        this.app.use('/api/config', require('./src/routes/configRoutes'));
         // Add other routes here...
     }
 
