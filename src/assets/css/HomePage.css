@@ -1,0 +1,75 @@
+  /* Estilos del contenedor principal del dashboard */
+  .dashboard-container {
+    padding: 0 2rem;
+ }
+
+  /* Grid de tarjetas */
+  .cards-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2rem;
+        padding: 1rem;
+        justify-content: center; /* Centra las tarjetas horizontalmente */
+    }
+
+  /* Estilos de las tarjetas */
+  .card {
+      background-color: white; /* Fondo blanco */
+      border-radius: 10px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Sombra para resaltar */
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      flex: 1 0 20%; /* Expande las tarjetas horizontalmente */
+      min-width: 250px;
+      margin: 5px;
+      border: 1px solid #e0e0e0; /* Borde ligero */
+  }
+
+  .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+  }
+
+  .card-icon {
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+  }
+
+  .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      text-align: center;
+      color: var(--text-color);
+  }
+
+  .card-button {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 5px;
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+  }
+
+  .card-button:hover {
+      background-color: var(--hover-color);
+  }
+
+  /* Responsive design */
+  @media (max-width: 768px) {
+
+      .dashboard-container {
+          padding: 0 1rem;
+      }
+
+      .cards-grid {
+          flex-direction: column; /* Cuando el tamaño es pequeño las tarjetas pasan a verse verticalmente */
+      }
+  }
