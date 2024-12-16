@@ -72,8 +72,6 @@ class ShellyCollector {
         const quality = deviation <= this.maxIntervalDeviation ? 'GOOD' :
                        deviation <= this.maxIntervalDeviation * 2 ? 'SUSPECT' : 
                        'BAD';
-        
-        console.log(`Reading quality: ${quality} (deviation: ${deviation}ms)`);
         return quality;
     }
 
@@ -83,14 +81,12 @@ class ShellyCollector {
             const currentTimestamp = Date.now();
             
             const data = await this.fetchDeviceData();
-            console.log('Raw API response received');
             
             if (!this.validateApiResponse(data)) {
                 throw new Error('Invalid API response structure');
             }
 
             const enrichedData = this.enrichData(data, currentTimestamp);
-            console.log('Data enrichment completed');
 
             await this.saveData(enrichedData);
             
@@ -107,7 +103,6 @@ class ShellyCollector {
     }
 
     async fetchDeviceData() {
-        console.log(`Fetching data from: ${this.apiUrl.replace(/auth_key=([^&]+)/, 'auth_key=****')}`);
         const response = await fetch(this.apiUrl);
         
         if (!response.ok) {
@@ -127,7 +122,6 @@ class ShellyCollector {
     }
 
     enrichData(data, timestamp) {
-        console.log('Enriching data...');
         
         const deviceStatus = data.data.device_status;
         const emData = deviceStatus['em:0'] || {};
@@ -172,9 +166,7 @@ class ShellyCollector {
 
     async saveData(data) {
         try {
-            console.log('Attempting to save data:', JSON.stringify(data, null, 2));
             const result = await databaseService.insertDeviceStatus(data);
-            console.log('Data saved successfully:', result);
             return result;
         } catch (error) {
             console.error('Error saving data:', error);
