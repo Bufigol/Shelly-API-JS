@@ -27,7 +27,7 @@ const HomePage = () => {
                     <div className="card">
                         <img src={powerMeterIcon} alt="Energy Consumption Icon" className="card-icon" />
                         <h2 className="card-title">Consumo Eléctrico</h2>
-                        <button className="card-button">Ir a la App</button>
+                        <Link className="card-button" to="/consumo-electrico">Ir a la App</Link>
                     </div>
 
                     {/* Parámetros medición eléctrica */}
