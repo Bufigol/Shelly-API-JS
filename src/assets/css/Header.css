@@ -1,0 +1,27 @@
+ /* Estilos para el header */
+ .header {
+    background-color: #5B9BD5; /* Azul claro para el header */
+    color: white;
+    padding: 10px 20px;
+}
+
+.header-container{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-button {
+    display: inline-block;
+    padding: 5px;
+}
+
+.home-button img {
+    width: 30px;
+    height: auto;
+    display: block;
+}
+
+.page-title {
+    margin: 0;
+}

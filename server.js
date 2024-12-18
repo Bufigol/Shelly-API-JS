@@ -26,8 +26,15 @@ class Server {
     setupMiddleware() {
         this.app.use(cors());
         this.app.use(express.json());
-        this.app.use(express.static(path.join(__dirname, 'public')));
-        
+        // Serve files from the `dist` directory
+        this.app.use('/dist', express.static(path.join(__dirname, 'dist')));
+        // Serve files from the `src` directory for direct access
+        this.app.use(express.static(path.join(__dirname, 'src')));
+
+
+        // Configuración de CSP
+        this.setupContentSecurityPolicy();
+
         // Logging middleware
         this.app.use((req, res, next) => {
             console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
@@ -35,31 +42,38 @@ class Server {
         });
     }
 
-    setupRoutes() {
-        // Status endpoint
-        this.app.get('/', (req, res) => {
-            res.json({ 
-                message: 'Shelly API Server Running',
-                version: '1.0.0',
-                status: this.getServiceStatus()
-            });
+    setupContentSecurityPolicy() {
+        this.app.use((req, res, next) => {
+            res.setHeader("Content-Security-Policy", "default-src 'self'; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval';");
+            next();
         });
-    
-        // Device status endpoints
-        this.app.get('/api/device-status/latest', this.handleAsyncRoute(async (req, res) => {
-            const status = await this.services.database.getLatestStatus();
-            if (!status) {
-                return res.status(404).json({ error: 'No device status found' });
-            }
-            res.json(status);
-        }));
-    
-        this.app.use('/api/devices', deviceRoutes);
-        // Agregar la nueva ruta de configuración aquí
-        this.app.use('/api/config', require('./src/routes/configRoutes'));
-        // Add other routes here...
     }
 
+    setupRoutes() {
+        // Status endpoint
+       this.app.get('/', (req, res) => {
+           res.sendFile(path.join(__dirname, 'src', 'index.html'));
+       });
+       
+       // Device status endpoints
+       this.app.get('/api/device-status/latest', this.handleAsyncRoute(async (req, res) => {
+           const status = await this.services.database.getLatestStatus();
+           if (!status) {
+               return res.status(404).json({ error: 'No device status found' });
+           }
+           res.json(status);
+       }));
+
+       // Importar rutas
+       const deviceRoutes = require('./src/routes/deviceRoutes');
+       const configRoutes = require('./src/routes/configRoutes');
+       const totalesRoutes = require('./src/routes/totalesRoutes');
+
+
+       this.app.use('/api/devices', deviceRoutes);
+       this.app.use('/api/config', configRoutes);
+       this.app.use('/api/totals', totalesRoutes);
+   }
     setupErrorHandling() {
         // Error handler for async errors
         this.app.use((err, req, res, next) => {
