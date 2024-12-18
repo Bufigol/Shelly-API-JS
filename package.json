@@ -4,7 +4,9 @@
   "description": "Monitor de dispositivo Shelly",
   "main": "src/js/main.js",
   "scripts": {
-    "start": "serve src"
+    "start": "serve src",
+    "build": "webpack",
+    "comenzar": "npm run build  && node server.js"
   },
   "keywords": [
     "shelly",
@@ -14,11 +16,36 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.7.9",
+    "chart.js": "^4.4.7",
+    "chartjs-adapter-date-fns": "^3.0.0",
     "cors": "^2.8.5",
-    "express": "^4.21.1",
+    "date-fns": "^4.1.0",
+    "express": "^4.21.2",
+    "luxon": "^3.5.0",
+    "moment": "^2.30.1",
+    "moment-timezone": "^0.5.46",
     "mysql2": "^3.11.5",
     "node-fetch": "^2.7.0",
     "node-schedule": "^2.1.1",
-    "serve": "^14.2.4"
+    "prop-types": "^15.8.1",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-datepicker": "^7.5.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.0.2",
+    "serve": "^14.2.4",
+    "styled-components": "^6.1.13"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-react": "^7.26.3",
+    "babel-loader": "^9.2.1",
+    "css-loader": "^7.1.2",
+    "file-loader": "^6.2.0",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^5.1.4"
   }
 }
