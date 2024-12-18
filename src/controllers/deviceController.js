@@ -1,6 +1,6 @@
 const databaseService = require('../services/database-service');
 const { DeviceError, NotFoundError } = require('../utils/errors');
-const { transformUtils } = require('../utils');
+const { transformUtils } = require('../utils/transformUtils');
 
 class DeviceController {
     async getLatestStatus(req, res, next) {
@@ -52,6 +52,49 @@ class DeviceController {
             const { deviceId } = req.params;
             const result = await databaseService.updateDeviceConfig(deviceId, req.body);
             res.json(transformUtils.transformApiResponse(result));
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getLatestDevicesMeasurements(req, res, next) {
+        try {
+            const query = `
+                SELECT 
+                    d.shelly_id,
+                    d.nombre as device_name,
+                    d.ubicacion as location,
+                    m.potencia_activa,
+                    m.timestamp_local
+                FROM sem_dispositivos d
+                LEFT JOIN (
+                    SELECT 
+                        shelly_id,
+                        potencia_activa,
+                        timestamp_local,
+                        ROW_NUMBER() OVER (PARTITION BY shelly_id ORDER BY timestamp_local DESC) as rn
+                    FROM sem_mediciones
+                    WHERE fase = 'TOTAL'
+                ) m ON d.shelly_id = m.shelly_id AND m.rn = 1
+                WHERE d.activo = 1
+                ORDER BY d.nombre`;
+
+            const [rows] = await databaseService.pool.query(query);
+
+            const devices = rows.map(row => ({
+                deviceId: row.shelly_id,
+                name: row.device_name,
+                location: row.location,
+                activePower: row.potencia_activa ? parseFloat(row.potencia_activa) : 0,
+                lastUpdate: row.timestamp_local,
+            }));
+
+            res.json({
+                success: true,
+                data: devices,
+                timestamp: new Date()
+            });
+
         } catch (error) {
             next(error);
         }

@@ -1,10 +1,10 @@
 const { ValidationError } = require('../utils/errors');
-const validationUtils = require('../utils/validationUtils');
 const dateUtils = require('../utils/dateUtils');
+const { DateTime } = require('luxon'); 
 
 class ValidationMiddleware {
-    // Middleware para validar parámetros de fecha
-    validateDateParams(req, res, next) {
+    // Mantener el método existente para validar rangos de fecha
+    validateDateRangeParams(req, res, next) {
         try {
             const { start, end, period = 'hour' } = req.query;
 
@@ -19,10 +19,8 @@ class ValidationMiddleware {
                 throw new ValidationError('Fechas inválidas');
             }
 
-            // Validar rango de fechas
             dateUtils.validateDateRange(startDate, endDate, period);
 
-            // Añadir fechas validadas a la request
             req.validatedDates = {
                 start: startDate,
                 end: endDate,
@@ -35,43 +33,29 @@ class ValidationMiddleware {
         }
     }
 
-    // Middleware para validar datos de medición
-    validateMeasurementData(req, res, next) {
+    validateDateParams(req, res, next) {
         try {
-            if (!req.body || !req.body.device_status) {
-                throw new ValidationError('Datos de medición inválidos');
+            const date = req.params.date;
+
+            if (!date) {
+                throw new ValidationError('El parámetro date es requerido');
             }
 
-            const validatedData = validationUtils.validateElectricalMeasurement(req.body.device_status['em:0'] || {});
+            // Crear fecha en zona horaria de Santiago
+            const parsedDate = DateTime.fromFormat(date, 'yyyy-MM-dd', { zone: 'America/Santiago' });
             
-            // Añadir datos validados a la request
-            req.validatedMeasurement = validatedData;
-            
-            next();
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    // Middleware para validar parámetros de paginación
-    validatePaginationParams(req, res, next) {
-        try {
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 10;
-
-            if (page < 1) {
-                throw new ValidationError('El número de página debe ser mayor a 0');
+            if (!parsedDate.isValid) {
+                throw new ValidationError('Fecha inválida');
             }
 
-            if (limit < 1 || limit > 100) {
-                throw new ValidationError('El límite debe estar entre 1 y 100');
-            }
+            // Obtener inicio y fin del día en hora local
+            const startOfDay = parsedDate.startOf('day');
+            const endOfDay = parsedDate.endOf('day');
 
-            // Añadir parámetros de paginación validados a la request
-            req.pagination = {
-                page,
-                limit,
-                offset: (page - 1) * limit
+            req.validatedDates = {
+                start: startOfDay.toJSDate(),
+                end: endOfDay.toJSDate(),
+                date: parsedDate.toFormat('yyyy-MM-dd')
             };
 
             next();
@@ -80,16 +64,16 @@ class ValidationMiddleware {
         }
     }
 
-    // Middleware para validar ID de dispositivo
+
+    // Método para validar ID de dispositivo
     validateDeviceId(req, res, next) {
         try {
-            const deviceId = req.params.deviceId || req.body.deviceId;
+            const deviceId = req.params.shellyId;
 
             if (!deviceId) {
                 throw new ValidationError('ID de dispositivo requerido');
             }
 
-            // Validar formato del ID (ejemplo: debe ser un string de 12 caracteres hexadecimales)
             if (!/^[0-9a-fA-F]{12}$/.test(deviceId)) {
                 throw new ValidationError('ID de dispositivo inválido');
             }

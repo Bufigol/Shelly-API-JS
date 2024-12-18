@@ -6,6 +6,33 @@ class DateUtils {
     }
 
     /**
+     * Obtiene el rango de inicio y fin de un día específico
+     * @param {string|Date} date - Fecha para la cual obtener el rango
+     * @returns {[Date, Date]} Array con fecha inicio y fin del día
+     */
+    getDayRange(date) {
+        const parsedDate = date instanceof Date ? date : new Date(date);
+        
+        if (isNaN(parsedDate.getTime())) {
+            throw new Error('Fecha inválida');
+        }
+
+        const startOfDay = new Date(parsedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const endOfDay = new Date(parsedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Si es el día actual, usar la hora actual como fin
+        const now = new Date();
+        if (endOfDay > now) {
+            endOfDay.setTime(now.getTime());
+        }
+
+        return [startOfDay, endOfDay];
+    }
+
+    /**
      * Convierte una fecha UTC a la zona horaria local
      */
     utcToLocal(utcDate, timezone = this.defaultTimezone) {
