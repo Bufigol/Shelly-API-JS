@@ -38,25 +38,24 @@ const DashboardElectrico = () => {
 
   return (
     <div className="dashboard-electrico">
-      <Header title="Potencia Activa" /> {/* Usamos el componente Header y pasamos el título */}
-      <div className="dashboard-container">
-        <div className="electric-display-grid">
-          {deviceData.map((item) => (
-            <div key={item.deviceId} className="electric-display">
-              <PowerDisplay value={item.activePower} />
-              <div className="electric-channel">
-                {item.name}
-              </div>
-              <div className="electric-date">
-                <span>Ubicación: {item.location}</span>
-                <span>Actualizado: {moment(item.lastUpdate).format('DD/MM/YYYY HH:mm')}</span>
-              </div>
+        <Header title="Potencia Activa" />
+        <div className="dashboard-container">
+            <div className="electric-display-grid">
+                {deviceData.map((item) => (
+                    <div key={item.deviceId} className="electric-display">
+                        <PowerDisplay value={item.activePower} />
+                        <div className="electric-channel">
+                            {item.location}
+                        </div>
+                        <div className="electric-date">
+                            <span>Actualizado: {moment(item.lastUpdate).format('DD/MM/YYYY HH:mm')}</span>
+                        </div>
+                    </div>
+                ))}
             </div>
-          ))}
         </div>
-      </div>
     </div>
-  );
+);
 };
 
 export default DashboardElectrico;
