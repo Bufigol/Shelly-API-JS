@@ -131,8 +131,8 @@ const ConsumoTotalDiario = () => {
           },
         {
           type: 'line',
-          label: 'Costo Acumulado (CLP)',
-          data: data.map(item => parseFloat(item.costo_acumulado)),
+          label: 'Costo Total hora (CLP)',
+          data: data.map(item => parseFloat(item.costo_total)),
           borderColor: 'rgba(54, 162, 235, 1)',
           fill: false,
           yAxisID: 'y-left',
@@ -156,7 +156,7 @@ const ConsumoTotalDiario = () => {
           position: 'left',
           title: {
             display: true,
-            text: 'Costo Acumulado (CLP)'
+            text: 'Costo total hora (CLP)'
           },
            ticks: {
              callback: function(value) {
