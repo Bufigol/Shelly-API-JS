@@ -2,10 +2,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import homeWhiteLogo from '../assets/images/general/home_white.png';
-import electricGeneratorIcon from '../assets/images/Iconos_Index/electric-generator_2256476.png';
-import powerMeterIcon from '../assets/images/Iconos_Index/power-meter_5557246.png';
+import electricGeneratorIcon from '../assets/images/Iconos_Index/dashboarelectrcio.png';
+import powerMeterIcon from '../assets/images/Iconos_Index/potenciadinero.png';
+import MeterIcon from '../assets/images/Iconos_Index/electric-generator.png';
 import parametrosIcon from '../assets/images/Iconos_Index/parametros.png';
-import speedometerIcon from '../assets/images/Iconos_Index/speedometer_3622517.png';
+import speedometerIcon from '../assets/images/Iconos_Index/dashboarelectrcio.png';
 import '../assets/css/HomePage.css';
 import Header from './Header'; // Importamos el componente header
 
@@ -25,9 +26,15 @@ const HomePage = () => {
 
                     {/* Consumo Eléctrico */}
                     <div className="card">
-                        <img src={powerMeterIcon} alt="Energy Consumption Icon" className="card-icon" />
+                        <img src={MeterIcon} alt="Energy Consumption Icon" className="card-icon" />
                         <h2 className="card-title">Consumo Eléctrico</h2>
                         <Link className="card-button" to="/consumo-electrico">Ir a la App</Link>
+                    </div>
+                     {/* Consumo Eléctrico Diario */}
+                    <div className="card">
+                        <img src={powerMeterIcon} alt="Energy Consumption Icon" className="card-icon" />
+                        <h2 className="card-title">Consumo Eléctrico Diario en Dinero</h2>
+                        <Link className="card-button" to="/consumo-total-diario">Ir a la App</Link>
                     </div>
 
                     {/* Parámetros medición eléctrica */}

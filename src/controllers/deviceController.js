@@ -62,11 +62,11 @@ class DeviceController {
             const query = `
                 SELECT 
                     d.shelly_id,
-                    d.nombre as device_name,
-                    d.ubicacion as location,
-                    m.potencia_activa,
-                    m.timestamp_local
+                    cur.nombre_ubicacion as location,
+                    m.potencia_activa as activePower,
+                    m.timestamp_local as lastUpdate
                 FROM sem_dispositivos d
+                LEFT JOIN catalogo_ubicaciones_reales cur ON d.ubicacion = cur.idcatalogo_ubicaciones_reales
                 LEFT JOIN (
                     SELECT 
                         shelly_id,
@@ -77,24 +77,23 @@ class DeviceController {
                     WHERE fase = 'TOTAL'
                 ) m ON d.shelly_id = m.shelly_id AND m.rn = 1
                 WHERE d.activo = 1
-                ORDER BY d.nombre`;
-
+                ORDER BY cur.nombre_ubicacion`;
+    
             const [rows] = await databaseService.pool.query(query);
-
+    
             const devices = rows.map(row => ({
                 deviceId: row.shelly_id,
-                name: row.device_name,
                 location: row.location,
-                activePower: row.potencia_activa ? parseFloat(row.potencia_activa) : 0,
-                lastUpdate: row.timestamp_local,
+                activePower: row.activePower ? parseFloat(row.activePower) : 0,
+                lastUpdate: row.lastUpdate
             }));
-
+    
             res.json({
                 success: true,
                 data: devices,
                 timestamp: new Date()
             });
-
+    
         } catch (error) {
             next(error);
         }
