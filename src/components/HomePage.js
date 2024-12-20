@@ -29,6 +29,12 @@ const HomePage = () => {
                         <h2 className="card-title">Consumo Eléctrico</h2>
                         <Link className="card-button" to="/consumo-electrico">Ir a la App</Link>
                     </div>
+                     {/* Consumo Eléctrico Diario */}
+                    <div className="card">
+                        <img src={powerMeterIcon} alt="Energy Consumption Icon" className="card-icon" />
+                        <h2 className="card-title">Consumo Eléctrico Diario</h2>
+                        <Link className="card-button" to="/consumo-total-diario">Ir a la App</Link>
+                    </div>
 
                     {/* Parámetros medición eléctrica */}
                     <div className="card">
