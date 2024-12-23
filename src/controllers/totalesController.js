@@ -39,6 +39,37 @@ class TotalesController {
             next(error);
         }
     }
+
+    async getMonthlyTotalsByDevice(req, res, next) {
+        try {
+            const { date } = req.validatedDates;
+    
+            const query = `
+                SELECT 
+                    std.fecha_local,
+                    std.shelly_id,
+                    std.energia_activa_total,
+                    std.costo_total,
+                    std.precio_kwh_promedio,
+                    cur.nombre_ubicacion as ubicacion_nombre,
+                    sd.nombre as dispositivo_nombre
+                FROM sem_totales_dia std
+                JOIN sem_dispositivos sd ON std.shelly_id = sd.shelly_id
+                JOIN catalogo_ubicaciones_reales cur ON sd.ubicacion = cur.idcatalogo_ubicaciones_reales
+                WHERE
+                    YEAR(std.fecha_local) = YEAR(?) AND MONTH(std.fecha_local) = MONTH(?)
+                ORDER BY
+                    std.fecha_local, cur.nombre_ubicacion, sd.nombre
+            `;
+  
+            const [rows] = await databaseService.pool.query(query, [date, date]);
+    
+            res.json(transformUtils.transformApiResponse(rows));
+            
+        } catch (error) {
+            next(error);
+        }
+      }
 }
 
 module.exports = new TotalesController();
