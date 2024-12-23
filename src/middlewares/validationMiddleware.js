@@ -84,6 +84,37 @@ class ValidationMiddleware {
             next(error);
         }
     }
+
+    validateMonthParams(req, res, next) {
+        try {
+            const month = req.params.month;
+
+            if (!month) {
+                throw new ValidationError('El parámetro month es requerido');
+            }
+
+            // Crear fecha en zona horaria de Santiago
+            const parsedDate = DateTime.fromFormat(month, 'yyyy-MM-dd', { zone: 'America/Santiago' });
+            
+            if (!parsedDate.isValid) {
+                throw new ValidationError('Fecha inválida, formato YYYY-MM-DD');
+            }
+
+             // Obtener inicio y fin del mes en hora local
+            const startOfMonth = parsedDate.startOf('month');
+            const endOfMonth = parsedDate.endOf('month');
+
+            req.validatedDates = {
+                start: startOfMonth.toJSDate(),
+                end: endOfMonth.toJSDate(),
+                date: parsedDate.toFormat('yyyy-MM-dd')
+            };
+
+            next();
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new ValidationMiddleware();
