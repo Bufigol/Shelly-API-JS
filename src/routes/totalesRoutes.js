@@ -10,4 +10,11 @@ router.get('/daily/:date',
     totalesController.getDailyTotalsByDevice.bind(totalesController)
 );
 
+// Endpoint para obtener los totales diarios por dispositivo para un mes
+router.get('/monthly/:month',
+    validationMiddleware.validateMonthParams.bind(validationMiddleware),
+    totalesController.getMonthlyTotalsByDevice.bind(totalesController)
+);
+
+
 module.exports = router;
