@@ -69,12 +69,14 @@ class Server {
        const configRoutes = require('./src/routes/configRoutes');
        const totalesRoutes = require('./src/routes/totalesRoutes');
        const analysisRoutes = require('./src/routes/analysisRoutes');
+       const usuariosRoutes = require('./src/routes/usuariosRoutes');
 
 
        this.app.use('/api/devices', deviceRoutes);
        this.app.use('/api/config', configRoutes);
        this.app.use('/api/totals', totalesRoutes);
        this.app.use('/api/analysis', analysisRoutes);
+       this.app.use('/api/usuarios', usuariosRoutes);
    }
     setupErrorHandling() {
         // Error handler for async errors
