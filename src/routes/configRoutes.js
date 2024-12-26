@@ -7,49 +7,49 @@ const { authMiddleware } = require('../middlewares');
 
 // Get current system parameters
 router.get('/sem/parametros', 
-    authMiddleware.authenticate,
+    authMiddleware.authenticate.bind(authMiddleware),
     sem_configController.getSystemParameters.bind(sem_ConfigController)
 );
 
 // Update system parameters
 router.post('/sem/parametros',
-    authMiddleware.authenticate,
+    authMiddleware.authenticate.bind(authMiddleware),
     sem_configController.updateSystemParameters.bind(sem_ConfigController)
 );
 
 router.get('/teltonica/parametros',
-    authMiddleware.authenticate,
-    tel_configController.getSystemParameters
+    authMiddleware.authenticate.bind(authMiddleware),
+    tel_configController.getSystemParameters.bind(tel_configController)
 );
 
 router.post('/teltonica/parametros',
-    authMiddleware.authenticate,
-    tel_configController.updateSystemParameters
+    authMiddleware.authenticate.bind(authMiddleware),
+    tel_configController.updateSystemParameters.bind(tel_configController)
 );
 
 router.get('/teltonica/configuracion_beacon/:beacon_id',
-    authMiddleware.authenticate,
-    tel_configController.configurarBeacon
+    authMiddleware.authenticate.bind(authMiddleware),
+    tel_configController.configurarBeacon.bind(tel_configController)
 );
 
 router.get('/teltonica/temperatura-umbrales',
-    authMiddleware.authenticate,
-    tel_configController.getConfigTemperaturaUmbral
+    authMiddleware.authenticate.bind(authMiddleware),
+    tel_configController.getConfigTemperaturaUmbral.bind(tel_configController)
 );
 
 router.post('/teltonica/temperatura-umbrales',
-    authMiddleware.authenticate,
-    tel_configController.setConfigTemperaturaUmbral
+    authMiddleware.authenticate.bind(authMiddleware),
+    tel_configController.setConfigTemperaturaUmbral.bind(tel_configController)
 );
 
 router.get('/teltonica/umbrales',
-    authMiddleware.authenticate,
-    tel_configController.getConfigUmbrales
+    authMiddleware.authenticate.bind(authMiddleware),
+    tel_configController.getConfigUmbrales.bind(tel_configController)
 );
 
 router.post('/teltonica/umbrales',
-    authMiddleware.authenticate,
-    tel_configController.setConfigUmbrales
+    authMiddleware.authenticate.bind(authMiddleware),
+    tel_configController.setConfigUmbrales.bind(tel_configController)
 );
 
 module.exports = router;
