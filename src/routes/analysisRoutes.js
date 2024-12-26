@@ -6,7 +6,7 @@ const { validationMiddleware } = require('../middlewares');
 
 // Endpoint para análisis de potencia y temperatura
 router.get('/temperature-power-analysis',
-    validationMiddleware.validateDateParams,
+    validationMiddleware.validateDateParams.bind(validationMiddleware),
     analysisController.getTemperaturePowerAnalysis.bind(analysisController)
 );
 
