@@ -2,7 +2,7 @@
 const databaseService = require('../services/database-service');
 const { ValidationError } = require('../utils/errors');
 
-class ConfigController {
+class sem_ConfigController {
     async getSystemParameters(req, res, next) {
         try {
             const query = `
@@ -150,4 +150,4 @@ class ConfigController {
     }
 }
 
-module.exports = new ConfigController();
+module.exports = new sem_ConfigController();
