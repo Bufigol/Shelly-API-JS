@@ -1,0 +1,158 @@
+.landing-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 100vh;
+    /* Cambiado de height a min-height */
+    background-color: #6b9fd4;
+    padding: 20px;
+    box-sizing: border-box;
+    /* Asegura que el padding no afecte el tamaño total */
+}
+
+.image-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    /* Reducido el margen inferior */
+    width: 100%;
+    position: relative;
+}
+
+.map-image {
+    width: 100%;
+    max-height: 40vh;
+    /* Limita la altura en dispositivos móviles */
+    object-fit: cover;
+    /* Mantiene la proporción de la imagen */
+    margin-bottom: 20px;
+    /* Reducido el margen inferior */
+}
+
+.center-image {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 25%;
+    /* Aumentado ligeramente para mejor visibilidad en móviles */
+    max-width: 150px;
+    /* Limita el tamaño máximo */
+    height: auto;
+}
+
+.form-container {
+    background: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    width: 90%;
+    /* Ajusta el ancho para dispositivos móviles */
+    max-width: 300px;
+    /* Limita el ancho máximo */
+    margin: 0 auto;
+    /* Centra el contenedor */
+}
+
+.form-container input {
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+    /* Ocupa todo el ancho disponible */
+    max-width: 250px;
+    /* Limita el ancho máximo */
+    box-sizing: border-box;
+    /* Incluye padding en el ancho total */
+}
+
+.form-container button {
+    padding: 10px 20px;
+    margin-top: 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+    width: 100%;
+    /* Ocupa todo el ancho disponible */
+    max-width: 250px;
+    /* Limita el ancho máximo */
+}
+
+.right-image {
+    position: static;
+    /* Cambiado de absolute a static */
+    width: 30%;
+    max-width: 150px;
+    /* Limita el tamaño máximo */
+    height: auto;
+    margin: 20px auto 0;
+    /* Centra la imagen y añade margen superior */
+    display: block;
+    /* Asegura que la imagen se centre correctamente */
+}
+
+.footer {
+    display: flex;
+    flex-direction: column;
+    /* Cambia a columna en dispositivos móviles */
+    align-items: center;
+    /* Centra los elementos en dispositivos móviles */
+    width: 100%;
+    padding: 10px 20px;
+    background-color: #6b9fd4;
+    color: white;
+    box-sizing: border-box;
+}
+
+.footer-left,
+.footer-right {
+    text-align: center;
+    /* Centra el texto en dispositivos móviles */
+    margin: 5px 0;
+    /* Añade un poco de espacio entre los elementos */
+}
+
+/* Media query para dispositivos móviles */
+@media screen and (max-width: 768px) {
+    .landing-page {
+        padding: 10px;
+    }
+
+    .map-image {
+        max-height: 30vh;
+        /* Reduce aún más la altura en dispositivos muy pequeños */
+    }
+
+    .form-container {
+        padding: 15px;
+    }
+
+    .form-container input,
+    .form-container button {
+        font-size: 16px;
+        /* Aumenta el tamaño de fuente para mejor legibilidad en móviles */
+    }
+}
+
+/* Ajustes específicos para iOS */
+@supports (-webkit-touch-callout: none) {
+    .landing-page {
+        min-height: -webkit-fill-available;
+        /* Soluciona problemas de altura en iOS */
+    }
+}
+
+.storage-image {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 25%;
+    max-width: 150px;
+    height: auto;
+}
