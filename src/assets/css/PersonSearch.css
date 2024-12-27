@@ -1,0 +1,224 @@
+/* PersonSearch.css */
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+
+:root {
+    --color-verde: #4CAF50;
+    --color-verde-letra: white;
+    --color-amarillo: rgb(218, 218, 45);
+    --color-amarillo-letra: black;
+    --color-rojo: rgb(190, 74, 74);
+    --color-rojo-letra: white;
+    --sector-bodega-bg: #c1ff72;
+    /* Verde pálido */
+    --sector-bodega-text: black;
+    --sector-farmacia-bg: #ea9bdd;
+    /* Violeta pálido */
+    --sector-farmacia-text: black;
+    --sector-entrada-bg: #ffcccb;
+    /* Granate pálido */
+    --sector-entrada-text: black;
+    --sector-pasillo-bg: #cbfffe;
+    /* Granate pálido */
+    --sector-pasillo-text: black;
+    --sector-electro-bg: #f5ffcb;
+    /* Granate pálido */
+    --sector-electro-text: black;
+    --image-max-width: 50px;
+    /* Ancho máximo de la imagen */
+    --image-max-height: 50px;
+    /* Alto máximo de la imagen */
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.person-search {
+    padding: 20px;
+}
+
+.image-container {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.plano-sectores {
+    width: 100%;
+    height: auto;
+    max-width: 600px;
+}
+
+.search-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.device-selection,
+.date-selection,
+.time-selection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.time-selection {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.time-selection label {
+    margin-right: 10px;
+}
+
+.time-selection input {
+    width: 60px;
+    margin: 0 5px;
+    padding: 10px;
+    font-size: 16px;
+}
+
+.search-container select,
+.search-container input[type="date"],
+.search-container button {
+    width: 100%;
+    max-width: 300px;
+    margin: 10px 0;
+    padding: 10px;
+    font-size: 16px;
+}
+
+.search-results-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+.search-results-table th,
+.search-results-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+.search-results-table th {
+    background-color: #6b9fd4;
+    color: white;
+}
+
+.search-results-table tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.search-results-table .green {
+    background-color: var(--color-verde);
+    color: var(--color-verde-letra);
+}
+
+.search-results-table .yellow {
+    background-color: var(--color-amarillo);
+    color: var(--color-amarillo-letra);
+}
+
+.search-results-table .red {
+    background-color: var(--color-rojo);
+    color: var(--color-rojo-letra);
+}
+
+.search-results-table .sector-bodega {
+    background-color: var(--sector-bodega-bg);
+    color: var(--sector-bodega-text);
+}
+
+.search-results-table .sector-farmacia {
+    background-color: var(--sector-farmacia-bg);
+    color: var(--sector-farmacia-text);
+}
+
+.search-results-table .sector-entrada {
+    background-color: var(--sector-entrada-bg);
+    color: var(--sector-entrada-text);
+}
+
+.search-results-table .sector-pasillo {
+    background-color: var(--sector-pasillo-bg);
+    color: var(--sector-pasillo-text);
+}
+
+.search-results-table .sector-electro {
+    background-color: var(--sector-electro-bg);
+    color: var(--sector-electro-text);
+}
+
+/* Estilos para dispositivos móviles */
+@media (max-width: 768px) {
+    .search-container {
+        flex-direction: column;
+    }
+
+    .search-container select,
+    .search-container input,
+    .search-container button {
+        font-size: 14px;
+    }
+
+    .search-results-table td {
+        font-size: 12px;
+    }
+}
+
+.date-time-selection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.date-time-inputs {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+}
+
+.date-time-inputs .date-input,
+.date-time-inputs .time-input {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.date-time-inputs input {
+    margin: 5px;
+    padding: 10px;
+    font-size: 16px;
+}
+
+/* Estilo para la imagen de personal */
+.personal-image {
+    max-width: var(--image-max-width);
+    max-height: var(--image-max-height);
+    object-fit: contain;
+}
+
+/* Estilo para la imagen de personal */
+td.image-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.personal-image {
+    max-width: var(--image-max-width);
+    max-height: var(--image-max-height);
+    object-fit: contain;
+}
