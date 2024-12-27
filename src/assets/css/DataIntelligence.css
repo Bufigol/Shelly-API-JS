@@ -1,0 +1,230 @@
+/* DataIntelligence.css */
+
+/* Otros estilos existentes */
+
+.separator {
+    width: 80%;
+    margin: 20px auto;
+    border-bottom: 2px solid #6b9fd4;
+    text-align: center;
+}
+
+.separator span {
+    font-size: 18px;
+    padding: 0 10px;
+    background: #fff;
+    position: relative;
+    top: 10px;
+    color: #6b9fd4;
+}
+
+/* Estilo para hacer transparente la imagen no seleccionada */
+.option-card.transparent {
+    opacity: 0.5;
+}
+
+.option-card.selected {
+    opacity: 1;
+}
+
+/* Otros estilos existentes */
+
+:root {
+    --image-width: 200px;
+    /* Ancho parametrizable */
+    --image-height: 200px;
+    /* Alto parametrizable */
+}
+
+.options-container {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    /* Espacio entre las columnas */
+    margin: 20px 0;
+}
+
+.option-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    width: var(--image-width);
+    height: var(--image-height);
+}
+
+.option-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.option-card h3 {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 16px;
+}
+
+/* Ajuste para dispositivos móviles */
+@media (max-width: 768px) {
+    .options-container {
+        flex-direction: column;
+        align-items: center;
+    }
+}
+
+.person-search {
+    padding: 20px;
+}
+
+.search-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.device-selection,
+.date-selection,
+.time-selection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.time-selection {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.time-selection label {
+    margin-right: 10px;
+}
+
+.time-selection input {
+    width: 60px;
+    margin: 0 5px;
+    padding: 10px;
+    font-size: 16px;
+}
+
+.search-container select,
+.search-container input[type="date"],
+.search-container button {
+    width: 100%;
+    max-width: 300px;
+    margin: 10px 0;
+    padding: 10px;
+    font-size: 16px;
+}
+
+.search-results-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+.search-results-table th,
+.search-results-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+.search-results-table th {
+    background-color: #6b9fd4;
+    color: white;
+}
+
+.search-results-table tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.search-results-table .green {
+    background-color: var(--color-verde);
+    color: var(--color-verde-letra);
+}
+
+.search-results-table .yellow {
+    background-color: var(--color-amarillo);
+    color: var(--color-amarillo-letra);
+}
+
+.search-results-table .red {
+    background-color: var(--color-rojo);
+    color: var(--color-rojo-letra);
+}
+
+.search-results-table .sector-bodega {
+    background-color: var(--sector-bodega-bg);
+    color: var(--sector-bodega-text);
+}
+
+.search-results-table .sector-farmacia {
+    background-color: var(--sector-farmacia-bg);
+    color: var(--sector-farmacia-text);
+}
+
+.search-results-table .sector-entrada {
+    background-color: var(--sector-entrada-bg);
+    color: var(--sector-entrada-text);
+}
+
+.search-results-table .sector-pasillo {
+    background-color: var(--sector-pasillo-bg);
+    color: var(--sector-pasillo-text);
+}
+
+.search-results-table .sector-electro {
+    background-color: var(--sector-electro-bg);
+    color: var(--sector-electro-text);
+}
+
+/* Estilos para dispositivos móviles */
+@media (max-width: 768px) {
+    .search-container {
+        flex-direction: column;
+    }
+
+    .search-container select,
+    .search-container input,
+    .search-container button {
+        font-size: 14px;
+    }
+
+    .search-results-table td {
+        font-size: 12px;
+    }
+}
+
+.date-time-selection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.date-time-inputs {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+}
+
+.date-time-inputs .date-input,
+.date-time-inputs .time-input {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.date-time-inputs input {
+    margin: 5px;
+    padding: 10px;
+    font-size: 16px;
+}
