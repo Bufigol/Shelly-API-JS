@@ -70,13 +70,14 @@ class Server {
        const totalesRoutes = require('./src/routes/totalesRoutes');
        const analysisRoutes = require('./src/routes/analysisRoutes');
        const usuariosRoutes = require('./src/routes/usuariosRoutes');
-
+       const personalRoutes = require('./src/routes/personalRoutes');
 
        this.app.use('/api/devices', deviceRoutes);
        this.app.use('/api/config', configRoutes);
        this.app.use('/api/totals', totalesRoutes);
        this.app.use('/api/analysis', analysisRoutes);
        this.app.use('/api/usuarios', usuariosRoutes);
+       this.app.use('/api/personal', personalRoutes);
    }
     setupErrorHandling() {
         // Error handler for async errors
