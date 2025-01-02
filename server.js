@@ -55,15 +55,7 @@ class Server {
            res.sendFile(path.join(__dirname, 'src', 'index.html'));
        });
        
-       // Device status endpoints
-       this.app.get('/api/device-status/latest', this.handleAsyncRoute(async (req, res) => {
-           const status = await this.services.database.getLatestStatus();
-           if (!status) {
-               return res.status(404).json({ error: 'No device status found' });
-           }
-           res.json(status);
-       }));
-
+      
        // Importar rutas
        const deviceRoutes = require('./src/routes/deviceRoutes');
        const configRoutes = require('./src/routes/configRoutes');
@@ -71,6 +63,8 @@ class Server {
        const analysisRoutes = require('./src/routes/analysisRoutes');
        const usuariosRoutes = require('./src/routes/usuariosRoutes');
        const personalRoutes = require('./src/routes/personalRoutes');
+       const smsRoutes = require('./src/routes/smsRoutes');
+       const sectoresRoutes = require('./src/routes/sectoresRoutes.js');
 
        this.app.use('/api/devices', deviceRoutes);
        this.app.use('/api/config', configRoutes);
@@ -78,6 +72,8 @@ class Server {
        this.app.use('/api/analysis', analysisRoutes);
        this.app.use('/api/usuarios', usuariosRoutes);
        this.app.use('/api/personal', personalRoutes);
+       this.app.use('/api/sms', smsRoutes);
+       this.app.use('/api/sectores', sectoresRoutes);
    }
     setupErrorHandling() {
         // Error handler for async errors

@@ -16,7 +16,7 @@ const Configuration = () => {
   useEffect(() => {
     const fetchSectors = async () => {
       try {
-        const response = await axios.get('/api/sectores');
+        const response = await axios.get('/api/sectores/listar-sectores');
         setSectors(response.data);
       } catch (error) {
         console.error('Error fetching sectors:', error);
