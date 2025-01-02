@@ -3,3 +3,5 @@ src/config/database.json
 src/config/api-credentials.json
 src/config/ddbb_produccion.json
 src/config/sgMailConfig.json
+
+.codegpt

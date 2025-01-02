@@ -1,0 +1,83 @@
+/* UbicacionTiempoRealInteriores.css */
+.ubicacion-tiempo-real-interiores {
+  text-align: center;
+}
+
+.personnel-table {
+  width: 90%;
+  margin: 20px auto;
+  border-collapse: collapse;
+}
+
+.personnel-table th,
+.personnel-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: center;
+}
+
+.personnel-table th {
+  background-color: #6b9fd4;
+  color: white;
+}
+
+.personnel-table tr:nth-child(even) {
+  background-color: #f2f2f2;
+}
+
+.personal-image {
+  width: auto;
+  height: 35px;
+  border-radius: 50%;
+}
+
+.refresh-button {
+  margin: 20px;
+  padding: 10px 20px;
+  background-color: #6b9fd4;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.refresh-button:hover {
+  background-color: #558bbd;
+}
+
+.semaphore {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.semaphore.green {
+  background-color: #4caf50;
+  color: white;
+}
+
+.semaphore.yellow {
+  background-color: #ffc107;
+  color: black;
+}
+
+.semaphore.red {
+  background-color: #f44336;
+  color: white;
+}
+.plano-container {
+  position: relative;
+  width: 60%; /* Ajusta este valor según el tamaño deseado */
+  height: auto;
+  margin: 0 auto;
+}
+
+.plano-oficina {
+  width: 50%; /* Asegura que la imagen se ajuste al contenedor */
+  height: auto;
+}
+
+.personal-icon {
+  width: 2%; /* Ajusta este valor según el tamaño deseado de los iconos */
+}
