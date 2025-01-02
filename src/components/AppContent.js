@@ -4,23 +4,23 @@ import { jwtDecode } from 'jwt-decode';
 import DashboardElectrico from './DashboardElectrico';
 import ConsumoElectrico from './ConsumoElectrico';
 import ConsumoTotalDiario from './ConsumoTotalDiario';
-import DashboardTemperatura from '../DashboardTemperatura';
-import LastKnownPosition from '../LastKnownPosition';
-import UbicacionTiempoRealInteriores from '../UbicacionTiempoRealInteriores';
-import PersonSearch from '../PersonSearch';
-import LandingPage from '../LandingPage';
-import SelectRoutine from '../SelectRoutine';
-import HistoricalMovementsSearch from '../HistoricalMovementsSearch';
-import Configuration from '../Configuration';
-import DoorStatusMatrix from '../DoorStatusMatrix';
-import UserRegistration from '../UserRegistration';
-import ForgotPassword from '../ForgotPassword';
-import ResetPassword from '../ResetPassword';
-import TemperaturaCamaras from '../TemperaturaCamaras';
-import DefrostAnalysis from '../DefrostAnalysis';
-import IntelligenciaDatosTemperatura from '../IntelligenciaDatosTemperatura';
-import ParametroTempCamaras from '../ParametroTempCamaras';
-import TemperaturePowerAnalysis from '../TemperaturePowerAnalysis';
+import DashboardTemperatura from './DashboardTemperatura'; // Cambiado
+import LastKnownPosition from './LastKnownPosition'; // Cambiado
+import UbicacionTiempoRealInteriores from './UbicacionTiempoRealInteriores'; // Cambiado
+import PersonSearch from './PersonSearch'; // Cambiado
+import LandingPage from './LandingPage'; // Cambiado
+import SelectRoutine from './SelectRoutine'; // Cambiado
+import HistoricalMovementsSearch from './HistoricalMovementsSearch'; // Cambiado
+import Configuration from './Configuration'; // Cambiado
+import DoorStatusMatrix from './DoorStatusMatrix'; // Cambiado
+import UserRegistration from './UserRegistration'; // Cambiado
+import ForgotPassword from './ForgotPassword'; // Cambiado
+import ResetPassword from './ResetPassword'; // Cambiado
+import TemperaturaCamaras from './TemperaturaCamaras'; // Cambiado
+import DefrostAnalysis from './DefrostAnalysis'; // Cambiado
+import IntelligenciaDatosTemperatura from './IntelligenciaDatosTemperatura'; // Cambiado
+import ParametroTempCamaras from './ParametroTempCamaras'; // Cambiado
+import TemperaturePowerAnalysis from './TemperaturePowerAnalysis'; // Cambiado
 import 'core-js/stable';
 import 'regenerator-runtime/runtime';
 import '../assets/css/AppContent.css';

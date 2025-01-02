@@ -55,7 +55,7 @@ const TemperaturePowerAnalysis = () => {
     useEffect(() => {
         const fetchLocations = async () => {
             try {
-                const response = await axios.get('/api/temperature-power-locations');
+                const response = await axios.get('/api/powerAnalysis/temperature-power-locations');
                 setLocations(response.data);
             } catch (error) {
                 console.error('Error fetching locations:', error);
@@ -76,7 +76,7 @@ const TemperaturePowerAnalysis = () => {
         try {
             const location = locations.find(loc => loc.id === parseInt(selectedLocation));
             
-            const response = await axios.get('/api/temperature-power-analysis', {
+            const response = await axios.get('/api/powerAnalysis/temperature-power-analysis', {
                 params: {
                     date: moment(selectedDate).format('YYYY-MM-DD'),
                     ubicacion: selectedLocation,
