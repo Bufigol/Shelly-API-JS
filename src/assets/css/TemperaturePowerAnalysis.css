@@ -1,0 +1,77 @@
+/* TemperaturePowerAnalysis.css */
+.temperature-power-analysis {
+  padding: 20px;
+}
+
+.controls {
+  margin: 20px 0;
+  padding: 20px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  display: flex;
+  gap: 20px;
+  align-items: flex-end;
+}
+
+.select-container {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.select-container label {
+  font-weight: 500;
+  color: #333;
+}
+
+.select-container select,
+.date-picker {
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  min-width: 200px;
+  height: 38px;
+}
+
+.fetch-button {
+  padding: 8px 16px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  height: 38px;
+  transition: background-color 0.3s ease;
+}
+
+.fetch-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.fetch-button:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.chart-container {
+  margin-top: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #eaeaea;
+}
+
+.custom-tooltip {
+  background-color: rgba(255, 255, 255, 0.95);
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.custom-tooltip p {
+  margin: 0;
+  padding: 3px 0;
+  color: #333;
+}
