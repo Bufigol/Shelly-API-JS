@@ -66,6 +66,7 @@ class Server {
        const smsRoutes = require('./src/routes/smsRoutes');
        const sectoresRoutes = require('./src/routes/sectoresRoutes.js');
        const powerAnalysisRoutes = require('./src/routes/powerAnalysisRoutes');
+       const gpsRoutes = require ('./src/routes/gpsRoutes');
 
        this.app.use('/api/devices', deviceRoutes);
        this.app.use('/api/config', configRoutes);
@@ -76,6 +77,7 @@ class Server {
        this.app.use('/api/sms', smsRoutes);
        this.app.use('/api/sectores', sectoresRoutes);
        this.app.use('/api/powerAnalysis', powerAnalysisRoutes);
+       this.app.use('/api/gps',gpsRoutes);
    }
     setupErrorHandling() {
         // Error handler for async errors

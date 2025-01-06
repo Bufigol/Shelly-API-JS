@@ -90,7 +90,7 @@ function DataIntelligence() {
     const endDateTime = `${selectedDay}T${endTime}:00`;
 
     try {
-      const response = await axios.get("/api/historical-gps-data", {
+      const response = await axios.get("/api/gps/historical-gps-data", {
         params: {
           device_id: selectedDeviceId,
           date: selectedDay,
