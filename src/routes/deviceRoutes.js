@@ -20,4 +20,8 @@ router.get('/download/:shellyId/:date',
     energyController.downloadDeviceData.bind(energyController)
 );
 
+router.get('/devices',
+    deviceController.handleDeviceSearch.bind(deviceController)
+)
+
 module.exports = router;
