@@ -47,7 +47,7 @@ function LastKnownPosition({ showHeader = true }) {
     setShowTable(false);
     setSelectedPosition(null);
     try {
-      const endpoint = "/api/last-known-position";
+      const endpoint = "/api/gps/last-known-position";
       const params = { ident: selectedDeviceId };
       const response = await axios.get(endpoint, { params });
 
