@@ -26,7 +26,7 @@ const UbicacionTiempoRealInteriores = () => {
     try {
       const [mapInfo, sectorInfo, umbralesInfo] = await Promise.all([
         axios.get('/api/sectores/retrive_MapWithQuadrants_information'),
-        axios.get('/api/latest-sectors'),
+        axios.get('/api/beacons/latest-sectors'),
         axios.get('/api/config/teltonica/umbrales')
       ]);
   
@@ -48,7 +48,7 @@ const UbicacionTiempoRealInteriores = () => {
 
   const fetchActiveBeacons = async () => {
     try {
-      const response = await axios.get('/api/active-beacons');
+      const response = await axios.get('/api/beacons/active-beacons');
       const activeBeaconIds = response.data.activeBeaconIds || [];
       console.log('Active Beacons:', activeBeaconIds);
       setActiveBeacons(activeBeaconIds);

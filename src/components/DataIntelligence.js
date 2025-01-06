@@ -71,7 +71,7 @@ function DataIntelligence() {
     const endDateTime = `${selectedDay}T${endTime}:00`;
 
     try {
-      const response = await axios.get("/api/beacon-entries-exits", {
+      const response = await axios.get("/api/beacons/beacon-entries-exits", {
         params: {
           startDate: startDateTime,
           endDate: endDateTime,
