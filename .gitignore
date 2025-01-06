@@ -5,3 +5,4 @@ src/config/ddbb_produccion.json
 src/config/sgMailConfig.json
 
 .codegpt
+src/config/config.json
