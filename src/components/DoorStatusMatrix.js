@@ -62,7 +62,7 @@ const DoorStatusMatrix = () => {
     const endDate = dayjs(date).endOf("day").format("YYYY-MM-DD");
 
     try {
-      const response = await axios.get("/api/temperature-range-data", {
+      const response = await axios.get("/api/ubibot/temperature-range-data", {
         params: { startDate, endDate },
       });
 
