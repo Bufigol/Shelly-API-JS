@@ -125,6 +125,7 @@ class Server {
     const beaconsRoutes = require("./src/routes/beaconsRoutes");
     const ubibotRoutes = require("./src/routes/ubibotRoutes");
     const gpsDataRoutes = require("./src/routes/gpsDataRoutes");
+    const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
 
     this.app.use("/api/devices", deviceRoutes);
     this.app.use("/api/config", configRoutes);
@@ -138,6 +139,7 @@ class Server {
     this.app.use("/api/gps", gpsRoutes);
     this.app.use("/api/beacons", beaconsRoutes);
     this.app.use("/api/ubibot", ubibotRoutes);
+    this.app.use("/api/blindspot", blindSpotRoutes);
     this.app.use("/gps-data", gpsDataRoutes);
   }
 
