@@ -7,3 +7,4 @@ src/config/sgMailConfig.json
 .codegpt
 src/config/config.json
 src/config/smsConfig.json
+src/config/twilio.json

@@ -2,17 +2,26 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const ShellyCollector = require("./collectors/shelly-collector");
+const UbibotCollector = require("./collectors/ubibot-collector");
 const databaseService = require("./src/services/database-service");
 const energyAveragesService = require("./src/services/energy-averages-service");
 const totalEnergyService = require("./src/services/total-energy-service");
-const { procesarDatosUbibot } = require("./src/services/ubibotService");
-const intervalo_ejecucion_ubibot = 5; // en minutos
+const deviceRoutes = require("./src/routes/deviceRoutes");
+const configRoutes = require("./src/routes/configRoutes");
 
 class Server {
+/**
+ * Initializes a new instance of the Server class.
+ * Sets up the Express application, configures the port,
+ * initializes data collectors, and defines services to be used.
+ * Also sets up middleware, routes, and error handling for the server.
+ */
+
   constructor() {
     this.app = express();
     this.port = process.env.PORT || 3030;
-    this.collector = new ShellyCollector();
+    this.shellyCollector = new ShellyCollector();
+    this.ubibotCollector = new UbibotCollector();
     this.services = {
       database: databaseService,
       energyAverages: energyAveragesService,
@@ -23,6 +32,18 @@ class Server {
     this.setupErrorHandling();
   }
 
+  /**
+   * Configura el middleware necesario para la aplicación.
+   * 
+   * Se configuran los siguientes middleware:
+   * - CORS para permitir peticiones desde fuera del dominio.
+   * - Express JSON para parsear cuerpos de request en formato JSON.
+   * - Servicio de archivos estáticos para los directorios `dist` y `src`.
+   * - Política de seguridad de contenido (CSP) para restringir el tipo de recursos que se pueden cargar.
+   * - Logging middleware para registrar las peticiones.
+   * 
+   * @private
+   */
   setupMiddleware() {
     this.app.use(cors());
     this.app.use(express.json());
@@ -41,6 +62,17 @@ class Server {
     });
   }
 
+  /**
+   * Configures the Content Security Policy (CSP) for the application.
+   * 
+   * This sets the CSP headers to restrict resource loading:
+   * - Allows default resources to be loaded only from the same origin.
+   * - Permits fonts to be loaded from the same origin and data URIs.
+   * - Allows scripts to be loaded from the same origin and permits inline scripts and eval.
+   * 
+   * @private
+   */
+
   setupContentSecurityPolicy() {
     this.app.use((req, res, next) => {
       res.setHeader(
@@ -51,6 +83,28 @@ class Server {
     });
   }
 
+/**
+ * Configura las rutas del servidor
+ *
+ * El servidor tiene un endpoint status en /
+ * y utiliza los siguientes módulos de rutas:
+ *
+ * - deviceRoutes
+ * - configRoutes
+ * - totalesRoutes
+ * - analysisRoutes
+ * - usuariosRoutes
+ * - personalRoutes
+ * - smsRoutes
+ * - sectoresRoutes
+ * - powerAnalysisRoutes
+ * - gpsRoutes
+ * - beaconsRoutes
+ * - ubibotRoutes
+ * - gpsDataRoutes
+ *
+ * @memberof Server
+ */
   setupRoutes() {
     // Status endpoint
     this.app.get("/", (req, res) => {
@@ -86,6 +140,15 @@ class Server {
     this.app.use("/api/ubibot", ubibotRoutes);
     this.app.use("/gps-data", gpsDataRoutes);
   }
+
+  /**
+   * Sets up error handling for the server. This method is used to
+   * install a middleware function that will catch any async errors
+   * and send a 500 response with a JSON body containing an error
+   * message and the original error message (if in development mode).
+   * @see https://expressjs.com/en/guide/error-handling.html
+   * @private
+   */
   setupErrorHandling() {
     // Error handler for async errors
     this.app.use((err, req, res, next) => {
@@ -100,17 +163,46 @@ class Server {
     });
   }
 
+  /**
+   * Wraps a route handler function to catch any async errors and call
+   * `next(err)` with the error.
+   *
+   * @param {Function} fn - The route handler function to wrap.
+   * @return {Function} A new route handler function that wraps the original
+   *   one and catches any errors.
+   */
   handleAsyncRoute(fn) {
     return (req, res, next) => {
       Promise.resolve(fn(req, res, next)).catch(next);
     };
   }
 
+  /**
+   * Returns an object with information about the current status of the server's services.
+   *
+   * @return {Object} Object with the following properties:
+   * - collector: Object with information about the Shelly and Ubibot collectors.
+   *   - shelly: Object with properties running (a boolean indicating if the collector is running) and stats (an object with collector statistics).
+   *   - ubibot: Object with properties running (a boolean indicating if the collector is running) and stats (an object with collector statistics).
+   * - database: Object with a single property connected (a boolean indicating if the database connection is established).
+   * - energyAverages: Object with a single property initialized (a boolean indicating if the energy averages service has been initialized).
+   * - totalEnergy: Object with a single property initialized (a boolean indicating if the total energy service has been initialized).
+   * - server: Object with properties about the server's runtime environment.
+   *   - uptime: Number of seconds the server has been running.
+   *   - memory: Object with properties rss, heapTotal, and heapUsed, with the memory usage of the server in bytes.
+   *   - nodeVersion: String with the version of Node.js running the server.
+   */
   getServiceStatus() {
     return {
       collector: {
-        running: this.collector.isRunning,
-        stats: this.collector.getCollectorStats(),
+        shelly: {
+          running: this.shellyCollector.isRunning,
+          stats: this.shellyCollector.getCollectorStats(),
+        },
+        ubibot: {
+          running: this.ubibotCollector.isRunning,
+          stats: this.ubibotCollector.getCollectorStats(),
+        },
       },
       database: {
         connected: this.services.database.connected,
@@ -129,9 +221,15 @@ class Server {
     };
   }
 
+  /**
+   * Initializes all services. This method is idempotent and will not throw if
+   * services are already initialized. If any of the services fail to initialize,
+   * an error will be thrown.
+   *
+   * @throws {Error} If any of the services fail to initialize
+   */
   async initializeServices() {
     console.log("Initializing services...");
-
     try {
       await this.services.database.initialize();
       const dbConnected = await this.services.database.testConnection();
@@ -146,22 +244,31 @@ class Server {
       await this.services.totalEnergy.initialize();
       console.log("✅ Total energy service initialized");
 
-      await this.collector.start();
-      console.log("✅ Data collector started");
+      await this.shellyCollector.start();
+      console.log("✅ Shelly Data collector started");
+
+      await this.ubibotCollector.start();
+      console.log("✅ Ubibot data collector started");
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
     }
   }
 
+  /**
+   * Inicializa los servicios y levanta el servidor. Si ocurre un error,
+   * se registra en la consola y se sale del proceso con estado 1.
+   * @throws {Error} Si ocurre un error al inicializar los servicios o levantar
+   * el servidor.
+   */
   async start() {
     try {
       await this.initializeServices();
-      // Iniciar el proceso de Ubibot después de inicializar los servicios
-      this.startUbibotProcess(); // Iniciar el proceso aquí
+
       this.server = this.app.listen(this.port, () => {
         console.log(`🚀 Server running on http://localhost:${this.port}`);
       });
+
       // Setup graceful shutdown
       process.on("SIGTERM", () => this.shutdown());
       process.on("SIGINT", () => this.shutdown());
@@ -170,37 +277,27 @@ class Server {
       process.exit(1);
     }
   }
-  async ejecutarProcesoUbibot() {
-    try {
-      console.log("Iniciando proceso de Ubibot...");
-      await procesarDatosUbibot();
-      console.log("Proceso de Ubibot completado.");
-    } catch (error) {
-      console.error("Error al procesar datos de Ubibot:", error);
-    }
-  }
-  startUbibotProcess() {
-    const intervalMinutes = intervalo_ejecucion_ubibot; // Intervalo de ejecución en minutos
-    console.log(
-      `El proceso de Ubibot se ejecutara cada ${intervalMinutes} minutos`
-    );
-    this.ubibotIntervalId = setInterval(
-      () => this.ejecutarProcesoUbibot(),
-      intervalMinutes * 60 * 1000
-    );
-    this.ejecutarProcesoUbibot();
-  }
 
+  /**
+   * Gracefully shuts down the server, stopping all services and closing all
+   * database connections.
+   *
+   * This function is called automatically when the process receives a SIGTERM or
+   * SIGINT signal.
+   *
+   * @return {Promise<void>}
+   */
   async shutdown() {
     console.log("\n🛑 Starting graceful shutdown...");
-    clearInterval(this.ubibotIntervalId);
     if (this.server) {
       await new Promise((resolve) => this.server.close(resolve));
       console.log("✅ HTTP server stopped");
     }
+    this.shellyCollector.stop();
+    console.log("✅ Shelly Data collector stopped");
 
-    this.collector.stop();
-    console.log("✅ Data collector stopped");
+    this.ubibotCollector.stop();
+    console.log("✅ Ubibot data collector stopped");
 
     await this.services.database.close();
     console.log("✅ Database connections closed");
