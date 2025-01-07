@@ -1,6 +1,6 @@
 // controllers/configController.js
-const databaseService = require('../services/database-service');
-const { ValidationError } = require('../utils/errors');
+const databaseService = require('../../services/database-service');
+const { ValidationError } = require('../../utils/errors');
 
 class ConfigController {
     async getSystemParameters(req, res, next) {
