@@ -8,3 +8,4 @@ src/config/sgMailConfig.json
 src/config/config.json
 src/config/smsConfig.json
 src/config/twilio.json
+src/config/ubibot_account_info.json
