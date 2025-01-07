@@ -221,15 +221,26 @@ class Server {
     };
   }
 
+  
   /**
-   * Initializes all services. This method is idempotent and will not throw if
-   * services are already initialized. If any of the services fail to initialize,
-   * an error will be thrown.
-   *
-   * @throws {Error} If any of the services fail to initialize
+   * Initializes all services and collectors necessary for the server.
+   * 
+   * This method performs the following actions:
+   * 1. Initializes the database service and tests the connection.
+   * 2. Initializes the energy averages service.
+   * 3. Initializes the total energy service.
+   * 4. Starts the Shelly data collector.
+   * 5. Starts the Ubibot data collector.
+   * 
+   * If any of these steps fail, an error is logged and re-thrown to be
+   * handled by the caller.
+   * 
+   * @throws {Error} If any service or collector fails to initialize.
    */
+
   async initializeServices() {
     console.log("Initializing services...");
+
     try {
       await this.services.database.initialize();
       const dbConnected = await this.services.database.testConnection();
@@ -249,6 +260,7 @@ class Server {
 
       await this.ubibotCollector.start();
       console.log("✅ Ubibot data collector started");
+
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
