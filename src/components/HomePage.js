@@ -1,12 +1,12 @@
 // Inside HomePage.js:
 import React from 'react';
 import { Link } from 'react-router-dom';
-import homeWhiteLogo from '../assets/images/general/home_white.png';
-import electricGeneratorIcon from '../assets/images/Iconos_Index/dashboarelectrcio.png';
-import powerMeterIcon from '../assets/images/Iconos_Index/potenciadinero.png';
-import MeterIcon from '../assets/images/Iconos_Index/electric-generator.png';
-import parametrosIcon from '../assets/images/Iconos_Index/parametros.png';
-import speedometerIcon from '../assets/images/Iconos_Index/dashboarelectrcio.png';
+import homeWhiteLogo from '../assets/images/home_white.png';
+import electricGeneratorIcon from '../assets/images/dashboarelectrcio.png';
+import powerMeterIcon from '../assets/images/potenciadinero.png';
+import MeterIcon from '../assets/images/electric-generator.png';
+import parametrosIcon from '../assets/images/parametros.png';
+import speedometerIcon from '../assets/images/dashboarelectrcio.png';
 import '../assets/css/HomePage.css';
 import Header from './Header'; // Importamos el componente header
 

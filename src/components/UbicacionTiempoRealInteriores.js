@@ -4,9 +4,9 @@ import moment from 'moment';
 import '../assets/css/UbicacionTiempoRealInteriores.css';
 import Header from './Header';
 import planoBase from './assets/images/planos/PLANO_STORAGE.jpg';
-import personal1Icon from './assets/images/general/forklift_orange_1.png';
-import personal2Icon from './assets/images/general/forklift_Blue_2.png';
-import personal3Icon from './assets/images/general/forklift_red_3.png';
+import personal1Icon from './assets/images/forklift_orange_1.png';
+import personal2Icon from './assets/images/forklift_Blue_2.png';
+import personal3Icon from './assets/images/forklift_red_3.png';
 
 const UbicacionTiempoRealInteriores = () => {
   const [personal, setPersonal] = useState([]);

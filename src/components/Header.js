@@ -1,10 +1,10 @@
 // Header.js
 import React, { useState, useEffect } from 'react';
 import '../assets/css/Header.css';
-import homeIcon from '../assets/images/general/home_white.png';
-import tnsTrackLogo from '../assets/images/logos/TNS Track White.png';
-import alertGif from '../assets/images/general/alert.gif';
-import sirenaGif from '../assets/images/general/Sirena.gif';
+import homeIcon from '../assets/images/home_white.png';
+import tnsTrackLogo from '../assets/images/TNS Track White.png';
+import alertGif from '../assets/images/alert.gif';
+import sirenaGif from '../assets/images/Sirena.gif';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 

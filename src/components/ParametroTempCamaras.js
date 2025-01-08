@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import "../assets/css/ParametroTempCamaras.css";
 import Header from "./Header";
-import paramTempIcon from "../assets/images/general/param_temp.png";
+import paramTempIcon from "../assets/images/param_temp.png";
 
 const ParametroTempCamaras = () => {
   const [params, setParams] = useState([]);

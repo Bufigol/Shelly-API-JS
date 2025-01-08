@@ -4,10 +4,10 @@ import "../assets/css/PersonSearch.css";
 import Header from "./Header";
 
 // Importa las imágenes
-import personal1Icon from "./assets/images/general/forklift_orange_1.png";
-import personal2Icon from "./assets/images/general/forklift_Blue_2.png";
-import personal3Icon from "./assets/images/general/forklift_red_3.png";
-import planoSectores from "./assets/images/planos/PLANO_STORAGE_Zonas.jpg";
+import personal1Icon from "./assets/images/forklift_orange_1.png";
+import personal2Icon from "./assets/images/forklift_Blue_2.png";
+import personal3Icon from "./assets/images/forklift_red_3.png";
+import planoSectores from "./assets/images/PLANO_STORAGE_Zonas.jpg";
 
 function PersonSearch() {
   const [selectedDay, setSelectedDay] = useState("");

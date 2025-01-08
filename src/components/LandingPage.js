@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../assets/css/LandingPage.css';
-import mapImage from '../assets/images/general/map-of-a-map.jpeg';
-import centerImage from '../assets/images/logos/TNS Track White.png';
-import rightImage from '../assets/images/logos/tns_logo_blanco.png';
-import storageImage from '../assets/images/logos/storage-logo.png';
+import mapImage from '../assets/images/map-of-a-map.jpeg';
+import centerImage from '../assets/images/TNS Track White.png';
+import rightImage from '../assets/images/tns_logo_blanco.png';
+import storageImage from '../assets/images/storage-logo.png';
 
 const LandingPage = () => {
     const [currentTime, setCurrentTime] = useState(new Date());

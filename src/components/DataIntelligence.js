@@ -4,11 +4,11 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import "../assets/css/DataIntelligence.css";
 import Header from "./Header";
-import interiorSearchImage from "./assets/images/general/interior_search.png";
-import exteriorSearchImage from "./assets/images/general/exterior_search.png";
-import personal1Icon from "./assets/images/general/Personal 1.png";
-import personal2Icon from "./assets/images/general/Personal 2.png";
-import personal3Icon from "./assets/images/general/Personal 3.png";
+import interiorSearchImage from "../assets/images/interior_search.png";
+import exteriorSearchImage from "../assets/images/exterior_search.png";
+import personal1Icon from "../assets/images/Personal 1.png";
+import personal2Icon from "../assets/images/Personal 2.png";
+import personal3Icon from "../assets/images/Personal 3.png";
 
 const searchOptions = [
   {

@@ -7,7 +7,7 @@ import MapboxGL from "mapbox-gl";
 import axios from "axios";
 import moment from "moment";
 import Header from "./Header";
-import "./LastKnownPosition.css";
+import "../assets/css/LastKnownPosition.css";
 
 const fs = require('fs');
 const configFile = fs.readFileSync("../config/api-credentials.json", 'utf8');

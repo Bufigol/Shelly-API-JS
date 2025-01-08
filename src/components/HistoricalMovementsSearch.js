@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import mapboxgl from "mapbox-gl";
 import '../assets/css/HistoricalMovementsSearch.css';
-import markerIcon from "../assets/images/general/pinazul.png";
+import markerIcon from "../assets/images/pinazul.png";
 import Header from "./Header";
 import "./utils/backButtonHandler.js";
 
