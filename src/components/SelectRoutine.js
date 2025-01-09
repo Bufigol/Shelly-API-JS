@@ -22,7 +22,7 @@ import dashboardTemperaturaImage from "../assets/images/dashboard_temperatura.pn
 import descargadatostemp from "../assets/images/descargadatostemp.png";
 import paramTempIcon from "../assets/images/param_temp.png";
 import frostIcon from "../assets/images/frost.png";
-import thermo_electricImage from "./assets/images/thermo_electric.png";
+import thermo_electricImage from "../assets/images/thermo_electric.png";
 
 const routines = [
   //  { title: "Dashboard", image: dashboardImage, route: "/dashboard", permission: "view_dashboard" },
