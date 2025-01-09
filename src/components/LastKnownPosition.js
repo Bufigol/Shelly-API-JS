@@ -9,7 +9,6 @@ import moment from "moment";
 import Header from "./Header";
 import "../assets/css/LastKnownPosition.css";
 
-const fs = require('fs');
 const configFile = fs.readFileSync("../config/api-credentials.json", 'utf8');
 const json = JSON.parse(configFile);
 MapboxGL.accessToken = json.MapboxGL.accessToken;

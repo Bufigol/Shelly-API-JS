@@ -6,10 +6,10 @@ import mapboxgl from "mapbox-gl";
 import '../assets/css/HistoricalMovementsSearch.css';
 import markerIcon from "../assets/images/pinazul.png";
 import Header from "./Header";
-import "./utils/backButtonHandler.js";
+import "../utils/backButtonHandler.js";
 
 //api keys
-const config = require("../config/config.json");
+const config = require("../config/jsons/config.json");
 mapboxgl.accessToken = config.maps.api_key;
 
 const HistoricalMovementsSearch = () => {
