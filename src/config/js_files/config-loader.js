@@ -7,9 +7,9 @@ class ConfigLoader {
     this.config = {};
     this.measurementConfig = {};
     this.configPaths = {
-      api: "api-credentials.json",
-      database: "database.json",
-      measurement: "precios_energia.json",
+      api: "../jsons/api-credentials.json",
+      database: "../jsons/database.json",
+      measurement: "../jsons/precios_energia.json",
     };
     this.cachedConfig = null;
     this.lastLoadTime = null;
@@ -38,7 +38,7 @@ class ConfigLoader {
       const dbDetails = this.parseJdbcUrl(dbConfig.url);
 
       // Cargar configuración de Ubibot
-      const ubibotConfig = this.loadJsonFile("ubibot_account_info.json");
+      const ubibotConfig = this.loadJsonFile("../jsons/ubibot_account_info.json");
 
       // Combinar todas las configuraciones
       this.config = {

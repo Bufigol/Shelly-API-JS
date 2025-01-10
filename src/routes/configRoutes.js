@@ -8,13 +8,13 @@ const { authMiddleware } = require('../middlewares');
 // Get current system parameters
 router.get('/sem/parametros', 
     authMiddleware.authenticate.bind(authMiddleware),
-    sem_configController.getSystemParameters.bind(sem_ConfigController)
+    sem_configController.getSystemParameters.bind(sem_configController)
 );
 
 // Update system parameters
 router.post('/sem/parametros',
     authMiddleware.authenticate.bind(authMiddleware),
-    sem_configController.updateSystemParameters.bind(sem_ConfigController)
+    sem_configController.updateSystemParameters.bind(sem_configController)
 );
 
 router.get('/teltonica/parametros',

@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
 const { DateTime } = require('luxon'); // Agregamos importación de Luxon
-const config = require('../config/config-loader');
+const config = require('../config/js_files/config-loader');
 const { ValidationError, DatabaseError, NotFoundError } = require('../utils/errors');
 const transformUtils = require('../utils/transformUtils');
 

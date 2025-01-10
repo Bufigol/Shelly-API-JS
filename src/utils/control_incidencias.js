@@ -1,10 +1,10 @@
 // Dependencias requeridas
 const mysql = require("mysql2/promise");
-const ddbb_data = require("../config/database.json"); 
+const ddbb_data = require("../config/jsons/database.json"); 
 const moment = require('moment');
 const axios = require('axios');
-const sgMailConfig = require("../config/sgMailConfig.json");
-const smsConfig = require("../config/smsConfig.json");
+const sgMailConfig = require("../config/jsons/sgMailConfig.json");
+const smsConfig = require("../config/jsons/smsConfig.json");
 
 // Configuración global
 let io;

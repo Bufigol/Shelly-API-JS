@@ -268,4 +268,4 @@ class UbibotCollector {
   }
 }
 
-module.exports = new UbibotCollector();
+module.exports = UbibotCollector; 

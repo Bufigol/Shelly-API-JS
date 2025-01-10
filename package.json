@@ -28,6 +28,7 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
     "express": "^4.21.2",
+    "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "jwt-decode": "^4.0.0",
     "luxon": "^3.5.0",
@@ -50,6 +51,7 @@
     "socket.io-client": "^4.8.1",
     "stream-browserify": "^3.0.0",
     "styled-components": "^6.1.13",
+    "twilio": "^5.4.1",
     "util": "^0.12.5",
     "vm-browserify": "^1.1.2"
   },
