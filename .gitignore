@@ -6,3 +6,4 @@ src/config/jsons
 
 .codegpt
 dist
+src/config/token_id.txt
