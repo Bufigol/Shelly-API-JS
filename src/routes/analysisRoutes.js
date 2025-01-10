@@ -1,12 +1,12 @@
 // src/routes/analysisRoutes.js
 const express = require('express');
 const router = express.Router();
-const analysisController = require('../controllers/analysisController');
+const analysisController = require('../controllers/analysisController.js');
 const { validationMiddleware } = require('../middlewares');
 
 // Endpoint para análisis de potencia y temperatura
 router.get('/temperature-power-analysis',
-    validationMiddleware.validateDateParams,
+    validationMiddleware.validateDateParams.bind(validationMiddleware),
     analysisController.getTemperaturePowerAnalysis.bind(analysisController)
 );
 

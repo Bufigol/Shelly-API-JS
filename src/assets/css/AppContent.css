@@ -1,0 +1,226 @@
+/* App.css */
+
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap");
+
+body,
+html {
+    font-family: "Roboto", sans-serif;
+    background-color: #f4f4f9;
+    margin: 0;
+    padding: 0;
+}
+
+.app-container {
+    display: flex;
+    min-height: 100vh;
+    transition: background-color 0.3s ease;
+}
+
+.App {
+    text-align: center;
+}
+
+.main-content {
+    flex-grow: 1;
+    transition: margin-left 0.3s ease;
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    margin: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.main-content.with-side-nav {
+    margin-left: 70px;
+    /* Ancho de la barra lateral cuando está contraída + 20px de margen */
+}
+
+.main-content.with-expanded-nav {
+    margin-left: 220px;
+    /* Ancho de la barra lateral cuando está expandida + 20px de margen */
+}
+
+.App-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(107, 159, 212, 0.9);
+    color: white;
+    padding: 20px;
+    position: relative;
+    margin: -20px -20px 20px -20px;
+    border-radius: 10px 10px 0 0;
+}
+
+.App-logo {
+    height: 60px;
+    position: absolute;
+    left: 20px;
+}
+
+.clock {
+    position: absolute;
+    right: 20px;
+}
+
+.header h1 {
+    flex: 1;
+    margin: 0;
+}
+
+.map-container {
+    margin: 20px;
+    width: calc(100% - 40px);
+}
+
+.query-section {
+    background-color: #e7e7e7;
+    padding: 20px;
+    margin: 20px;
+    width: calc(100% - 40px);
+}
+
+.data-table-container {
+    margin: 20px;
+    width: calc(100% - 40px);
+}
+
+button {
+    background-color: #6b9fd4;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 10px 2px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #5a8ec3;
+}
+
+input[type="datetime-local"] {
+    padding: 10px;
+    margin: 10px 0;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 8px 16px;
+    text-align: left;
+    border: 1px solid #ddd;
+}
+
+th {
+    background-color: #6b9fd4;
+    color: white;
+}
+
+tr:nth-child(odd) {
+    background-color: #f2f2f2;
+}
+
+.icon-legend {
+    display: flex;
+    justify-content: center;
+    margin: 20px 0;
+    font-family: "Roboto", sans-serif;
+    color: #d3dde6;
+}
+
+.icon-items {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.icon-item {
+    display: flex;
+    align-items: center;
+    margin-right: 20px;
+    margin-bottom: 10px;
+}
+
+.icon-item img {
+    height: 30px;
+    margin-right: 10px;
+}
+
+.icon-item span {
+    font-size: 14px;
+}
+
+.icon-item:last-child {
+    margin-right: 0;
+}
+
+.content {
+    padding: 30px;
+    margin-top: 0;
+}
+
+body,
+input,
+button,
+select {
+    color: #333;
+}
+
+@media (max-width: 768px) {
+
+    .map-container,
+    .query-section,
+    .data-table-container {
+        width: calc(100% - 20px);
+        margin: 10px;
+    }
+
+    .icon-legend,
+    .icon-items {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .icon-item {
+        margin-bottom: 10px;
+    }
+
+    .main-content.with-side-nav,
+    .main-content.with-expanded-nav {
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .App-header {
+        flex-direction: column;
+    }
+
+    .App-logo,
+    .clock {
+        position: static;
+        margin-bottom: 10px;
+    }
+
+    .map-container {
+        height: 300px;
+    }
+
+    .query-section input[type="datetime-local"],
+    .query-section button {
+        width: 100%;
+        box-sizing: border-box;
+    }
+}
