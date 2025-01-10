@@ -1,72 +1,77 @@
-const databaseService = require('../services/database-service');
-const { DeviceError, NotFoundError } = require('../utils/errors');
-const { transformUtils } = require('../utils/transformUtils');
+const databaseService = require("../services/database-service");
+const { DeviceError, NotFoundError } = require("../utils/errors");
+const { transformUtils } = require("../utils/transformUtils");
 
 class DeviceController {
-    async getLatestStatus(req, res, next) {
-        try {
-            const status = await databaseService.getLatestStatus();
-            if (!status) {
-                throw new NotFoundError('No se encontró estado del dispositivo');
-            }
-            res.json(transformUtils.transformApiResponse(status));
-        } catch (error) {
-            next(error);
-        }
+  async getLatestStatus(req, res, next) {
+    try {
+      const status = await databaseService.getLatestStatus();
+      if (!status) {
+        throw new NotFoundError("No se encontró estado del dispositivo");
+      }
+      res.json(transformUtils.transformApiResponse(status));
+    } catch (error) {
+      next(error);
     }
+  }
 
-    async getStatusHistory(req, res, next) {
-        try {
-            const { hours = 24 } = req.query;
-            const history = await databaseService.getHistory(parseInt(hours));
-            res.json(transformUtils.transformApiResponse(history));
-        } catch (error) {
-            next(error);
-        }
+  async getStatusHistory(req, res, next) {
+    try {
+      const { hours = 24 } = req.query;
+      const history = await databaseService.getHistory(parseInt(hours));
+      res.json(transformUtils.transformApiResponse(history));
+    } catch (error) {
+      next(error);
     }
+  }
 
-    async insertDeviceStatus(req, res, next) {
-        try {
-            const result = await databaseService.insertDeviceStatus(req.validatedMeasurement);
-            res.status(201).json(transformUtils.transformApiResponse(result));
-        } catch (error) {
-            next(error);
-        }
+  async insertDeviceStatus(req, res, next) {
+    try {
+      const result = await databaseService.insertDeviceStatus(
+        req.validatedMeasurement
+      );
+      res.status(201).json(transformUtils.transformApiResponse(result));
+    } catch (error) {
+      next(error);
     }
+  }
 
-    async getDeviceConfig(req, res, next) {
-        try {
-            const { deviceId } = req.params;
-            const config = await databaseService.getDeviceConfig(deviceId);
-            if (!config) {
-                throw new NotFoundError('Configuración no encontrada', deviceId);
-            }
-            res.json(transformUtils.transformApiResponse(config));
-        } catch (error) {
-            next(error);
-        }
+  async getDeviceConfig(req, res, next) {
+    try {
+      const { deviceId } = req.params;
+      const config = await databaseService.getDeviceConfig(deviceId);
+      if (!config) {
+        throw new NotFoundError("Configuración no encontrada", deviceId);
+      }
+      res.json(transformUtils.transformApiResponse(config));
+    } catch (error) {
+      next(error);
     }
+  }
 
-    async updateDeviceConfig(req, res, next) {
-        try {
-            const { deviceId } = req.params;
-            const result = await databaseService.updateDeviceConfig(deviceId, req.body);
-            res.json(transformUtils.transformApiResponse(result));
-        } catch (error) {
-            next(error);
-        }
+  async updateDeviceConfig(req, res, next) {
+    try {
+      const { deviceId } = req.params;
+      const result = await databaseService.updateDeviceConfig(
+        deviceId,
+        req.body
+      );
+      res.json(transformUtils.transformApiResponse(result));
+    } catch (error) {
+      next(error);
     }
+  }
 
-    async getLatestDevicesMeasurements(req, res, next) {
-        try {
-            const query = `
+  async getLatestDevicesMeasurements(req, res, next) {
+    try {
+      const query = `
                 SELECT 
                     d.shelly_id,
-                    d.nombre as device_name,
-                    d.ubicacion as location,
-                    m.potencia_activa,
-                    m.timestamp_local
+                    cur.nombre_ubicacion as location,
+                    m.potencia_activa as activePower,
+                    m.timestamp_local as lastUpdate
                 FROM sem_dispositivos d
+                LEFT JOIN catalogo_ubicaciones_reales cur ON d.ubicacion = cur.idcatalogo_ubicaciones_reales
                 LEFT JOIN (
                     SELECT 
                         shelly_id,
@@ -77,28 +82,42 @@ class DeviceController {
                     WHERE fase = 'TOTAL'
                 ) m ON d.shelly_id = m.shelly_id AND m.rn = 1
                 WHERE d.activo = 1
-                ORDER BY d.nombre`;
+                ORDER BY cur.nombre_ubicacion`;
 
-            const [rows] = await databaseService.pool.query(query);
+      const [rows] = await databaseService.pool.query(query);
 
-            const devices = rows.map(row => ({
-                deviceId: row.shelly_id,
-                name: row.device_name,
-                location: row.location,
-                activePower: row.potencia_activa ? parseFloat(row.potencia_activa) : 0,
-                lastUpdate: row.timestamp_local,
-            }));
+      const devices = rows.map((row) => ({
+        deviceId: row.shelly_id,
+        location: row.location,
+        activePower: row.activePower ? parseFloat(row.activePower) : 0,
+        lastUpdate: row.lastUpdate,
+      }));
 
-            res.json({
-                success: true,
-                data: devices,
-                timestamp: new Date()
-            });
-
-        } catch (error) {
-            next(error);
-        }
+      res.json({
+        success: true,
+        data: devices,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      next(error);
     }
+  }
+
+  async handleDeviceSearch(req, res) {
+    try {
+      // Execute a SQL query to select all records from the 'devices' table
+      const [results] = await pool.query("SELECT * FROM devices");
+
+      // Send the query results as a JSON response
+      res.json(results);
+    } catch (error) {
+      // Log any errors that occur during the query execution
+      console.error("Error fetching devices:", error);
+
+      // Send a 500 Internal Server Error response with a message
+      res.status(500).send("Server Error");
+    }
+  }
 }
 
 module.exports = new DeviceController();

@@ -90,28 +90,27 @@ class EnergyController {
             const { start, end } = req.validatedDates;
     
             const query = `
-                SELECT 
+                SELECT
                     d.shelly_id,
                     d.nombre as device_name,
-                    d.ubicacion as location,
+                    cur.nombre_ubicacion as location,
                     DATE_FORMAT(
                         DATE_SUB(m.timestamp_local, 
-                                INTERVAL MOD(MINUTE(m.timestamp_local), 5) MINUTE
-                        ), 
-                        '%Y-%m-%d %H:%i:00'
-                    ) as interval_start,
+                            INTERVAL MOD(MINUTE(m.timestamp_local), 5) MINUTE
+                        ), '%Y-%m-%d %H:%i:00') as interval_start,
                     COALESCE(ROUND(AVG(m.potencia_activa) / 1000, 3), 0) as potencia_promedio_kw,
                     COALESCE(ROUND(AVG(m.potencia_activa) * 300 / (3600 * 1000), 6), 0) as consumo_kwh
                 FROM sem_mediciones m
                 JOIN sem_dispositivos d ON m.shelly_id = d.shelly_id
+                JOIN catalogo_ubicaciones_reales cur ON d.ubicacion = cur.idcatalogo_ubicaciones_reales
                 WHERE d.activo = 1
-                    AND m.fase = 'TOTAL'
-                    AND m.timestamp_local >= ?
-                    AND m.timestamp_local < ?
+                AND m.fase = 'TOTAL'
+                AND m.timestamp_local >= ?
+                AND m.timestamp_local < ?
                 GROUP BY 
                     d.shelly_id,
                     d.nombre,
-                    d.ubicacion,
+                    cur.nombre_ubicacion,
                     DATE_FORMAT(
                         DATE_SUB(m.timestamp_local, 
                                 INTERVAL MOD(MINUTE(m.timestamp_local), 5) MINUTE
@@ -140,35 +139,32 @@ class EnergyController {
         try {
             const { shellyId } = req.params;
             const dateParam = req.params.date;
-            
+    
             // Configurar fechas en zona horaria de Santiago
             const startOfDay = DateTime.fromFormat(dateParam, 'yyyy-MM-dd', { zone: 'America/Santiago' })
                 .startOf('day');
             const endOfDay = startOfDay.plus({ days: 1 }).minus({ seconds: 1 });
-
-            console.log('Procesando descarga:', {
-                dateParam,
-                startOfDay: startOfDay.toFormat('yyyy-MM-dd HH:mm:ss'),
-                endOfDay: endOfDay.toFormat('yyyy-MM-dd HH:mm:ss')
-            });
-
+    
+    
+    
             // Verificar dispositivo
             const [deviceInfo] = await databaseService.pool.query(
-                'SELECT nombre as device_name, ubicacion as location FROM sem_dispositivos WHERE shelly_id = ?',
+                `SELECT d.nombre as device_name, cur.nombre_ubicacion as location 
+                 FROM sem_dispositivos d
+                 JOIN catalogo_ubicaciones_reales cur ON d.ubicacion = cur.idcatalogo_ubicaciones_reales
+                 WHERE d.shelly_id = ?`,
                 [shellyId]
-            );
-
+            );    
             if (deviceInfo.length === 0) {
                 throw new ValidationError('Dispositivo no encontrado');
             }
-
+    
             // Configurar respuesta
-            const fileName = `${deviceInfo[0].device_name}_${deviceInfo[0].location}_${startOfDay.toFormat('yyyy-MM-dd')}.csv`;
+            const fileName = `${deviceInfo[0].location}_${startOfDay.toFormat('yyyy-MM-dd')}.csv`;
             res.setHeader('Content-Type', 'text/csv');
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-            // Actualizado el encabezado para reflejar kW
             res.write('Timestamp,Potencia Promedio (kW),Consumo (kWh)\n');
-
+    
             // Query principal optimizada con conversión a kW
             const query = `
                 SELECT 
@@ -181,45 +177,43 @@ class EnergyController {
                     AND m.timestamp_local >= ?
                     AND m.timestamp_local < ?
                 GROUP BY 1`;
-
+    
+    
             // Procesar intervalos de 5 minutos
             let currentInterval = startOfDay;
             let processedIntervals = 0;
-
+    
             while (currentInterval < endOfDay) {
                 const intervalEnd = currentInterval.plus({ minutes: 5 });
-                
                 const [data] = await databaseService.pool.query(query, [
                     currentInterval.toFormat('yyyy-MM-dd HH:mm:ss'),
                     shellyId,
                     currentInterval.toFormat('yyyy-MM-dd HH:mm:ss'),
                     intervalEnd.toFormat('yyyy-MM-dd HH:mm:ss')
                 ]);
-
+    
                 // Convertir explícitamente a números y manejar valores nulos
                 const potenciaKw = Number(data[0]?.potencia_promedio_kw || 0);
                 const consumo = Number(data[0]?.consumo_kwh || 0);
                 
                 const line = `${currentInterval.toFormat('yyyy-MM-dd HH:mm:ss')},${potenciaKw.toFixed(3)},${consumo.toFixed(6)}\n`;
                 res.write(line);
-
+    
                 currentInterval = intervalEnd;
                 processedIntervals++;
+    
 
-                // Log de progreso cada 60 intervalos (5 horas)
-                if (processedIntervals % 60 === 0) {
-                    console.log(`Progreso: ${processedIntervals} intervalos procesados`);
-                }
+                  
             }
-
+    
             res.end();
             console.log('Descarga completada:', fileName, `- Total intervalos: ${processedIntervals}`);
-
+    
         } catch (error) {
+            console.error('Error durante la descarga:', error);
             if (!res.headersSent) {
                 next(error);
             } else {
-                console.error('Error durante la descarga:', error);
                 res.end();
             }
         }

@@ -1,0 +1,42 @@
+/* DataTable.css */
+
+.data-table-wrapper {
+  margin: 20px auto;
+  width: 100%; /* Ancho completo para ocupar todo el espacio */
+  overflow-x: auto; /* Permite desplazamiento horizontal si el contenido es demasiado ancho */
+}
+
+.data-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 20px; /* Espaciado debajo de la tabla */
+}
+
+.data-table th,
+.data-table td {
+  border: 1px solid #ddd; /* Bordes sólidos y sutiles para las celdas */
+  padding: 8px 16px; /* Padding generoso para las celdas */
+  text-align: left; /* Alineación de texto a la izquierda */
+}
+
+.data-table th {
+  background-color: #6b9fd4; /* Color de fondo para los encabezados de tabla */
+  color: white; /* Texto blanco para contraste */
+}
+
+.data-table tr:nth-child(odd) {
+  background-color: #f2f2f2; /* Filas con un fondo zebra para mejorar la legibilidad */
+}
+
+/* Estilos para dispositivos móviles */
+@media (max-width: 768px) {
+  .data-table-wrapper {
+    width: 100%; /* Ancho completo para dispositivos móviles */
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 6px 12px; /* Reduce el padding para dispositivos móviles */
+    font-size: 14px; /* Reduce el tamaño de fuente */
+  }
+}
