@@ -1,4 +1,4 @@
-const config = require('../config/config-loader');
+const config = require('../config/js_files/config-loader');
 
 class AuthMiddleware {
     constructor() {
