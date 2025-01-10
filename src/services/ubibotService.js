@@ -1,10 +1,10 @@
 // src/services/ubibot-service.js
 
 const mysql = require('mysql2/promise');
-const config = require('../config/config-loader');
+const config = require('../config/js_files/config-loader');
 const { convertToMySQLDateTime, isDifferenceGreaterThan } = require('../utils/transformUtils');
-const sgMailConfig = require('../config/sgMailConfig.json');
-const twilioConfig = require('../config/twilio.json');
+const sgMailConfig = require('../config/jsons/sgMailConfig.json');
+const twilioConfig = require('../config/jsons/twilio.json');
 const moment = require('moment-timezone');
 const twilio = require('twilio');
 const axios = require('axios');

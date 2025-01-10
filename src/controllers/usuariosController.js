@@ -1,7 +1,7 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const sgMail = require("@sendgrid/mail");
-const sgMailConfig = require("../config/sgMailConfig.json");
+const sgMailConfig = require("../config/jsons/sgMailConfig.json");
 
 class usuariosController {
   async handleLogin(req, res) {

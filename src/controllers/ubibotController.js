@@ -2,7 +2,7 @@
 
 const axios = require("axios");
 const fs = require("fs").promises;
-const config = require("../config/config-loader");
+const config = require("../config/js_files/config-loader");
 
 class UbibotController {
   /**
@@ -19,9 +19,9 @@ class UbibotController {
   /**
    * Requests a new access token from the Ubibot API using the configured account key.
    * Writes the token to the specified token file if successful.
-   * 
+   *
    * @returns {Promise<string|null>} The token ID if successful, or null if an error occurs.
-   * 
+   *
    * @throws {Error} If the token generation fails due to an invalid account key.
    */
 
@@ -52,9 +52,9 @@ class UbibotController {
 
   /**
    * Reads the access token from the specified token file.
-   * 
+   *
    * @returns {Promise<string|null>} The token as a string if read successfully, or null if an error occurs.
-   * 
+   *
    * @throws {Error} Logs an error message if the token file cannot be read.
    */
 
@@ -69,10 +69,10 @@ class UbibotController {
 
   /**
    * Validates the given token ID by making a request to the Ubibot API.
-   * 
+   *
    * @param {string} tokenId - The token ID to be validated.
    * @returns {Promise<boolean>} True if the token is valid, false otherwise.
-   * 
+   *
    * @throws {Error} Logs an error message if the token validation fails due to a network or API error.
    */
 
@@ -91,10 +91,10 @@ class UbibotController {
   /**
    * Retrieves the list of Ubibot channels, excluding any channels specified in
    * the configuration file.
-   * 
+   *
    * @returns {Promise<Array<Object>>} An array of channel objects if the request
    * is successful, or an empty array if not.
-   * 
+   *
    * @throws {Error} Logs an error message if the request fails due to a network or
    * API error.
    */
@@ -129,11 +129,11 @@ class UbibotController {
 
   /**
    * Retrieves the data of a specific Ubibot channel, given its ID.
-   * 
+   *
    * @param {number} channelId - The ID of the channel to retrieve.
    * @returns {Promise<Object>} The channel data object if the request is
    * successful, or null if not.
-   * 
+   *
    * @throws {Error} Logs an error message if the request fails due to a network
    * or API error.
    */
@@ -169,5 +169,4 @@ class UbibotController {
     }
   }
 }
-
 module.exports = new UbibotController();
