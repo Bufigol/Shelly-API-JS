@@ -1,10 +1,6 @@
+src/config/token_id.txt
 node_modules
 src/config/jsons
-
-
 .codegpt/head
-
 .codegpt
 dist
-src/config/token_id.txt
-src/config/token_id.txt
