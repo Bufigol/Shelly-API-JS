@@ -1,0 +1,38 @@
+.blind-spot-intrusions {
+  padding: 20px;
+}
+
+.date-picker-container {
+  margin-bottom: 20px;
+}
+
+.date-picker {
+  padding: 5px;
+  margin-right: 10px;
+}
+
+.intrusions-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.intrusions-table th,
+.intrusions-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+.intrusions-table th {
+  background-color: #4a90e2;
+  color: white;
+  font-size: 18px; /* Aumentamos el tamaño de la fuente de los títulos */
+}
+
+.intrusions-table tr:nth-child(even) {
+  background-color: #f2f2f2;
+}
+
+.intrusions-table tr:first-child {
+  background-color: #ffd700; /* Color amarillo para destacar la fila más reciente */
+}
