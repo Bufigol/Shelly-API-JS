@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const ShellyCollector = require("./collectors/shelly-collector");
-const UbibotCollector = require('./collectors/ubibot-collector');
+const UbibotCollector = require("./collectors/ubibot-collector");
 const databaseService = require("./src/services/database-service");
 const energyAveragesService = require("./src/services/energy-averages-service");
 const totalEnergyService = require("./src/services/total-energy-service");
@@ -10,12 +10,12 @@ const deviceRoutes = require("./src/routes/deviceRoutes");
 const configRoutes = require("./src/routes/configRoutes");
 
 class Server {
-/**
- * Initializes a new instance of the Server class.
- * Sets up the Express application, configures the port,
- * initializes data collectors, and defines services to be used.
- * Also sets up middleware, routes, and error handling for the server.
- */
+  /**
+   * Initializes a new instance of the Server class.
+   * Sets up the Express application, configures the port,
+   * initializes data collectors, and defines services to be used.
+   * Also sets up middleware, routes, and error handling for the server.
+   */
 
   constructor() {
     this.app = express();
@@ -33,24 +33,25 @@ class Server {
   }
 
   /**
-   * Configura el middleware necesario para la aplicación.
-   * 
-   * Se configuran los siguientes middleware:
-   * - CORS para permitir peticiones desde fuera del dominio.
-   * - Express JSON para parsear cuerpos de request en formato JSON.
-   * - Servicio de archivos estáticos para los directorios `dist` y `src`.
-   * - Política de seguridad de contenido (CSP) para restringir el tipo de recursos que se pueden cargar.
-   * - Logging middleware para registrar las peticiones.
-   * 
-   * @private
+   * Configures middleware for the application.
+   *
+   * Uses the `cors` middleware to allow cross-origin requests
+   * from the specified origin. Uses the `express.json()` middleware
+   * to parse JSON bodies. Serves files from the `dist` and `src`
+   * directories. Configures Content Security Policy (CSP)
+   * to prevent XSS attacks. Finally, logs all incoming requests.
    */
   setupMiddleware() {
-    this.app.use(cors());
+    const corsOptions = {
+      origin: "http://localhost:8080",
+      credentials: true,
+    };
+    this.app.use(cors(corsOptions));
     this.app.use(express.json());
-    // Serve files from the `dist` directory
-    this.app.use("/dist", express.static(path.join(__dirname, "dist")));
-    // Serve files from the `src` directory for direct access
-    this.app.use(express.static(path.join(__dirname, "src")));
+
+    // Servir archivos estáticos
+    this.app.use(express.static(path.join(__dirname, "public")));
+    this.app.use;
 
     // Configuración de CSP
     this.setupContentSecurityPolicy();
@@ -64,12 +65,12 @@ class Server {
 
   /**
    * Configures the Content Security Policy (CSP) for the application.
-   * 
+   *
    * This sets the CSP headers to restrict resource loading:
    * - Allows default resources to be loaded only from the same origin.
    * - Permits fonts to be loaded from the same origin and data URIs.
    * - Allows scripts to be loaded from the same origin and permits inline scripts and eval.
-   * 
+   *
    * @private
    */
 
@@ -83,28 +84,28 @@ class Server {
     });
   }
 
-/**
- * Configura las rutas del servidor
- *
- * El servidor tiene un endpoint status en /
- * y utiliza los siguientes módulos de rutas:
- *
- * - deviceRoutes
- * - configRoutes
- * - totalesRoutes
- * - analysisRoutes
- * - usuariosRoutes
- * - personalRoutes
- * - smsRoutes
- * - sectoresRoutes
- * - powerAnalysisRoutes
- * - gpsRoutes
- * - beaconsRoutes
- * - ubibotRoutes
- * - gpsDataRoutes
- *
- * @memberof Server
- */
+  /**
+   * Configura las rutas del servidor
+   *
+   * El servidor tiene un endpoint status en /
+   * y utiliza los siguientes módulos de rutas:
+   *
+   * - deviceRoutes
+   * - configRoutes
+   * - totalesRoutes
+   * - analysisRoutes
+   * - usuariosRoutes
+   * - personalRoutes
+   * - smsRoutes
+   * - sectoresRoutes
+   * - powerAnalysisRoutes
+   * - gpsRoutes
+   * - beaconsRoutes
+   * - ubibotRoutes
+   * - gpsDataRoutes
+   *
+   * @memberof Server
+   */
   setupRoutes() {
     // Status endpoint
     this.app.get("/", (req, res) => {
@@ -141,6 +142,11 @@ class Server {
     this.app.use("/api/ubibot", ubibotRoutes);
     this.app.use("/api/blindspot", blindSpotRoutes);
     this.app.use("/gps-data", gpsDataRoutes);
+
+    // Catch-all route para React Router
+    this.app.get("*", (req, res) => {
+      res.sendFile(path.join(__dirname, "src", "index.html"));
+    });
   }
 
   /**
@@ -223,20 +229,19 @@ class Server {
     };
   }
 
-  
   /**
    * Initializes all services and collectors necessary for the server.
-   * 
+   *
    * This method performs the following actions:
    * 1. Initializes the database service and tests the connection.
    * 2. Initializes the energy averages service.
    * 3. Initializes the total energy service.
    * 4. Starts the Shelly data collector.
    * 5. Starts the Ubibot data collector.
-   * 
+   *
    * If any of these steps fail, an error is logged and re-thrown to be
    * handled by the caller.
-   * 
+   *
    * @throws {Error} If any service or collector fails to initialize.
    */
 
@@ -262,7 +267,6 @@ class Server {
 
       await this.ubibotCollector.start();
       console.log("✅ Ubibot data collector started");
-
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
