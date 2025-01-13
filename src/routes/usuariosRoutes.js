@@ -19,7 +19,6 @@ router.post('/register',
 );
 
 router.post('/request-password-reset',
-    authMiddleware.authenticate.bind(authMiddleware),
     usuariosController.requestPasswordReset.bind(usuariosController)
 );
 

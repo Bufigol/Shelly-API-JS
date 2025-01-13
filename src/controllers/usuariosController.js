@@ -1,13 +1,15 @@
-const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const sgMail = require("@sendgrid/mail");
 const sgMailConfig = require("../config/jsons/sgMailConfig.json");
+const databaseService = require('../src/services/database-service');
+const crypto = require('crypto'); // Importa el módulo crypto
+
 
 class usuariosController {
   async handleLogin(req, res) {
     const { username, password } = req.body;
     try {
-      const [user] = await pool.query(
+      const [user] = await databaseService.pool.query(
         "SELECT * FROM users WHERE username = ?",
         [username]
       );
@@ -34,7 +36,7 @@ class usuariosController {
 
   async getUsers(req, res) {
     try {
-      const [users] = await pool.query(
+      const [users] = await databaseService.pool.query(
         "SELECT id, username, email, permissions FROM users"
       );
       res.json(users);
@@ -51,14 +53,14 @@ class usuariosController {
     try {
       if (userId) {
         // Update existing user
-        await pool.query(
+        await databaseService.pool.query(
           "UPDATE users SET username = ?, email = ?, permissions = ? WHERE id = ?",
           [username, email, permissions, userId]
         );
         res.sendStatus(200);
       } else {
         // Create new user
-        const [existingUser] = await pool.query(
+        const [existingUser] = await databaseService.pool.query(
           "SELECT * FROM users WHERE username = ?",
           [username]
         );
@@ -66,7 +68,7 @@ class usuariosController {
           return res.status(400).send("Username already exists");
         }
 
-        await pool.query(
+        await databaseService.pool.query(
           "INSERT INTO users (username, password, email, permissions) VALUES (?, ?, ?, ?)",
           [username, hashedPassword, email, permissions]
         );
@@ -79,84 +81,59 @@ class usuariosController {
   }
 
   async requestPasswordReset(req, res) {
-    const { email } = req.body;
+     const { email } = req.body;
 
-    try {
-      const [user] = await pool.query("SELECT * FROM users WHERE email = ?", [
-        email,
-      ]);
-      if (user.length === 0) {
-        return res.status(404).send("Usuario no encontrado");
-      }
+        try {
+           const resetToken = crypto.randomBytes(20).toString("hex");
+           const resetTokenExpiry = Date.now() + 3600000; // 1 hora de validez
 
-      const resetToken = crypto.randomBytes(20).toString("hex");
-      const resetTokenExpiry = Date.now() + 3600000; // 1 hora de validez
+            const resetData = await databaseService.requestPasswordReset(email, resetToken, resetTokenExpiry);
+           
+              const resetUrl = `/reset-password/${resetToken}`;
+              const msg = {
+                to: resetData.email,
+                from: sgMailConfig.email_contacto.from_verificado, // Usa el correo que hayas verificado con SendGrid
+                subject: "Restablecimiento de Contraseña",
+                text: `Para restablecer tu contraseña, haz clic en el siguiente enlace: ${resetUrl}`,
+              };
 
-      await pool.query(
-        "UPDATE users SET resetToken = ?, resetTokenExpiry = ? WHERE id = ?",
-        [resetToken, resetTokenExpiry, user[0].id]
-      );
+            await sgMail
+              .send(msg)
+              .then(() => {
+                console.log("Email sent");
+              })
+              .catch((error) => {
+                console.error(error);
+              });
+              res.send("Se ha enviado un enlace de restablecimiento a su email");
 
-      const resetUrl = `https://tns.thenextsecurity.cl/storage/reset-password/${resetToken}`;
-      const msg = {
-        to: email,
-        from: sgMailConfig.email_contacto.from_verificado, // Usa el correo que hayas verificado con SendGrid
-        subject: "Restablecimiento de Contraseña",
-        text: `Para restablecer tu contraseña, haz clic en el siguiente enlace: ${resetUrl}`,
-      };
-
-      await sgMail
-        .send(msg)
-        .then(() => {
-          console.log("Email sent");
-        })
-        .catch((error) => {
-          console.error(error);
-        });
-      res.send("Se ha enviado un enlace de restablecimiento a su email");
-    } catch (error) {
-      console.error(
-        "Error al solicitar restablecimiento de contraseña:",
-        error
-      );
-      res.status(500).send("Error del servidor");
-    }
+        } catch (error) {
+            console.error(
+              "Error al solicitar restablecimiento de contraseña:",
+              error
+            );
+            res.status(500).send("Error del servidor");
+        }
   }
-  async resetPassword(req, res) {
-    const { token, newPassword } = req.body;
 
-    try {
-      // Verificar el token y actualizar la contraseña
-      const [user] = await pool.query(
-        "SELECT * FROM users WHERE resetToken = ? AND resetTokenExpiry > ?",
-        [token, Date.now()]
-      );
-      if (user.length === 0) {
-        return res.status(400).send("Token inválido o expirado");
-      }
+    async resetPassword(req, res) {
+        const { token, newPassword } = req.body;
+        try {
+            const resetData = await databaseService.resetPassword(null, newPassword, token, null);
+            const msg = {
+                to: resetData.email,
+                from: sgMailConfig.email_contacto.from_verificado,
+                subject: "Contraseña restablecida con éxito",
+                text: "Su contraseña ha sido restablecida exitosamente.",
+            };
 
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await pool.query(
-        "UPDATE users SET password = ?, resetToken = NULL, resetTokenExpiry = NULL WHERE id = ?",
-        [hashedPassword, user[0].id]
-      );
-
-      // Enviar correo de confirmación
-      const msg = {
-        to: user[0].email,
-        from: sgMailConfig.email_contacto.from_verificado,
-        subject: "Contraseña restablecida con éxito",
-        text: "Su contraseña ha sido restablecida exitosamente.",
-      };
-
-      await sgMail.send(msg);
-
-      res.send("Contraseña restablecida con éxito");
-    } catch (error) {
-      console.error("Error al restablecer la contraseña:", error);
-      res.status(500).send("Error del servidor");
+            await sgMail.send(msg);
+            res.send("Contraseña restablecida con éxito");
+        } catch (error) {
+            console.error("Error al restablecer la contraseña:", error);
+            res.status(500).send("Error del servidor");
+        }
     }
-  }
 }
 
 module.exports = new usuariosController();
