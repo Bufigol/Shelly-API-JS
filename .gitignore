@@ -3,10 +3,6 @@ node_modules
 src/config/jsons
 .codegpt/head
 .codegpt
-<<<<<<< Updated upstream
-dist
-=======
 dist
 src/config/token_id.txt
-src/config/token_id.txt
->>>>>>> Stashed changes
+.env
