@@ -1,17 +1,27 @@
-// webpack.config.js
 const path = require("path");
+const HtmlWebpackPlugin = require("html-webpack-plugin");
+const webpack = require("webpack");
 
 module.exports = {
-  entry: "./src/index.js",
+  mode: "development", // O 'production' al desplegar
+  entry: path.resolve(__dirname, "src", "index.js"),
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: path.resolve(__dirname, "src", "index.html"),
+    }),
+    new webpack.ProvidePlugin({
+      process: "process/browser",
+    }),
+  ],
+  devtool: "source-map",
   output: {
-    filename: "bundle.js",
     path: path.resolve(__dirname, "dist"),
-    publicPath: "/dist/",
+    filename: "bundle.js",
   },
   module: {
     rules: [
       {
-        test: /\.js$/,
+        test: /\.(js|jsx)$/,
         exclude: /node_modules/,
         use: {
           loader: "babel-loader",
@@ -19,43 +29,45 @@ module.exports = {
       },
       {
         test: /\.css$/,
-        use: ["style-loader", "css-loader"], // Agrega esta regla para manejar CSS
+        use: ["style-loader", "css-loader"],
       },
       {
-        test: /\.(png|jpe?g|gif|svg)$/i,
-        use: [
-          {
-            loader: "file-loader",
-            options: {
-              name: "[name].[ext]",
-              outputPath: "images",
-              publicPath: "dist/images",
-            },
-          },
-        ],
+        test: /\.(png|svg|jpg|jpeg|gif)$/i,
+        type: "asset/resource",
       },
     ],
-  },
-  devServer: {
-    port: 8080, // Cambiamos a 8080 en lugar de 3030
-    proxy: [
-      {
-        context: ["/api"],
-        target: "http://localhost:3030",
-      },
-    ],
-    historyApiFallback: true,
-    hot: true,
   },
   resolve: {
-    extensions: [".js"],
+    extensions: [".js", ".jsx"],
     fallback: {
       buffer: require.resolve("buffer/"),
       crypto: require.resolve("crypto-browserify"),
+      vm: require.resolve("vm-browserify"),
       stream: require.resolve("stream-browserify"),
       util: require.resolve("util/"),
-      vm: require.resolve("vm-browserify"),
+    },
+    alias: {
+      "process/browser": require.resolve("process/browser"),
     },
   },
-  mode: "development", // o 'production'
+  devServer: {
+    static: {
+      directory: path.join(__dirname, "dist"),
+    },
+    compress: true,
+    port: 3000,
+    host: "0.0.0.0",
+    allowedHosts: ["localhost", "thenext.ddns.net", "tnstrack.ddns.net"],
+    historyApiFallback: {
+      index: "index.html",
+    },
+    proxy: [
+      {
+        context: ["/api"],
+        target: process.env.API_URL || "http://localhost:1337",
+        changeOrigin: true,
+        secure: false,
+      },
+    ],
+  },
 };

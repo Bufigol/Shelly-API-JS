@@ -6,3 +6,4 @@ src/config/jsons
 dist
 src/config/token_id.txt
 .env
+dist/images
