@@ -1,13 +1,9 @@
-src/config/token_id.txt
 node_modules
 src/config/jsons
 .codegpt/head
 .codegpt
 dist
-<<<<<<< HEAD
 src/config/token_id.txt
-=======
 .env
 dist/images
 public/
->>>>>>> integracion_teltonica
