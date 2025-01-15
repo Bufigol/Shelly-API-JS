@@ -1,5 +1,12 @@
+// src/controllers/beaconsController.js
+const databaseService = require('../services/database-service');
+const moment = require('moment-timezone');
+
 class beaconsController {
   async getDoorStatus(req, res) {
+    // Extrae startDate y endDate de req.query
+    const { startDate, endDate } = req.query;
+
     if (!startDate || !endDate) {
       return res.status(400).send("startDate and endDate are required");
     }
@@ -12,7 +19,7 @@ class beaconsController {
       WHERE ds.timestamp BETWEEN ? AND ? AND b.esPuerta = 1
       ORDER BY ds.timestamp ASC
     `;
-      const [rows] = await pool.query(query, [startDate, endDate]);
+      const [rows] = await databaseService.pool.query(query, [startDate, endDate]);
       res.json(rows);
     } catch (error) {
       console.error("Error fetching door status:", error);
@@ -50,7 +57,7 @@ class beaconsController {
   `;
 
     try {
-      const [results] = await pool.query(query, [startTimestamp, endTimestamp]);
+      const [results] = await databaseService.pool.query(query, [startTimestamp, endTimestamp]);
       const processedResults = [];
       let currentBeacon = null;
       let entryTimestamp = null;
@@ -94,7 +101,7 @@ class beaconsController {
   async getAllBeacons(req, res) {
     try {
       // Ejecutar una consulta SQL para seleccionar todos los registros de la tabla 'beacons'
-      const [rows] = await pool.query(
+      const [rows] = await databaseService.pool.query(
         "SELECT * FROM beacons WHERE esTemperatura = 0"
       );
 
@@ -128,7 +135,7 @@ class beaconsController {
     `;
 
       // Ejecutar la consulta SQL con los parámetros startDate y endDate
-      const [rows] = await pool.query(query, [startDate, endDate]);
+      const [rows] = await databaseService.pool.query(query, [startDate, endDate]);
 
       // Enviar los resultados de la consulta como una respuesta JSON
       res.json(rows);
@@ -168,7 +175,7 @@ class beaconsController {
 
   async getLatestSectors(req, res) {
     try {
-      const [devices] = await pool.query(
+      const [devices] = await databaseService.pool.query(
         "SELECT id, device_asignado FROM devices"
       );
       const latestSectors = [];
@@ -208,7 +215,7 @@ class beaconsController {
           `;
 
         try {
-          const [results] = await pool.query(query, [startOfDay]);
+          const [results] = await databaseService.pool.query(query, [startOfDay]);
           console.log(`Resultados obtenidos: ${results.length}`);
 
           if (results.length > 0) {
@@ -224,7 +231,7 @@ class beaconsController {
               oldestTimestamp = results[i].timestamp;
             }
 
-            const [sector] = await pool.query(
+            const [sector] = await databaseService.pool.query(
               "SELECT nombre FROM sectores WHERE id = ?",
               [latestBeaconId]
             );
@@ -301,7 +308,7 @@ class beaconsController {
   async getActiveBeacons(req, res) {
     try {
       // Query to get the latest record with non-empty ble_beacons from gps_data table
-      const [latestRecord] = await pool.query(`
+      const [latestRecord] = await databaseService.pool.query(`
                 SELECT ble_beacons FROM gps_data
                 WHERE ble_beacons != '[]'
                 ORDER BY timestamp DESC
@@ -372,7 +379,7 @@ class beaconsController {
             `;
 
       // Execute the SQL query
-      const [results] = await pool.query(query);
+      const [results] = await databaseService.pool.query(query);
 
       // Initialize variables to track the beacon detection
       let foundBeacon = false;
@@ -431,44 +438,44 @@ class beaconsController {
    * organized by beacon, or sends an appropriate error response if the query fails.
    */
 
-  async getTemperatureData(req, res) {
-    try {
-      const { date } = req.query;
-      const query = `
-          SELECT rt.beacon_id, rt.temperatura, rt.timestamp, b.lugar, b.ubicacion,
-                 (SELECT minimo FROM parametrizaciones WHERE param_id = 6) AS minimo,
-                 (SELECT maximo FROM parametrizaciones WHERE param_id = 6) AS maximo
-          FROM registro_temperaturas rt
-          JOIN beacons b ON rt.beacon_id = b.id
-          WHERE DATE(rt.timestamp) = ?
-          ORDER BY rt.timestamp ASC
-        `;
-
-      const [rows] = await pool.query(query, [date]);
-
-      const data = rows.reduce((acc, row) => {
-        if (!acc[row.beacon_id]) {
-          acc[row.beacon_id] = {
-            beacon_id: row.beacon_id,
-            location: `Cámara de Frío: ${row.lugar || "Desconocido"}`,
-            ubicacion: row.ubicacion || "Desconocido",
-            temperatures: [],
-            timestamps: [],
-            minimo: row.minimo,
-            maximo: row.maximo,
-          };
-        }
-        acc[row.beacon_id].temperatures.push(row.temperatura);
-        acc[row.beacon_id].timestamps.push(row.timestamp);
-        return acc;
-      }, {});
-
-      res.json(Object.values(data));
-    } catch (error) {
-      console.error("Error fetching temperature data:", error);
-      res.status(500).send("Server Error");
+    async getTemperatureData(req, res) {
+      try {
+        const { date } = req.query;
+        const query = `
+            SELECT rt.beacon_id, rt.temperatura, rt.timestamp, b.lugar, b.ubicacion,
+                    (SELECT minimo FROM parametrizaciones WHERE param_id = 6) AS minimo,
+                    (SELECT maximo FROM parametrizaciones WHERE param_id = 6) AS maximo
+            FROM registro_temperaturas rt
+            JOIN beacons b ON rt.beacon_id = b.id
+            WHERE DATE(rt.timestamp) = ?
+            ORDER BY rt.timestamp ASC
+          `;
+  
+        const [rows] = await databaseService.pool.query(query, [date]);
+  
+        const data = rows.reduce((acc, row) => {
+          if (!acc[row.beacon_id]) {
+            acc[row.beacon_id] = {
+              beacon_id: row.beacon_id,
+              location: `Cámara de Frío: ${row.lugar || "Desconocido"}`,
+              ubicacion: row.ubicacion || "Desconocido",
+              temperatures: [],
+              timestamps: [],
+              minimo: row.minimo,
+              maximo: row.maximo,
+            };
+          }
+          acc[row.beacon_id].temperatures.push(row.temperatura);
+          acc[row.beacon_id].timestamps.push(row.timestamp);
+          return acc;
+        }, {});
+  
+        res.json(Object.values(data));
+      } catch (error) {
+        console.error("Error fetching temperature data:", error);
+        res.status(500).send("Server Error");
+      }
     }
-  }
 }
 
 module.exports = new beaconsController();
