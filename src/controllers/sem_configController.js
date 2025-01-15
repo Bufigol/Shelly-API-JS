@@ -1,4 +1,4 @@
-// controllers/configController.js
+// controllers/sem_configController.js
 const databaseService = require('../services/database-service');
 const { ValidationError } = require('../utils/errors');
 

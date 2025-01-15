@@ -342,5 +342,35 @@ class UbibotController {
       res.status(500).json({ error: "Error del servidor" });
     }
   }
+
+  async getChannelStatus(req, res) {
+    try {
+      const [results] = await databaseService.pool.query(
+        "SELECT channel_id, name, esOperativa FROM channels_ubibot"
+      );
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching channel status:", error);
+      res.status(500).send("Server Error");
+    }
+  }
+
+  // Dentro de la clase UbibotController en ubibotController.js
+  async handleUpdateChannelStatus(req, res) {
+    try {
+      const { channelId, esOperativa } = req.body;
+      await databaseService.pool.query(
+        "UPDATE channels_ubibot SET esOperativa = ? WHERE channel_id = ?",
+        [esOperativa, channelId]
+      );
+      res.sendStatus(200);
+    } catch (error) {
+      console.error(
+        "Ubibot: Error al actualizar el estado del canal:",
+        error.message
+      );
+      res.status(500).send("Server Error");
+    }
+  }
 }
 module.exports = new UbibotController();
