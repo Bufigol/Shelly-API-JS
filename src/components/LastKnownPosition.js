@@ -9,9 +9,7 @@ import moment from "moment";
 import Header from "./Header";
 import "../assets/css/LastKnownPosition.css";
 
-const configFile = fs.readFileSync("../config/api-credentials.json", 'utf8');
-const json = JSON.parse(configFile);
-MapboxGL.accessToken = json.MapboxGL.accessToken;
+MapboxGL.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN;
 
 const defaultPosition = { lat: -33.4489, lng: -70.6693 };
 
