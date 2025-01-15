@@ -15,7 +15,7 @@ module.exports = {
   ],
   devtool: "source-map",
   output: {
-    path: path.resolve(__dirname, "public"), // <-- Debe ser "public"
+    path: path.resolve(__dirname, "public"),
     filename: "bundle.js",
   },
   module: {
@@ -60,7 +60,12 @@ module.exports = {
     allowedHosts: ["localhost", "thenext.ddns.net", "tnstrack.ddns.net"],
     historyApiFallback: {
       index: "index.html",
-    },
+      rewrites: [
+        { from: /^\/bundle.js$/, to: "/bundle.js" },
+         { from: /^\/reset-password\/([a-z0-9]+)$/, to: '/index.html' },
+        { from: /./, to: "/index.html" },
+      ],
+  },
     proxy: [
       {
         context: ["/api"],

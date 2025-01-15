@@ -1,9 +1,12 @@
+const bcrypt = require("bcrypt"); // Importa bcrypt
 const jwt = require("jsonwebtoken");
 const sgMail = require("@sendgrid/mail");
 const sgMailConfig = require("../config/jsons/sgMailConfig.json");
-const databaseService = require('../src/services/database-service');
-const crypto = require('crypto'); // Importa el módulo crypto
+const databaseService = require("../../src/services/database-service");
+const crypto = require("crypto"); // Importa el módulo crypto
 
+// Configurar la API Key de SendGrid
+sgMail.setApiKey(sgMailConfig.api_key);
 
 class usuariosController {
   async handleLogin(req, res) {
@@ -81,59 +84,67 @@ class usuariosController {
   }
 
   async requestPasswordReset(req, res) {
-     const { email } = req.body;
+    const { email } = req.body;
 
-        try {
-           const resetToken = crypto.randomBytes(20).toString("hex");
-           const resetTokenExpiry = Date.now() + 3600000; // 1 hora de validez
+    try {
+      const resetToken = crypto.randomBytes(20).toString("hex");
+      const resetTokenExpiry = Date.now() + 3600000; // 1 hora de validez
 
-            const resetData = await databaseService.requestPasswordReset(email, resetToken, resetTokenExpiry);
-           
-              const resetUrl = `/reset-password/${resetToken}`;
-              const msg = {
-                to: resetData.email,
-                from: sgMailConfig.email_contacto.from_verificado, // Usa el correo que hayas verificado con SendGrid
-                subject: "Restablecimiento de Contraseña",
-                text: `Para restablecer tu contraseña, haz clic en el siguiente enlace: ${resetUrl}`,
-              };
+      const resetData = await databaseService.requestPasswordReset(
+        email,
+        resetToken,
+        resetTokenExpiry
+      );
 
-            await sgMail
-              .send(msg)
-              .then(() => {
-                console.log("Email sent");
-              })
-              .catch((error) => {
-                console.error(error);
-              });
-              res.send("Se ha enviado un enlace de restablecimiento a su email");
+      const resetUrl = `/reset-password/${resetToken}`;
+      const msg = {
+        to: resetData.email,
+        from: sgMailConfig.email_contacto.from_verificado, // Usa el correo que hayas verificado con SendGrid
+        subject: "Restablecimiento de Contraseña",
+        text: `Para restablecer tu contraseña, haz clic en el siguiente enlace: ${resetUrl}`,
+      };
 
-        } catch (error) {
-            console.error(
-              "Error al solicitar restablecimiento de contraseña:",
-              error
-            );
-            res.status(500).send("Error del servidor");
-        }
+      await sgMail
+        .send(msg)
+        .then((response) => {
+          console.log("Email sent", response); // Añade este log
+        })
+        .catch((error) => {
+          console.error("Error al enviar el email", error);
+        });
+      res.send("Se ha enviado un enlace de restablecimiento a su email");
+    } catch (error) {
+      console.error(
+        "Error al solicitar restablecimiento de contraseña:",
+        error
+      );
+      res.status(500).send("Error del servidor");
+    }
   }
 
-    async resetPassword(req, res) {
-        const { token, newPassword } = req.body;
-        try {
-            const resetData = await databaseService.resetPassword(null, newPassword, token, null);
-            const msg = {
-                to: resetData.email,
-                from: sgMailConfig.email_contacto.from_verificado,
-                subject: "Contraseña restablecida con éxito",
-                text: "Su contraseña ha sido restablecida exitosamente.",
-            };
+  async resetPassword(req, res) {
+    const { token, newPassword } = req.body;
+    try {
+      const resetData = await databaseService.resetPassword(
+        null,
+        newPassword,
+        token,
+        null
+      );
+      const msg = {
+        to: resetData.email,
+        from: sgMailConfig.email_contacto.from_verificado,
+        subject: "Contraseña restablecida con éxito",
+        text: "Su contraseña ha sido restablecida exitosamente.",
+      };
 
-            await sgMail.send(msg);
-            res.send("Contraseña restablecida con éxito");
-        } catch (error) {
-            console.error("Error al restablecer la contraseña:", error);
-            res.status(500).send("Error del servidor");
-        }
+      await sgMail.send(msg);
+      res.send("Contraseña restablecida con éxito");
+    } catch (error) {
+      console.error("Error al restablecer la contraseña:", error);
+      res.status(500).send("Error del servidor");
     }
+  }
 }
 
 module.exports = new usuariosController();

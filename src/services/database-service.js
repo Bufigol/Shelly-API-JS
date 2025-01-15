@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 const { DateTime } = require('luxon');
-const config = require('./src/config/js_files/config-loader');
-const { ValidationError, DatabaseError, NotFoundError } = require('./src');
+const config = require('../config/js_files/config-loader');
+const { ValidationError, DatabaseError, NotFoundError } = require('../utils/errors'); // Ruta corregida
 const transformUtils = require('../utils/transformUtils');
 const bcrypt = require("bcrypt");
 
