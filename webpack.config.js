@@ -1,50 +1,78 @@
-// webpack.config.js
-const path = require('path');
+const path = require("path");
+const HtmlWebpackPlugin = require("html-webpack-plugin");
+const webpack = require("webpack");
 
 module.exports = {
-  entry: './src/index.js',
+  mode: "development", // O 'production' al desplegar
+  entry: path.resolve(__dirname, "src", "index.js"),
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: path.resolve(__dirname, "src", "index.html"),
+    }),
+    new webpack.ProvidePlugin({
+      process: "process/browser",
+    }),
+  ],
+  devtool: "source-map",
   output: {
-    filename: 'bundle.js',
-    path: path.resolve(__dirname, 'dist'),
-    publicPath: '/dist/'
+    path: path.resolve(__dirname, "public"),
+    filename: "bundle.js",
   },
   module: {
     rules: [
       {
-        test: /\.js$/,
+        test: /\.(js|jsx)$/,
         exclude: /node_modules/,
         use: {
-          loader: 'babel-loader',
+          loader: "babel-loader",
         },
       },
       {
         test: /\.css$/,
-        use: ['style-loader', 'css-loader'], // Agrega esta regla para manejar CSS
+        use: ["style-loader", "css-loader"],
       },
       {
-        test: /\.(png|jpe?g|gif|svg)$/i,
-        use: [
-          {
-            loader: 'file-loader',
-            options: {
-              name: '[name].[ext]',
-              outputPath: 'images',
-              publicPath: 'dist/images'
-            },
-          },
-        ],
+        test: /\.(png|svg|jpg|jpeg|gif)$/i,
+        type: "asset/resource",
       },
     ],
   },
   resolve: {
-    extensions: ['.js'],
+    extensions: [".js", ".jsx"],
     fallback: {
-      "buffer": require.resolve("buffer/"),
-      "crypto": require.resolve("crypto-browserify"),
-      "stream": require.resolve("stream-browserify"),
-      "util": require.resolve("util/"),
-      "vm": require.resolve("vm-browserify")
-    }
+      buffer: require.resolve("buffer/"),
+      crypto: require.resolve("crypto-browserify"),
+      vm: require.resolve("vm-browserify"),
+      stream: require.resolve("stream-browserify"),
+      util: require.resolve("util/"),
+    },
+    alias: {
+      "process/browser": require.resolve("process/browser"),
+    },
   },
-  mode: 'development', // o 'production'
+  devServer: {
+    static: {
+      directory: path.join(__dirname, "public"),
+    },
+    compress: true,
+    port: 3000,
+    host: "0.0.0.0",
+    allowedHosts: ["localhost", "thenext.ddns.net", "tnstrack.ddns.net"],
+    historyApiFallback: {
+      index: "index.html",
+      rewrites: [
+        { from: /^\/bundle.js$/, to: "/bundle.js" },
+         { from: /^\/reset-password\/([a-z0-9]+)$/, to: '/index.html' },
+        { from: /./, to: "/index.html" },
+      ],
+  },
+    proxy: [
+      {
+        context: ["/api"],
+        target: process.env.API_URL || "http://localhost:1337",
+        changeOrigin: true,
+        secure: false,
+      },
+    ],
+  },
 };

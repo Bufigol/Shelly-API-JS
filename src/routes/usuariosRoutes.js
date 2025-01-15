@@ -3,8 +3,7 @@ const router = express.Router();
 const { authMiddleware } = require('../middlewares');
 const usuariosController = require('../controllers/usuariosController');
 
-router.post('/login', 
-    authMiddleware.authenticate.bind(authMiddleware), 
+router.post('/login',
     usuariosController.handleLogin.bind(usuariosController)
 );
 
@@ -19,12 +18,10 @@ router.post('/register',
 );
 
 router.post('/request-password-reset',
-    authMiddleware.authenticate.bind(authMiddleware),
     usuariosController.requestPasswordReset.bind(usuariosController)
 );
 
 router.post('/reset-password',
-    authMiddleware.authenticate.bind(authMiddleware),
     usuariosController.resetPassword.bind(usuariosController)
 );
 
