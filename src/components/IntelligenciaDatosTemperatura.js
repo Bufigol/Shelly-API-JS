@@ -126,8 +126,19 @@ const IntelligenciaDatosTemperatura = () => {
         },
       });
       console.log("Datos recibidos:", response.data);
-
-      setData(response.data);
+      const device = devices.find(
+        (device) => device.channel_id == selectedDevice
+      );
+      setData([
+        {
+          channel_id: selectedDevice,
+          name: device?.name,
+          data: response.data.map((item) => ({
+            timestamp: item.timestamp,
+            external_temperature: item.external_temperature,
+          })),
+        },
+      ]);
       setLoading(false);
       setError(null);
     } catch (error) {
@@ -151,10 +162,10 @@ const IntelligenciaDatosTemperatura = () => {
 
   const generateCSV = (deviceData) => {
     const headers = "Device Name;Fecha;Hora;External Temperature\n";
-    const rows = deviceData.data
-      .map((item) => {
+    const rows = deviceData?.data
+      ?.map((item) => {
         // Convertir el timestamp a los formatos requeridos
-        const date = new Date(item.timestamp);
+        const date = new Date(item?.timestamp);
 
         // Formato fecha: dd-mm-aa
         const day = String(date.getDate()).padStart(2, "0");
@@ -168,11 +179,11 @@ const IntelligenciaDatosTemperatura = () => {
         const formattedTime = `${hours}:${minutes}`;
 
         // Convertir el separador decimal de punto a coma
-        const temperature = item.external_temperature
-          .toString()
+        const temperature = item?.external_temperature
+          ?.toString()
           .replace(".", ",");
 
-        return `"${deviceData.name}";${formattedDate};${formattedTime};${temperature}`;
+        return `"${deviceData?.name}";${formattedDate};${formattedTime};${temperature}`;
       })
       .join("\n");
 
@@ -180,7 +191,7 @@ const IntelligenciaDatosTemperatura = () => {
   };
 
   const handleDownload = (channelId, deviceName) => {
-    const deviceData = data.find((item) => item.channel_id === channelId);
+    const deviceData = data?.find((item) => item?.channel_id === channelId);
     if (deviceData) {
       const csvContent = generateCSV(deviceData);
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -315,17 +326,19 @@ const IntelligenciaDatosTemperatura = () => {
         </div>
         {error && <div className="error-message">{error}</div>}
         {loading && <div>Cargando datos...</div>}
-        {!loading && data.length > 0 && (
+        {!loading && data && data.length > 0 && (
           <div className="charts-grid">
-            {data.map((deviceData, index) => {
+            {data?.map((deviceData, index) => {
               const chartData = {
-                labels: deviceData.data.map((item) => new Date(item.timestamp)),
+                labels: deviceData?.data?.map(
+                  (item) => new Date(item?.timestamp)
+                ),
                 datasets: [
                   {
-                    label: deviceData.name,
-                    data: deviceData.data.map((item) => ({
-                      x: new Date(item.timestamp),
-                      y: item.external_temperature,
+                    label: deviceData?.name,
+                    data: deviceData?.data?.map((item) => ({
+                      x: new Date(item?.timestamp),
+                      y: item?.external_temperature,
                     })),
                     fill: false,
                     borderColor: LINE_COLORS[index % LINE_COLORS.length],
@@ -334,13 +347,13 @@ const IntelligenciaDatosTemperatura = () => {
                 ],
               };
               return (
-                <div key={deviceData.channel_id} className="chart-container">
+                <div key={deviceData?.channel_id} className="chart-container">
                   <h3>
                     Cámara de Frío:{" "}
                     <span
                       style={{ color: LINE_COLORS[index % LINE_COLORS.length] }}
                     >
-                      {deviceData.name}
+                      {deviceData?.name}
                     </span>
                   </h3>
                   <div className="chart-wrapper">
@@ -348,7 +361,7 @@ const IntelligenciaDatosTemperatura = () => {
                   </div>
                   <button
                     onClick={() =>
-                      handleDownload(deviceData.channel_id, deviceData.name)
+                      handleDownload(deviceData?.channel_id, deviceData?.name)
                     }
                     className="download-button"
                   >

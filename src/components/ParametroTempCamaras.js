@@ -13,31 +13,36 @@ const ParametroTempCamaras = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCurrentParams();
-    fetchChannels();
+    const fetchData = async () => {
+      try {
+        const paramsResponse = await axios.get(
+          "/api/teltonica/temperatura-umbrales"
+        );
+        if(Array.isArray(paramsResponse.data)){
+         setParams(paramsResponse.data);
+        } else {
+            console.error("Error: La respuesta de la API no es un array", paramsResponse.data)
+            setMessage("Error al cargar los parámetros actuales: respuesta inesperada del servidor");
+        }
+
+        const channelsResponse = await axios.get("/api/ubibot/channel-status");
+        if (Array.isArray(channelsResponse.data)){
+            setChannels(channelsResponse.data)
+        } else{
+            console.error("Error: La respuesta de la API no es un array", channelsResponse.data)
+            setMessage("Error al cargar los canales: respuesta inesperada del servidor");
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        setMessage("Error al cargar los datos");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
   }, []);
 
-  const fetchCurrentParams = async () => {
-    try {
-      const response = await axios.get("/api/teltonica/temperatura-umbrales");
-      setParams(response.data);
-    } catch (error) {
-      console.error("Error fetching temperature thresholds:", error);
-      setMessage("Error al cargar los parámetros actuales");
-    }
-  };
-
-  const fetchChannels = async () => {
-    try {
-      const response = await axios.get("/api/ubibot/channel-status");
-      setChannels(response.data);
-    } catch (error) {
-      console.error("Error fetching channels:", error);
-      setMessage("Error al cargar los canales");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -98,7 +103,7 @@ const ParametroTempCamaras = () => {
       <Header title="Parámetros de Temperatura Cámaras" image={paramTempIcon} />
       <div className="content">
         <form onSubmit={handleSubmit}>
-          {params.map((param, index) => (
+          {Array.isArray(params) && params.length > 0 && params.map((param, index) => (
             <div key={param.param_id} className="form-group">
               <h3>{param.nombre_parametro}</h3>
               <div>
@@ -140,7 +145,7 @@ const ParametroTempCamaras = () => {
 
         <h3>Estado de los Canales</h3>
         <div className="channels-list">
-          {channels.map((channel) => (
+          {Array.isArray(channels) && channels.map((channel) => (
             <div key={channel.channel_id} className="channel-item">
               <span>{channel.name}</span>
               <label className="switch">

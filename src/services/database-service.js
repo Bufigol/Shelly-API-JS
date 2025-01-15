@@ -1,42 +1,43 @@
 const mysql = require('mysql2/promise');
-const { DateTime } = require('luxon'); // Agregamos importación de Luxon
+const { DateTime } = require('luxon');
 const config = require('../config/js_files/config-loader');
-const { ValidationError, DatabaseError, NotFoundError } = require('../utils/errors');
+const { ValidationError, DatabaseError, NotFoundError } = require('../utils/errors'); // Ruta corregida
 const transformUtils = require('../utils/transformUtils');
+const bcrypt = require("bcrypt");
 
 
 class DatabaseService {
-    constructor() {
-        this.pool = null;
-        this.initialized = false;
-        this.connected = false;
-        this.config = config.getConfig();
-        this.timezone = this.config.measurement.zona_horaria || 'America/Santiago';
-    }
+  constructor() {
+    this.pool = null;
+    this.initialized = false;
+    this.connected = false;
+    this.config = config.getConfig();
+    this.timezone = this.config.measurement.zona_horaria || 'America/Santiago';
+  }
 
-    async initialize() {
-        if (this.initialized) return;
+  async initialize() {
+    if (this.initialized) return;
 
-        const { database: dbConfig } = this.config;
-        this.pool = mysql.createPool({
-            host: dbConfig.host,
-            port: dbConfig.port,
-            user: dbConfig.username,
-            password: dbConfig.password,
-            database: dbConfig.database,
-            connectionLimit: dbConfig.pool.max_size,
-            connectTimeout: dbConfig.pool.timeout * 1000,
-            waitForConnections: true,
-            queueLimit: 0,
-            enableKeepAlive: true,
-            keepAliveInitialDelay: 0
-        });
+    const { database: dbConfig } = this.config;
+    this.pool = mysql.createPool({
+      host: dbConfig.host,
+      port: dbConfig.port,
+      user: dbConfig.username,
+      password: dbConfig.password,
+      database: dbConfig.database,
+      connectionLimit: dbConfig.pool.max_size,
+      connectTimeout: dbConfig.pool.timeout * 1000,
+      waitForConnections: true,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0
+    });
 
-        await this.validateDatabaseSchema();
-        this.initialized = true;
-    }
+    await this.validateDatabaseSchema();
+    this.initialized = true;
+  }
 
-    async validateDatabaseSchema() {
+  async validateDatabaseSchema() {
         const requiredTables = [
             'sem_dispositivos',
             'sem_grupos',
@@ -245,22 +246,21 @@ class DatabaseService {
         }
     }
 
-
-    evaluateReadingQuality(data) {
-        if (!data.device_status || !data.device_status.reading_quality) {
-            return 'NORMAL';
-        }
-
-        const qualityMap = {
-            'GOOD': 'NORMAL',
-            'WARN': 'ALERTA',
-            'BAD': 'ERROR'
-        };
-
-        return qualityMap[data.device_status.reading_quality] || 'NORMAL';
+  evaluateReadingQuality(data) {
+    if (!data.device_status || !data.device_status.reading_quality) {
+      return 'NORMAL';
     }
 
-    generateValidationDetails(data) {
+    const qualityMap = {
+      'GOOD': 'NORMAL',
+      'WARN': 'ALERTA',
+      'BAD': 'ERROR'
+    };
+
+    return qualityMap[data.device_status.reading_quality] || 'NORMAL';
+  }
+
+  generateValidationDetails(data) {
         const validationDetails = {
             voltaje: {
                 valor: data.voltaje,
@@ -347,58 +347,103 @@ class DatabaseService {
         return requiredFields.every(field => data.device_status[field] !== undefined);
     }
 
-    async ensureDeviceExists(conn, data) {
-        const deviceId = data.device_status.id;
-        const [rows] = await conn.query(
-            'SELECT * FROM sem_dispositivos WHERE shelly_id = ?',
-            [deviceId]
-        );
+  async ensureDeviceExists(conn, data) {
+    const deviceId = data.device_status.id;
+    const [rows] = await conn.query(
+      'SELECT * FROM sem_dispositivos WHERE shelly_id = ?',
+      [deviceId]
+    );
 
-        if (!rows || rows.length === 0) {
-            throw new NotFoundError(`Device ${deviceId} not found in database`);
-        }
-
-        return rows[0];
+    if (!rows || rows.length === 0) {
+      throw new NotFoundError(`Device ${deviceId} not found in database`);
     }
 
-    /**
-     * Convierte el timestamp unix a hora local
-     * @param {Object} data - Datos del dispositivo
-     * @returns {Date} Fecha en hora local
-     */
-    getTimestamp(data) {
-        let timestamp;
+    return rows[0];
+  }
 
-        if (data.device_status.sys?.unixtime) {
-            // Convertir unixtime (segundos) a milisegundos y crear objeto DateTime
-            const utcDateTime = DateTime.fromMillis(data.device_status.sys.unixtime * 1000)
-                .setZone('UTC');
+  /**
+   * Convierte el timestamp unix a hora local
+   * @param {Object} data - Datos del dispositivo
+   * @returns {Date} Fecha en hora local
+   */
+  getTimestamp(data) {
+    let timestamp;
 
-            // Convertir a la zona horaria local configurada
-            const localDateTime = utcDateTime.setZone(this.timezone);
+    if (data.device_status.sys?.unixtime) {
+      // Convertir unixtime (segundos) a milisegundos y crear objeto DateTime
+      const utcDateTime = DateTime.fromMillis(data.device_status.sys.unixtime * 1000)
+        .setZone('UTC');
 
-            // Verificar si la conversión fue exitosa
-            if (!localDateTime.isValid) {
-                console.error('Error converting timestamp:', localDateTime.invalidReason);
-                // Si hay error, usar la hora actual local
-                timestamp = DateTime.local().setZone(this.timezone).toJSDate();
-            } else {
-                timestamp = localDateTime.toJSDate();
+      // Convertir a la zona horaria local configurada
+      const localDateTime = utcDateTime.setZone(this.timezone);
+
+      // Verificar si la conversión fue exitosa
+      if (!localDateTime.isValid) {
+        console.error('Error converting timestamp:', localDateTime.invalidReason);
+        // Si hay error, usar la hora actual local
+        timestamp = DateTime.local().setZone(this.timezone).toJSDate();
+      } else {
+        timestamp = localDateTime.toJSDate();
+      }
+    } else {
+      // Si no hay unixtime, usar la hora actual en la zona horaria configurada
+      timestamp = DateTime.local().setZone(this.timezone).toJSDate();
+    }
+
+    console.log('Timestamp conversion:', {
+      original_unixtime: data.device_status.sys?.unixtime,
+      converted_local: timestamp,
+      timezone: this.timezone
+    });
+
+    return timestamp;
+  }
+    async resetPassword(email, newPassword, resetToken, resetTokenExpiry) {
+        try {
+            // Verificar el token y actualizar la contraseña
+            const [user] = await this.pool.query(
+                "SELECT * FROM users WHERE resetToken = ? AND resetTokenExpiry > ?",
+                [resetToken, Date.now()]
+            );
+            if (user.length === 0) {
+                throw new NotFoundError("Token inválido o expirado");
             }
-        } else {
-            // Si no hay unixtime, usar la hora actual en la zona horaria configurada
-            timestamp = DateTime.local().setZone(this.timezone).toJSDate();
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+            await this.pool.query(
+                "UPDATE users SET password = ?, resetToken = NULL, resetTokenExpiry = NULL WHERE id = ?",
+                [hashedPassword, user[0].id]
+            );
+             return { success: true, email: user[0].email };
+        } catch (error) {
+             console.error("Error al restablecer la contraseña:", error);
+            throw new DatabaseError('Error al restablecer la contraseña', error);
         }
-
-        console.log('Timestamp conversion:', {
-            original_unixtime: data.device_status.sys?.unixtime,
-            converted_local: timestamp,
-            timezone: this.timezone
-        });
-
-        return timestamp;
     }
 
+    async requestPasswordReset(email, resetToken, resetTokenExpiry) {
+        try {
+             const [user] = await this.pool.query("SELECT * FROM users WHERE email = ?", [
+                email,
+            ]);
+            if (user.length === 0) {
+              throw new NotFoundError("Usuario no encontrado");
+            }
+
+            await this.pool.query(
+              "UPDATE users SET resetToken = ?, resetTokenExpiry = ? WHERE id = ?",
+              [resetToken, resetTokenExpiry, user[0].id]
+            );
+
+             return { success: true, email: user[0].email };
+
+        } catch (error) {
+            console.error(
+              "Error al solicitar restablecimiento de contraseña:",
+              error
+            );
+            throw new DatabaseError('Error al solicitar restablecimiento de contraseña', error);
+        }
+    }
     async getLatestStatus() {
         const [rows] = await this.pool.query(`
             SELECT m.*, d.nombre as device_name, g.nombre as group_name,
@@ -418,38 +463,38 @@ class DatabaseService {
         return transformUtils.transformApiResponse(rows);
     }
 
-    async close() {
-        if (this.pool) {
-            await this.pool.end();
-            this.pool = null;
-            this.initialized = false;
-            this.connected = false;
-        }
+  async close() {
+    if (this.pool) {
+      await this.pool.end();
+      this.pool = null;
+      this.initialized = false;
+      this.connected = false;
     }
+  }
 
-    async testConnection() {
-        try {
-            if (!this.pool) await this.initialize();
-            await this.pool.query('SELECT 1');
-            this.connected = true;
-            return true;
-        } catch (error) {
-            this.connected = false;
-            throw new DatabaseError('Database connection test failed', error);
-        }
+  async testConnection() {
+    try {
+      if (!this.pool) await this.initialize();
+      await this.pool.query('SELECT 1');
+      this.connected = true;
+      return true;
+    } catch (error) {
+      this.connected = false;
+      throw new DatabaseError('Database connection test failed', error);
     }
+  }
 
-    async getQualityStatus(deviceId, timestamp) {
-        const [qualityRows] = await this.pool.query(
-            `SELECT * FROM sem_control_calidad 
+  async getQualityStatus(deviceId, timestamp) {
+    const [qualityRows] = await this.pool.query(
+        `SELECT * FROM sem_control_calidad 
          WHERE shelly_id = ? 
          AND inicio_periodo <= ? 
          AND fin_periodo >= ?`,
-            [deviceId, timestamp, timestamp]
-        );
-        return qualityRows[0] || null;
-    }
-
+        [deviceId, timestamp, timestamp]
+    );
+    return qualityRows[0] || null;
+  }
 }
 
-module.exports = new DatabaseService();
+const databaseService = new DatabaseService();
+module.exports = databaseService; // Exporta databaseService directamente
