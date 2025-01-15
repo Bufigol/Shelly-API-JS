@@ -199,24 +199,24 @@ class UbibotController {
       res.status(500).send("Server Error");
     }
   }
-    async getTemperatureCamarasData(req, res) {
-        try {
-            const { date } = req.query;
-            console.log('Received request for date:', date);
-            
-            if (!date) {
-              return res.status(400).json({ error: 'Se requiere una fecha' });
-            }
+  async getTemperatureCamarasData(req, res) {
+    try {
+      const { date } = req.query;
+      console.log("Received request for date:", date);
 
-            // Crear el rango de fechas en hora de Santiago sin conversiones adicionales
-            // Ya que los datos en la BD están en esa zona horaria
-            const start = `${date} 00:00:00`;
-            const end = `${date} 23:59:59`;
-           
-            console.log('Querying from:', start, 'to:', end);
-            console.log('Start:', start, 'End:', end);
+      if (!date) {
+        return res.status(400).json({ error: "Se requiere una fecha" });
+      }
 
-            const query = `
+      // Crear el rango de fechas en hora de Santiago sin conversiones adicionales
+      // Ya que los datos en la BD están en esa zona horaria
+      const start = `${date} 00:00:00`;
+      const end = `${date} 23:59:59`;
+
+      console.log("Querying from:", start, "to:", end);
+      console.log("Start:", start, "End:", end);
+
+      const query = `
             SELECT sr.id, sr.channel_id, sr.external_temperature, sr.external_temperature_timestamp, c.name
             FROM sensor_readings_ubibot sr
             JOIN channels_ubibot c ON sr.channel_id = c.channel_id
@@ -224,68 +224,123 @@ class UbibotController {
             ORDER BY sr.external_temperature_timestamp ASC
           `;
 
+      const [rows] = await databaseService.pool.query(query, [start, end]);
+      console.log("Query returned", rows.length, "rows");
 
-            const [rows] = await databaseService.pool.query(query, [start, end]);
-            console.log('Query returned', rows.length, 'rows');
-
-            // Agrupar los datos por canal manteniendo los timestamps originales
-            const groupedData = rows.reduce((acc, row) => {
-              if (!acc[row.channel_id]) {
-                acc[row.channel_id] = {
-                  id: row.id,
-                  channel_id: row.channel_id,
-                  name: row.name,
-                  data: []
-                };
-              }
-
-              acc[row.channel_id].data.push({
-                id: row.id,
-                timestamp: row.external_temperature_timestamp,
-                external_temperature: parseFloat(row.external_temperature)
-              });
-             
-              return acc;
-            }, {});
-
-            // Ordenar los datos dentro de cada canal por timestamp
-            Object.values(groupedData).forEach(channel => {
-              channel.data.sort((a, b) => {
-                const timeA = new Date(a.timestamp).getTime();
-                const timeB = new Date(b.timestamp).getTime();
-                return timeA - timeB;
-              });
-            });
-
-            // Función para determinar el orden de visualización
-            const getOrderIndex = (name) => {
-              if (name.startsWith('Camara')) {
-                return parseInt(name.split(' ')[1]);
-              } else if (name.startsWith('Reefer')) {
-                const letter = name.split(' ')[1];
-                return 6 + letter.charCodeAt(0) - 'A'.charCodeAt(0);
-              }
-              return Infinity;
-            };
-
-            // Ordenar los canales según la lógica establecida
-            const sortedData = Object.values(groupedData).sort((a, b) => {
-              return getOrderIndex(a.name) - getOrderIndex(b.name);
-            });
-
-            // Log de los datos procesados para debugging
-            console.log('Processed data:', sortedData.map(d => ({
-              id: d.id,
-              channel_id: d.channel_id,
-              name: d.name,
-              dataPoints: d.data.length
-            })));
-
-            res.json(sortedData);
-        } catch (error) {
-           console.error('Error fetching temperature data:', error);
-          res.status(500).json({ error: 'Error del servidor' });
+      // Agrupar los datos por canal manteniendo los timestamps originales
+      const groupedData = rows.reduce((acc, row) => {
+        if (!acc[row.channel_id]) {
+          acc[row.channel_id] = {
+            id: row.id,
+            channel_id: row.channel_id,
+            name: row.name,
+            data: [],
+          };
         }
+
+        acc[row.channel_id].data.push({
+          id: row.id,
+          timestamp: row.external_temperature_timestamp,
+          external_temperature: parseFloat(row.external_temperature),
+        });
+
+        return acc;
+      }, {});
+
+      // Ordenar los datos dentro de cada canal por timestamp
+      Object.values(groupedData).forEach((channel) => {
+        channel.data.sort((a, b) => {
+          const timeA = new Date(a.timestamp).getTime();
+          const timeB = new Date(b.timestamp).getTime();
+          return timeA - timeB;
+        });
+      });
+
+      // Función para determinar el orden de visualización
+      const getOrderIndex = (name) => {
+        if (name.startsWith("Camara")) {
+          return parseInt(name.split(" ")[1]);
+        } else if (name.startsWith("Reefer")) {
+          const letter = name.split(" ")[1];
+          return 6 + letter.charCodeAt(0) - "A".charCodeAt(0);
+        }
+        return Infinity;
+      };
+
+      // Ordenar los canales según la lógica establecida
+      const sortedData = Object.values(groupedData).sort((a, b) => {
+        return getOrderIndex(a.name) - getOrderIndex(b.name);
+      });
+
+      // Log de los datos procesados para debugging
+      console.log(
+        "Processed data:",
+        sortedData.map((d) => ({
+          id: d.id,
+          channel_id: d.channel_id,
+          name: d.name,
+          dataPoints: d.data.length,
+        }))
+      );
+
+      res.json(sortedData);
+    } catch (error) {
+      console.error("Error fetching temperature data:", error);
+      res.status(500).json({ error: "Error del servidor" });
+    }
+  }
+  async getTemperatureDevices(req, res) {
+    try {
+      const [devices] = await databaseService.pool.query(
+        "SELECT channel_id, name FROM channels_ubibot"
+      );
+      res.json(devices);
+    } catch (error) {
+      console.error(
+        "Ubibot: Error al obtener datos de los dispositivos de temperatura:",
+        error.message
+      );
+      res.status(500).send("Server Error");
+    }
+  }
+
+  async getTemperatureRangeData(req, res) {
+    try {
+      const { startDate, endDate, deviceId } = req.query;
+      if (!startDate || !endDate || !deviceId) {
+        return res
+          .status(400)
+          .json({ error: "Faltan datos (startDate, endDate, deviceId)" });
       }
+      const start = `${startDate} 00:00:00`;
+      const end = `${endDate} 23:59:59`;
+
+      const query = `
+         SELECT sr.channel_id, sr.external_temperature, sr.external_temperature_timestamp
+         FROM sensor_readings_ubibot sr
+         WHERE sr.channel_id = ?
+         AND sr.external_temperature_timestamp BETWEEN ? AND ?
+       `;
+
+      const [rows] = await databaseService.pool.query(query, [
+        deviceId,
+        start,
+        end,
+      ]);
+
+      const data = rows.map((item) => ({
+        timestamp: item.external_temperature_timestamp,
+        external_temperature: parseFloat(item.external_temperature),
+      }));
+
+      res.json(data || []);
+    } catch (error) {
+      console.error(
+        "Ubibot: Error al obtener datos de rango de temperatura:",
+        error.message
+      );
+      res.status(500).json({ error: "Error del servidor" });
+    }
+  }
 }
 module.exports = new UbibotController();

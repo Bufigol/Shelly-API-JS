@@ -8,3 +8,4 @@ src/config/token_id.txt
 .env
 dist/images
 public/
+src/config/token_id.txt
