@@ -8,9 +8,9 @@ import DatePicker, { registerLocale } from 'react-datepicker';
 import { toast } from 'react-toastify';
 import "react-datepicker/dist/react-datepicker.css";
 import "react-toastify/dist/ReactToastify.css";
-import '../assets/css/ConsumoElectrico.css';
 import Header from './Header';
 import moment from 'moment-timezone';
+import '../assets/css/ConsumoTotalDiario.css';
 
 // Configuraciones iniciales
 moment.tz.setDefault('America/Santiago');
@@ -217,14 +217,14 @@ const ConsumoTotalDiario = () => {
                 labels: {
                     padding: 20,
                     font: {
-                        family: "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
+                        family: chartConfig.fontFamily,
                         size: 13
                     },
                     usePointStyle: true,
                     pointStyle: 'circle'
                 }
             },
-            tooltip: {  // <- ESTA ES LA SECCIÓN QUE DEBES ACTUALIZAR
+            tooltip: {
                 enabled: true,
                 position: 'nearest',
                 external: CustomTooltip,
@@ -234,12 +234,12 @@ const ConsumoTotalDiario = () => {
                 borderColor: '#ccc',
                 borderWidth: 1,
                 titleFont: {
-                    family: "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
+                    family: chartConfig.fontFamily,
                     size: 14,
                     weight: 'bold'
                 },
                 bodyFont: {
-                    family: "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
+                    family: chartConfig.fontFamily,
                     size: 13
                 },
                 padding: 12,
@@ -252,44 +252,53 @@ const ConsumoTotalDiario = () => {
     };
 
     if (loading) {
-        return <div className='loading'>Cargando datos...</div>;
+        return (
+            <div className="consumo-electrico">
+                <Header title="Consumo Total Diario" />
+                <div className="content-container">
+                    <div className='loading'>Cargando datos...</div>
+                </div>
+            </div>
+        );
     }
 
     return (
         <div className="consumo-electrico">
             <Header title="Consumo Total Diario" />
-            <div className="controls">
-                <div className="date-picker-container">
-                    <label>Seleccione una fecha:</label>
-                    <DatePicker
-                        selected={selectedDate}
-                        onChange={handleDateChange}
-                        dateFormat="dd-MM-yyyy"
-                        className="date-picker"
-                        locale="es"
-                        maxDate={today.current}
-                        placeholderText="Seleccione una fecha"
-                    />
+            <div className="content-container">
+                <div className="controls">
+                    <div className="date-picker-container">
+                        <label>Seleccione una fecha:</label>
+                        <DatePicker
+                            selected={selectedDate}
+                            onChange={handleDateChange}
+                            dateFormat="dd-MM-yyyy"
+                            className="date-picker"
+                            locale="es"
+                            maxDate={today.current}
+                            placeholderText="Seleccione una fecha"
+                        />
+                    </div>
                 </div>
+                
+                {error && <div className="error-message">{error}</div>}
+                
+                {showChart && data.length > 0 && (
+                    <div className="chart-container">
+                        <Bar 
+                            data={chartData} 
+                            options={chartOptions} 
+                            ref={chartRef}
+                        />
+                    </div>
+                )}
+                
+                {showChart && data.length === 0 && !loading && (
+                    <div className="no-data-message">
+                        No hay datos disponibles para la fecha seleccionada.
+                    </div>
+                )}
             </div>
-            
-            {error && <div className="error-message">{error}</div>}
-            
-            {showChart && data.length > 0 && (
-                <div className="chart-container">
-                    <Bar 
-                        data={chartData} 
-                        options={chartOptions} 
-                        ref={chartRef}
-                    />
-                </div>
-            )}
-            
-            {showChart && data.length === 0 && !loading && (
-                <div className="no-data-message">
-                    No hay datos disponibles para la fecha seleccionada.
-                </div>
-            )}
         </div>
     );
 };

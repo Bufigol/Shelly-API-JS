@@ -2,11 +2,13 @@
   text-align: center;
   padding: 20px;
   font-family: Arial, sans-serif;
-  background-color: #f4f4f9;
+  background-color: #f5f5f5; /* Fondo uniforme */
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  width: 100%; /* Añadido */
 }
+
 
 .content {
   flex-grow: 1;
