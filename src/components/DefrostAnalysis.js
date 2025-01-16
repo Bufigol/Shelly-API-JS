@@ -250,7 +250,9 @@ const DefrostAnalysis = () => {
         },
         {
           responseType: "blob",
-          timeout: 30000,
+          headers: {
+            "Content-Type": "application/json",
+          },
         }
       );
 
