@@ -1,5 +1,3 @@
-/* components/DefrostAnalysis.js */
-
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import moment from "moment-timezone";
@@ -112,15 +110,12 @@ const DefrostAnalysis = () => {
       );
 
       // Análisis diario (domingo)
-      const responseDaily = await axios.get(
-        "/api/ubibot/defrost-analysis-data",
-        {
-          params: {
-            channelId: selectedCamera,
-            date: formattedDate,
-          },
-        }
-      );
+      const responseDaily = await axios.get("/api/ubibot/defrost-analysis-data", {
+        params: {
+          channelId: selectedCamera,
+          date: formattedDate,
+        },
+      });
 
       if (
         !responseDaily.data ||
@@ -250,9 +245,7 @@ const DefrostAnalysis = () => {
         },
         {
           responseType: "blob",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          timeout: 30000,
         }
       );
 
@@ -293,15 +286,12 @@ const DefrostAnalysis = () => {
         "Fecha enviada a la API para analisis semanal:",
         formattedDate
       );
-      const response = await axios.get(
-        "/api/ubibot/weekly-defrost-analysis-data",
-        {
-          params: {
-            channelId: selectedCamera,
-            date: formattedDate,
-          },
-        }
-      );
+      const response = await axios.get("/api/ubibot/weekly-defrost-analysis-data", {
+        params: {
+          channelId: selectedCamera,
+          date: formattedDate,
+        },
+      });
 
       if (
         !response.data ||
