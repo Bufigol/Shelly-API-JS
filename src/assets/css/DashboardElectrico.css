@@ -1,50 +1,78 @@
 /* DashboardElectrico.css */
+.dashboard-electrico {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #f5f5f5;
+}
+
 .dashboard-container {
-    font-family: Arial, sans-serif;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-  }
-  
+  flex: 1;
+  padding: 20px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.electric-display-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  width: 100%;
+  padding: 0 20px;
+  box-sizing: border-box;
+}
+
+.electric-display {
+  background-color: #000;
+  color: #fff;
+  padding: 20px;
+  border-radius: 10px;
+  border: 2px solid #333;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 400px; /* Limitar el ancho máximo */
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* Ajustes responsive */
+@media (max-width: 1200px) {
   .electric-display-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
-    margin-top: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 15px;
+    padding: 0 15px;
   }
-  
-  .electric-display {
-    background-color: #000;
-    color: #fff;
-    padding: 20px;
-    border-radius: 10px;
-    text-align: center;
-  }
-  
-  .seven-segment-display {
-    font-family: 'Digital-7', monospace;
-    font-size: 3.5em;
-    color: #ff0000;
-    background-color: #000;
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
     padding: 10px;
-    border-radius: 5px;
-    display: inline-block;
-    margin-bottom: 10px;
   }
-  
-  .segment {
-    display: inline-block;
-    width: 0.6em;
-    text-align: center;
+
+  .electric-display-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 10px;
+    padding: 0 10px;
   }
-  
-  .electric-channel {
-    font-size: 1.2em;
-    margin-bottom: 5px;
-    color: white;
+
+  .electric-display {
+    padding: 15px;
+    max-width: 350px;
   }
-  
-  .electric-date {
-    font-size: 0.8em;
-    color: #999;
+}
+
+@media (max-width: 480px) {
+  .electric-display-grid {
+    grid-template-columns: 1fr;
   }
+
+  .electric-display {
+    max-width: 100%;
+  }
+
+  .seven-segment-display {
+    font-size: 2.5em;
+  }
+}
