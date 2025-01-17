@@ -220,53 +220,55 @@ const TemperaturaCamaras = () => {
   return (
     <div className="temperatura-camaras">
       <Header />
-      <h1>Temperaturas Cámaras de Frío</h1>
-      <DatePicker
-        selected={selectedDate}
-        onChange={handleDateChange}
-        dateFormat="dd-MM-yyyy"
-        className="date-picker"
-        locale="es"
-        maxDate={today.current}
-      />
-      <div className="charts-grid">
-        {data.map((deviceData) => {
-          const chartData = {
-            labels: deviceData.data.map((item) => item.timestamp),
-            datasets: [
-              {
-                label: "Temperatura Sonda",
-                data: deviceData.data.map((item) => ({
-                  x: item.timestamp,
-                  y: parseFloat(item.external_temperature),
-                })),
-                fill: false,
-                borderColor: LINE_COLOR,
-                tension: 0.1,
-              },
-            ],
-          };
+      <div className="main-content">
+        <h1>Temperaturas Cámaras de Frío</h1>
+        <DatePicker
+          selected={selectedDate}
+          onChange={handleDateChange}
+          dateFormat="dd-MM-yyyy"
+          className="date-picker"
+          locale="es"
+          maxDate={today.current}
+        />
+        <div className="charts-grid">
+          {data.map((deviceData) => {
+            const chartData = {
+              labels: deviceData.data.map((item) => item.timestamp),
+              datasets: [
+                {
+                  label: "Temperatura Sonda",
+                  data: deviceData.data.map((item) => ({
+                    x: item.timestamp,
+                    y: parseFloat(item.external_temperature),
+                  })),
+                  fill: false,
+                  borderColor: LINE_COLOR,
+                  tension: 0.1,
+                },
+              ],
+            };
 
-          return (
-            <div key={deviceData.channel_id} className="chart-container">
-              <h3>
-                Cámara de Frío:{" "}
-                <span style={{ color: LINE_COLOR }}>{deviceData.name}</span>
-              </h3>
-              <div className="chart-wrapper">
-                <Line data={chartData} options={chartOptions} />
+            return (
+              <div key={deviceData.channel_id} className="chart-container">
+                <h3>
+                  Cámara de Frío:{" "}
+                  <span style={{ color: LINE_COLOR }}>{deviceData.name}</span>
+                </h3>
+                <div className="chart-wrapper">
+                  <Line data={chartData} options={chartOptions} />
+                </div>
+                <button
+                  onClick={() =>
+                    handleDownload(deviceData.channel_id, deviceData.name)
+                  }
+                  className="download-button"
+                >
+                  Descarga de Datos
+                </button>
               </div>
-              <button
-                onClick={() =>
-                  handleDownload(deviceData.channel_id, deviceData.name)
-                }
-                className="download-button"
-              >
-                Descarga de Datos
-              </button>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

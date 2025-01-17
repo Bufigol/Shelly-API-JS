@@ -99,18 +99,20 @@ const ConsumoElectrico = () => {
   if (!showCharts) {
     return (
       <div className="consumo-electrico">
-        <Header />
-        <h1>Consumo Eléctrico</h1>
-        <DatePicker
-          selected={selectedDate}
-          onChange={handleDateChange}
-          dateFormat="dd-MM-yyyy"
-          className="date-picker"
-          locale="es"
-          maxDate={today.current}
-          placeholderText="Seleccione una fecha"
-        />
-        {selectedDate && <p>Selecciona una fecha para ver los datos de consumo.</p>}
+        <Header title="Consumo Eléctrico" />
+        <div className="content">
+          <h1>Consumo Eléctrico</h1>
+          <DatePicker
+            selected={selectedDate}
+            onChange={handleDateChange}
+            dateFormat="dd-MM-yyyy"
+            className="date-picker"
+            locale="es"
+            maxDate={today.current}
+            placeholderText="Seleccione una fecha"
+          />
+          {selectedDate && <p>Selecciona una fecha para ver los datos de consumo.</p>}
+        </div>
       </div>
     );
   }
@@ -118,17 +120,19 @@ const ConsumoElectrico = () => {
   if (Object.keys(data).length === 0) {
     return (
       <div className="consumo-electrico">
-        <Header />
-        <h1>Consumo Eléctrico</h1>
-        <DatePicker
-          selected={selectedDate}
-          onChange={handleDateChange}
-          dateFormat="dd-MM-yyyy"
-          className="date-picker"
-          locale="es"
-          maxDate={today.current}
-        />
-        <p>No hay datos disponibles para la fecha seleccionada.</p>
+        <Header title="Consumo Eléctrico" />
+        <div className="content">
+          <h1>Consumo Eléctrico</h1>
+          <DatePicker
+            selected={selectedDate}
+            onChange={handleDateChange}
+            dateFormat="dd-MM-yyyy"
+            className="date-picker"
+            locale="es"
+            maxDate={today.current}
+          />
+          <p>No hay datos disponibles para la fecha seleccionada.</p>
+        </div>
       </div>
     );
   }
@@ -201,53 +205,55 @@ const ConsumoElectrico = () => {
 
   return (
     <div className="consumo-electrico">
-      <Header />
-      <h1>Consumo Eléctrico</h1>
-      <DatePicker
-        selected={selectedDate}
-        onChange={handleDateChange}
-        dateFormat="dd-MM-yyyy"
-        className="date-picker"
-        locale="es"
-        maxDate={today.current}
-      />
-      <div className="charts-grid">
-        {Object.entries(data).map(([shellyId, deviceData]) => {
-          const chartData = {
-            labels: deviceData.data.map(item => moment(item.timestamp).toDate()),
-            datasets: [
-              {
-                label: 'Potencia Promedio',
-                data: deviceData.data.map(item => ({
-                  x: moment(item.timestamp).toDate(),
-                  y: parseFloat(item.potencia_kw)
-                })),
-                fill: false,
-                borderColor: LINE_COLOR,
-                tension: 0.1
-              }
-            ]
-          };
+      <Header title="Consumo Eléctrico" />
+      <div className="content">
+        <h1>Consumo Eléctrico</h1>
+        <DatePicker
+          selected={selectedDate}
+          onChange={handleDateChange}
+          dateFormat="dd-MM-yyyy"
+          className="date-picker"
+          locale="es"
+          maxDate={today.current}
+        />
+        <div className="charts-grid">
+          {Object.entries(data).map(([shellyId, deviceData]) => {
+            const chartData = {
+              labels: deviceData.data.map(item => moment(item.timestamp).toDate()),
+              datasets: [
+                {
+                  label: 'Potencia Promedio',
+                  data: deviceData.data.map(item => ({
+                    x: moment(item.timestamp).toDate(),
+                    y: parseFloat(item.potencia_kw)
+                  })),
+                  fill: false,
+                  borderColor: LINE_COLOR,
+                  tension: 0.1
+                }
+              ]
+            };
 
-          return (
-            <div key={shellyId} className="chart-box">
-              <div className="chart-container">
-                <h3>
-                  Dispositivo: <span style={{ color: LINE_COLOR }}>{deviceData.location}</span>
-                </h3>
-                <div className="chart-wrapper">
-                  <Line data={chartData} options={chartOptions} />
+            return (
+              <div key={shellyId} className="chart-box">
+                <div className="chart-container">
+                  <h3>
+                    Dispositivo: <span style={{ color: LINE_COLOR }}>{deviceData.location}</span>
+                  </h3>
+                  <div className="chart-wrapper">
+                    <Line data={chartData} options={chartOptions} />
+                  </div>
                 </div>
+                <button 
+                  onClick={() => handleDownload(shellyId, deviceData.location)} 
+                  className="download-button"
+                >
+                  Descargar Datos
+                </button>
               </div>
-              <button 
-                onClick={() => handleDownload(shellyId, deviceData.location)} 
-                className="download-button"
-              >
-                Descargar Datos
-              </button>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -1,0 +1,101 @@
+/* ConsumoTotalDiario.css */
+.consumo-electrico {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f0f5ff; /* Fondo similar al de la imagen */
+}
+
+.content-container {
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+    width: 97%;
+}
+
+.date-picker-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 300px;
+}
+
+.date-picker-container label {
+    font-size: 1rem;
+    color: #333;
+    font-weight: 500;
+}
+
+.date-picker {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    text-align: center;
+}
+
+.chart-container {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    height: 400px; /* Altura fija para el gráfico */
+    width: 100%;
+}
+
+/* Media queries para responsividad */
+@media (max-width: 768px) {
+    .content-container {
+        padding: 15px;
+        margin: 10px;
+    }
+
+    .date-picker-container {
+        max-width: 250px;
+    }
+
+    .chart-container {
+        height: 350px;
+        padding: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    .content-container {
+        padding: 10px;
+        margin: 5px;
+    }
+
+    .date-picker-container {
+        max-width: 200px;
+    }
+
+    .chart-container {
+        height: 300px;
+        padding: 10px;
+    }
+
+    .date-picker-container label {
+        font-size: 0.9rem;
+    }
+
+    .date-picker {
+        font-size: 0.9rem;
+        padding: 6px 10px;
+    }
+}
