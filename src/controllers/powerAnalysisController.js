@@ -1,3 +1,5 @@
+const databaseService = require("../services/database-service");
+
 class PowerAnalysisController {
   async handleTemperaturePowerLocations(req, res) {
     try {
@@ -17,7 +19,7 @@ class PowerAnalysisController {
                 ORDER BY cat.nombre_ubicacion, c.name
             `;
 
-      const [results] = await pool.query(query);
+      const [results] = await databaseService.pool.query(query);
 
       // Procesar los resultados para una estructura más organizada
       const locations = results.reduce((acc, item) => {
@@ -100,7 +102,7 @@ class PowerAnalysisController {
                 ORDER BY m.intervalo_tiempo;
             `;
 
-      const [results] = await pool.query(query, [
+      const [results] = await databaseService.pool.query(query, [
         date,
         ubicacion,
         date,
