@@ -1,4 +1,5 @@
 const databaseService = require("../services/database-service");
+const moment = require("moment-timezone");
 
 class PowerAnalysisController {
   async handleTemperaturePowerLocations(req, res) {
@@ -54,7 +55,8 @@ class PowerAnalysisController {
     }
   }
   async handleTemperaturePowerAnalysis(req, res) {
-    const { date, ubicacion, channelId } = req.query;
+    const { ubicacion, channelId } = req.query;
+    const date = req.validatedDates.date;
 
     try {
       // Crear tablas temporales y ejecutar consulta
@@ -109,7 +111,6 @@ class PowerAnalysisController {
         channelId,
       ]);
 
-      // Procesar resultados para el frontend
       const processedData = results.map((row) => ({
         ...row,
         intervalo_tiempo: moment(row.intervalo_tiempo).format(
