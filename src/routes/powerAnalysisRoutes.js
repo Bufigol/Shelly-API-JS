@@ -6,7 +6,7 @@ const router = express.Router();
 const powerAnalysisController = require('../controllers/powerAnalysisController.js');
 const { validationMiddleware } = require('../middlewares');
 
-router.get('/temperature-power-analysis',
+router.get('/temperature-power-analysis/:date',
     validationMiddleware.validateDateParams.bind(validationMiddleware),
     powerAnalysisController.handleTemperaturePowerAnalysis.bind(powerAnalysisController)
 );
