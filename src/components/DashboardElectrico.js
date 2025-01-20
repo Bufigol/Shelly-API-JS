@@ -4,7 +4,6 @@ import moment from 'moment';
 import '../assets/css/DashboardElectrico.css';
 import Header from './Header';
 
-
 const PowerDisplay = ({ value }) => {
   const formattedValue = value.toFixed(1).padStart(5, ' ');
   return (
@@ -58,19 +57,19 @@ const DashboardElectrico = () => {
 
   return (
     <div className="dashboard-electrico">
-      <Header title="Potencia Activa" />
+      <Header title="Dashboard Eléctrico" />
       <div className="dashboard-container">
         <div className="electric-display-grid">
           {deviceData.map((item) => (
             <div key={item.deviceId} className="electric-display">
-            <PowerDisplay value={item.activePower} />
-            <div className="electric-channel">
-              {item.location}
+              <PowerDisplay value={item.activePower} />
+              <div className="electric-channel">
+                {item.location}
+              </div>
+              <div className="electric-date">
+                <span>Actualizado: {moment(item.lastUpdate).format('DD/MM/YYYY HH:mm')}</span>
+              </div>
             </div>
-            <div className="electric-date">
-              <span>Actualizado: {moment(item.lastUpdate).format('DD/MM/YYYY HH:mm')}</span>
-            </div>
-          </div>
           ))}
         </div>
       </div>

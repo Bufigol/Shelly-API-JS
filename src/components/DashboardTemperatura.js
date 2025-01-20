@@ -1,5 +1,4 @@
-/* components/DashboardTemperatura.js */
-
+// DashboardTemperatura.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import moment from "moment";
@@ -31,16 +30,12 @@ const DashboardTemperatura = () => {
   const fetchTemperatureData = async () => {
     try {
       const response = await axios.get("/api/ubibot/temperature-dashboard-data");
-      console.log("Raw temperature data:", response.data);
       if (Array.isArray(response.data) && response.data.length > 0) {
         const formattedData = response.data.map((item) => ({
           ...item,
           external_temperature: parseFloat(item.external_temperature),
         }));
-        console.log("Formatted temperature data:", formattedData);
         setTemperatureData(formattedData);
-      } else {
-        console.error("Invalid data structure received from API");
       }
     } catch (error) {
       console.error("Error fetching temperature data:", error);
@@ -50,21 +45,23 @@ const DashboardTemperatura = () => {
   return (
     <div className="dashboard-temperatura">
       <Header title="Temperatura Actual" />
-      <div className="dashboard-container">
-        <div className="temperature-display-grid">
+      <div className="dashboard-content">
+        <div className="temperature-grid">
           {temperatureData.map((item) => (
-            <div key={item.channel_id} className="temperature-display">
+            <div key={item.channel_id} className="temperature-card">
               <SevenSegmentDisplay value={item.external_temperature} />
-              <div className="temperature-channel">{item.name}</div>
-              <div className="temperature-date">
-                {item.external_temperature_timestamp && (
-                  <span>
-                    Actualizado:{" "}
-                    {moment(item.external_temperature_timestamp).format(
-                      "DD/MM/YYYY HH:mm"
-                    )}
-                  </span>
-                )}
+              <div className="temperature-info">
+                <div className="temperature-name">{item.name}</div>
+                <div className="temperature-date">
+                  {item.external_temperature_timestamp && (
+                    <span>
+                      Actualizado:{" "}
+                      {moment(item.external_temperature_timestamp).format(
+                        "DD/MM/YYYY HH:mm"
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
