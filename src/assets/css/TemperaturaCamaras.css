@@ -7,7 +7,30 @@
   min-height: 100vh;
   overflow-x: hidden; /* Prevenir scroll horizontal */
 }
+/* En IntelligenciaDatosTemperatura.css */
+.header {
+  width: 100%;
+  background-color: #5b9bd5;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative; /* Añadido */
+}
 
+/* Añadir estilo para el botón de logout */
+.logout-button {
+  position: absolute;
+  right: 80px; /* Ajustar según necesidad */
+  top: 40%;
+  transform: translateY(-50%);
+  padding: 0.5rem 1rem;
+  background-color: #ff4444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
 .main-content {
   padding: 20px;
   width: 100%;
@@ -35,7 +58,7 @@
 .chart-wrapper {
   flex-grow: 1;
   position: relative;
-  height: 350px;
+  height: 270px;
 }
 
 h1 {

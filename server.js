@@ -43,11 +43,18 @@ class Server {
    */
   setupMiddleware() {
     const corsOptions = {
-      origin: "http://localhost:8080",
+      origin: ["http://localhost:3000", "http://localhost:8080"],
       credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     };
     this.app.use(cors(corsOptions));
     this.app.use(express.json());
+
+    this.app.use("/api", (req, res, next) => {
+      res.header("Content-Type", "application/json");
+      next();
+    });
 
     // Servir archivos estáticos
     this.app.use(express.static(path.join(__dirname, "public")));
@@ -107,11 +114,6 @@ class Server {
    * @memberof Server
    */
   setupRoutes() {
-    // Status endpoint
-    this.app.get("/", (req, res) => {
-      res.sendFile(path.join(__dirname, "public", "index.html"));
-    });
-
     // Importar rutas
     const deviceRoutes = require("./src/routes/deviceRoutes");
     const configRoutes = require("./src/routes/configRoutes");
@@ -128,6 +130,7 @@ class Server {
     const gpsDataRoutes = require("./src/routes/gpsDataRoutes");
     const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
 
+    // Primero configurar todas las rutas de la API
     this.app.use("/api/devices", deviceRoutes);
     this.app.use("/api/config", configRoutes);
     this.app.use("/api/totals", totalesRoutes);
@@ -143,8 +146,21 @@ class Server {
     this.app.use("/api/blindspot", blindSpotRoutes);
     this.app.use("/gps-data", gpsDataRoutes);
 
-    // Catch-all route para React Router
-    this.app.get("*", (req, res) => {
+    // Servir archivos estáticos después de las rutas de la API
+    this.app.use(express.static(path.join(__dirname, "public")));
+
+    // Ruta específica para la página principal
+    this.app.get("/", (req, res) => {
+      res.sendFile(path.join(__dirname, "public", "index.html"));
+    });
+
+    // Catch-all route para React Router debe ser lo último
+    this.app.get("*", (req, res, next) => {
+      // Si la petición es para la API, pasar al siguiente middleware
+      if (req.url.startsWith("/api/")) {
+        return next();
+      }
+      // Si no es una petición de API, enviar el index.html
       res.sendFile(path.join(__dirname, "public", "index.html"));
     });
   }
@@ -326,7 +342,9 @@ class Server {
 }
 
 const server = new Server();
-server.start().catch(err => console.error("Error al iniciar el servidor:", err));
+server
+  .start()
+  .catch((err) => console.error("Error al iniciar el servidor:", err));
 
 module.exports = {
   server,
