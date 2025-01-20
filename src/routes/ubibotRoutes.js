@@ -23,9 +23,27 @@ router.post("/update-channel-status", (req, res) =>
   ubibotController.handleUpdateChannelStatus(req, res)
 );
 
-router.post("/generate-defrost-report", (req, res) =>
-  ubibotController.handleGenerateDefrostReport(req, res)
-);
+router.post("/generate-defrost-report", async (req, res) => {
+  try {
+    // Log de los datos recibidos
+    console.log("Datos recibidos para generar reporte:", req.body);
+    await ubibotController.handleGenerateDefrostReport(req, res);
+  } catch (error) {
+    console.error("Error en la ruta de generación de reporte:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
+router.post("/generate-weekly-defrost-report", async (req, res) => {
+  try {
+    // Log de los datos recibidos
+    console.log("Datos recibidos para generar reporte:", req.body);
+    await ubibotController.handleGenerateWeeklyDefrostReport(req, res);
+  } catch (error) {
+    console.error("Error en la ruta de generación de reporte:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
 
 router.get("/defrost-analysis-data", (req, res) =>
   ubibotController.getDefrostAnalysisData(req, res)

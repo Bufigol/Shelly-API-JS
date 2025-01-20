@@ -1,9 +1,12 @@
 // src/controllers/ubibot-controller.js
 
+const moment = require("moment");
 const axios = require("axios");
 const fs = require("fs").promises;
 const config = require("../config/js_files/config-loader");
 const databaseService = require("../services/database-service");
+const WeeklyTemperatureAnalyzer = require("../utils/WeeklyTemperatureAnalyzer");
+const temperatureAnalyzer = require("../utils/TemperatureAnalyzer");
 
 class UbibotController {
   /**
@@ -371,6 +374,395 @@ class UbibotController {
       );
       res.status(500).send("Server Error");
     }
+  }
+
+  async getDefrostAnalysisData(req, res) {
+    const { channelId, date } = req.query;
+
+    try {
+      // Fecha seleccionada
+      const startOfDay = moment(date)
+        .startOf("day")
+        .format("YYYY-MM-DD HH:mm:ss");
+      const endOfDay = moment(date).endOf("day").format("YYYY-MM-DD HH:mm:ss");
+
+      // Fecha del domingo anterior
+      const startOfPreviousDay = moment(date)
+        .subtract(7, "days")
+        .startOf("day")
+        .format("YYYY-MM-DD HH:mm:ss");
+      const endOfPreviousDay = moment(date)
+        .subtract(7, "days")
+        .endOf("day")
+        .format("YYYY-MM-DD HH:mm:ss");
+
+      const query = `
+      (SELECT 
+        external_temperature as temperature,
+        external_temperature_timestamp as timestamp,
+        'current' as period
+      FROM sensor_readings_ubibot 
+      WHERE channel_id = ? 
+      AND external_temperature_timestamp BETWEEN ? AND ?)
+      UNION ALL
+      (SELECT 
+        external_temperature as temperature,
+        external_temperature_timestamp as timestamp,
+        'previous' as period
+      FROM sensor_readings_ubibot 
+      WHERE channel_id = ? 
+      AND external_temperature_timestamp BETWEEN ? AND ?)
+      ORDER BY timestamp ASC
+    `;
+
+      const [results] = await databaseService.pool.query(query, [
+        channelId,
+        startOfDay,
+        endOfDay,
+        channelId,
+        startOfPreviousDay,
+        endOfPreviousDay,
+      ]);
+
+      if (results.length === 0) {
+        return res
+          .status(404)
+          .json({ message: "No data found for selected dates" });
+      }
+
+      // Separar los datos por período
+      const currentData = results.filter((r) => r.period === "current");
+      const previousData = results.filter((r) => r.period === "previous");
+
+      res.json({
+        currentData,
+        previousData,
+      });
+    } catch (error) {
+      console.error("Error:", error);
+      res.status(500).json({ error: "Server Error" });
+    }
+  }
+
+  async getWeeklyDefrostAnalysisData(req, res) {
+    const { channelId, date } = req.query;
+
+    // Calcular fechas para la semana actual
+    const endDate = moment(date);
+    const startDate = moment(date).subtract(6, "days").startOf("day");
+    const endCurrentWeek = moment(date).endOf("day"); // Fixed log
+
+    // Calcular fechas para la semana anterior
+    const prevEndDate = moment(date).subtract(7, "days");
+    const prevStartDate = moment(date).subtract(13, "days").startOf("day");
+
+    // Log the dates before querying the database
+    console.log("API /api/weekly-defrost-analysis-data - Dates:");
+    console.log("  Selected Date:", endDate.format("YYYY-MM-DD HH:mm:ss"));
+    console.log(
+      "  Current Week Start:",
+      startDate.format("YYYY-MM-DD HH:mm:ss")
+    );
+    console.log(
+      "  Current Week End:",
+      endCurrentWeek.format("YYYY-MM-DD HH:mm:ss")
+    ); // Fixed log
+    console.log(
+      "  Previous Week Start:",
+      prevStartDate.format("YYYY-MM-DD HH:mm:ss")
+    );
+    console.log(
+      "  Previous Week End:",
+      prevEndDate.format("YYYY-MM-DD HH:mm:ss")
+    );
+
+    try {
+      const query = `
+        (SELECT 
+          external_temperature as temperature,
+          external_temperature_timestamp as timestamp,
+          'current' as period
+        FROM sensor_readings_ubibot 
+        WHERE channel_id = ? 
+        AND external_temperature_timestamp BETWEEN ? AND ?)
+        UNION ALL
+        (SELECT 
+          external_temperature as temperature,
+          external_temperature_timestamp as timestamp,
+          'previous' as period
+        FROM sensor_readings_ubibot 
+        WHERE channel_id = ? 
+        AND external_temperature_timestamp BETWEEN ? AND ?)
+        ORDER BY timestamp ASC
+      `;
+
+      const [results] = await databaseService.pool.query(query, [
+        channelId,
+        startDate.format("YYYY-MM-DD HH:mm:ss"),
+        endCurrentWeek.format("YYYY-MM-DD HH:mm:ss"),
+        channelId,
+        prevStartDate.format("YYYY-MM-DD HH:mm:ss"),
+        prevEndDate.format("YYYY-MM-DD HH:mm:ss"),
+      ]);
+
+      const currentData = results.filter((r) => r.period === "current");
+      const previousData = results.filter((r) => r.period === "previous");
+      // Log the number of records returned
+      console.log("API /api/weekly-defrost-analysis-data - Results:");
+      console.log("  Current Data Length:", currentData.length);
+      console.log("  Previous Data Length:", previousData.length);
+      if (currentData && currentData.length > 0) {
+        console.log("First current record:", currentData[0].timestamp);
+        console.log(
+          "Last current record:",
+          currentData[currentData.length - 1].timestamp
+        );
+      }
+      if (previousData && previousData.length > 0) {
+        console.log("First previous record:", previousData[0].timestamp);
+        console.log(
+          "Last previous record:",
+          previousData[previousData.length - 1].timestamp
+        );
+      }
+
+      res.json({
+        currentData,
+        previousData,
+        periods: {
+          current: {
+            start: startDate.format("YYYY-MM-DD"),
+            end: endDate.format("YYYY-MM-DD"),
+          },
+          previous: {
+            start: prevStartDate.format("YYYY-MM-DD"),
+            end: prevEndDate.format("YYYY-MM-DD"),
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error:", error);
+      res.status(500).json({ error: "Server Error" });
+    }
+  }
+  /**
+   * Genera un reporte de descongelamiento para la cámara especificada en
+   * el cuerpo de la solicitud y la fecha especificada.
+   *
+   * @param {Object} req - La solicitud que contiene los parámetros
+   *                        channelId y date.
+   * @param {Object} res - La respuesta que se devuelve al cliente.
+   */
+  async handleGenerateDefrostReport(req, res) {
+    try {
+      const { channelId, date } = req.body;
+
+      // Get camera name
+      const [cameraInfo] = await databaseService.pool.query(
+        "SELECT name FROM channels_ubibot WHERE channel_id = ?",
+        [channelId]
+      );
+      const cameraName = cameraInfo[0]?.name || "Unknown";
+
+      // Get data for current date and 7 days before
+      const selectedDate = moment(date);
+      const previousDate = moment(date).subtract(7, "days");
+
+      // Get current and previous data
+      const { results: currentData } = await this.getDefrostData(
+        channelId,
+        selectedDate.format("YYYY-MM-DD"),
+        cameraName
+      );
+
+      const { results: previousData, fileName } = await this.getDefrostData(
+        channelId,
+        previousDate.format("YYYY-MM-DD"),
+        cameraName
+      );
+
+      if (!currentData || currentData.length === 0) {
+        return res.status(400).json({
+          error: "No hay datos disponibles para esta fecha",
+        });
+      }
+
+      const TemperatureAnalyzer = require("../utils/TemperatureAnalyzer");
+      const analyzer = new TemperatureAnalyzer();
+
+      // Process the data
+      await analyzer.analyzeData(currentData, previousData, cameraName, date);
+
+      // Generate PDF
+      const pdfBuffer = await analyzer.generatePDF(cameraName, date);
+
+      // Send response
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${fileName}"`
+      );
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Error generating report:", error);
+      res.status(500).json({
+        error: "Error generando el informe",
+        details: error.message,
+      });
+    }
+  }
+
+  async handleGenerateWeeklyDefrostReport(req, res) {
+    const { channelId, date } = req.body;
+
+    try {
+      const [cameraInfo] = await databaseService.pool.query(
+        "SELECT name FROM channels_ubibot WHERE channel_id = ?",
+        [channelId]
+      );
+      const cameraName = cameraInfo[0]?.name || "Unknown";
+
+      // Obtener fechas para la semana actual y anterior
+      const selectedDate = moment(date);
+      const startOfCurrentWeek = moment(date).subtract(6, "days");
+      const endOfCurrentWeek = moment(date).endOf("day"); // Fixed log
+      const startOfPreviousWeek = moment(date).subtract(13, "days");
+      const endOfPreviousWeek = moment(date).subtract(7, "days").endOf("day"); // Fixed log
+
+      // Log the dates before querying the database
+      console.log("API /api/generate-weekly-defrost-report - Dates:");
+      console.log(
+        "  Selected Date:",
+        selectedDate.format("YYYY-MM-DD HH:mm:ss")
+      );
+      console.log(
+        "  Current Week Start:",
+        startOfCurrentWeek.format("YYYY-MM-DD HH:mm:ss")
+      );
+      console.log(
+        "  Current Week End:",
+        endOfCurrentWeek.format("YYYY-MM-DD HH:mm:ss")
+      );
+      console.log(
+        "  Previous Week Start:",
+        startOfPreviousWeek.format("YYYY-MM-DD HH:mm:ss")
+      );
+      console.log(
+        "   Previous Week End:",
+        endOfPreviousWeek.format("YYYY-MM-DD HH:mm:ss")
+      ); // Fixed log
+
+      // Obtener datos de temperatura para ambas semanas
+      const query = `
+      SELECT 
+        external_temperature as temperature,
+        external_temperature_timestamp as timestamp
+      FROM sensor_readings_ubibot 
+      WHERE channel_id = ? 
+      AND external_temperature_timestamp >= ? AND external_temperature_timestamp <= ?
+      ORDER BY external_temperature_timestamp ASC
+    `;
+
+      const [currentWeekData] = await databaseService.pool.query(query, [
+        channelId,
+        startOfCurrentWeek.format("YYYY-MM-DD HH:mm:ss"),
+        endOfCurrentWeek.format("YYYY-MM-DD HH:mm:ss"), // Fixed log
+      ]);
+
+      const [previousWeekData] = await databaseService.pool.query(query, [
+        channelId,
+        startOfPreviousWeek.format("YYYY-MM-DD HH:mm:ss"),
+        endOfPreviousWeek.format("YYYY-MM-DD HH:mm:ss"), // Fixed log
+      ]);
+
+      if (!currentWeekData || currentWeekData.length === 0) {
+        return res.status(400).json({
+          error: "No hay datos disponibles para esta semana",
+        });
+      }
+
+      // Crear una instancia del analizador semanalmperatureAnalyzer');
+      const analyzer = new WeeklyTemperatureAnalyzer();
+
+      console.log(
+        "API /api/generate-weekly-defrost-report - Passing data to WeeklyTemperatureAnalyzer:"
+      );
+      console.log("  Current Week Data Length:", currentWeekData.length);
+      console.log("  Previous Week Data Length:", previousWeekData.length);
+      // Log the first and last record to verify date ranges
+      if (currentWeekData && currentWeekData.length > 0) {
+        console.log("  First current record:", currentWeekData[0].timestamp);
+        console.log(
+          "  Last current record:",
+          currentWeekData[currentWeekData.length - 1].timestamp
+        );
+      }
+      if (previousWeekData && previousWeekData.length > 0) {
+        console.log("  First previous record:", previousWeekData[0].timestamp);
+        console.log(
+          "  Last previous record:",
+          previousWeekData[previousWeekData.length - 1].timestamp
+        );
+      }
+      // Procesar los datos para ambas semanas
+      await analyzer.analyzeData(
+        currentWeekData,
+        previousWeekData,
+        cameraName,
+        date
+      );
+
+      // Generar el PDF
+      const pdfBuffer = await analyzer.generatePDF(cameraName, date);
+
+      // Crear nombre del archivo
+      const sanitizedCameraName = cameraName.replace(/\s+/g, "_").trim();
+      const fileName = `Weekly_Temperature_Analysis_${sanitizedCameraName}_${moment(
+        date
+      ).format("DD-MM-YYYY")}.pdf`;
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${fileName}"`
+      );
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Error generating weekly report:", error);
+      res.status(500).json({
+        error: "Error generando el informe semanal",
+        details: error.message,
+      });
+    }
+  }
+
+  async getDefrostData(channelId, date, cameraName) {
+    const startOfDay = moment(date)
+      .startOf("day")
+      .format("YYYY-MM-DD HH:mm:ss");
+    const endOfDay = moment(date).endOf("day").format("YYYY-MM-DD HH:mm:ss");
+    const formattedDate = moment(date).format("DD-MM-YYYY");
+
+    // Create filename
+    const sanitizedCameraName = cameraName.replace(/\s+/g, "_").trim();
+    const fileName = `Defrost_Analysis_${sanitizedCameraName}_${formattedDate}.pdf`;
+
+    const query = `
+      SELECT 
+        external_temperature as temperature,
+        external_temperature_timestamp as timestamp
+      FROM sensor_readings_ubibot 
+      WHERE channel_id = ? 
+      AND external_temperature_timestamp BETWEEN ? AND ?
+      ORDER BY external_temperature_timestamp ASC
+    `;
+
+    const [results] = await databaseService.pool.query(query, [
+      channelId,
+      startOfDay,
+      endOfDay,
+    ]);
+    return { results, fileName };
   }
 }
 module.exports = new UbibotController();
