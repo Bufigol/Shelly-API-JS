@@ -76,15 +76,21 @@ class tel_ConfigController {
 
   async getConfigTemperaturaUmbral(req, res, next) {
     try {
-      const [results] = await pool.query(
+      console.log("Accediendo a getConfigTemperaturaUmbral"); // Log para debug
+      const [results] = await databaseService.pool.query(
         "SELECT * FROM parametrizaciones WHERE param_id IN (7, 8)"
       );
-      res.json(results);
+      console.log("Resultados:", results); // Log para debug
+      return res.status(200).json(results);
     } catch (error) {
       console.error("Error fetching temperature thresholds:", error);
-      res.status(500).send("Server Error");
+      return res.status(500).json({
+        error: "Error fetching temperature thresholds",
+        details: error.message,
+      });
     }
   }
+
   async setConfigTemperaturaUmbral(req, res, next) {
     const params = req.body;
     try {

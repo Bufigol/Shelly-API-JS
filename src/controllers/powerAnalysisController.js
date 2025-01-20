@@ -1,3 +1,6 @@
+const databaseService = require("../services/database-service");
+const moment = require("moment-timezone");
+
 class PowerAnalysisController {
   async handleTemperaturePowerLocations(req, res) {
     try {
@@ -17,7 +20,7 @@ class PowerAnalysisController {
                 ORDER BY cat.nombre_ubicacion, c.name
             `;
 
-      const [results] = await pool.query(query);
+      const [results] = await databaseService.pool.query(query);
 
       // Procesar los resultados para una estructura más organizada
       const locations = results.reduce((acc, item) => {
@@ -52,7 +55,8 @@ class PowerAnalysisController {
     }
   }
   async handleTemperaturePowerAnalysis(req, res) {
-    const { date, ubicacion, channelId } = req.query;
+    const { ubicacion, channelId } = req.query;
+    const date = req.validatedDates.date;
 
     try {
       // Crear tablas temporales y ejecutar consulta
@@ -100,14 +104,13 @@ class PowerAnalysisController {
                 ORDER BY m.intervalo_tiempo;
             `;
 
-      const [results] = await pool.query(query, [
+      const [results] = await databaseService.pool.query(query, [
         date,
         ubicacion,
         date,
         channelId,
       ]);
 
-      // Procesar resultados para el frontend
       const processedData = results.map((row) => ({
         ...row,
         intervalo_tiempo: moment(row.intervalo_tiempo).format(

@@ -214,6 +214,14 @@ const IntelligenciaDatosTemperatura = () => {
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: 10,    // Reducir padding superior
+        bottom: 15, // Reducir padding inferior
+        left: 10,   // Reducir padding izquierdo
+        right: 10   // Reducir padding derecho
+      }
+    },
     scales: {
       x: {
         type: "time",
@@ -233,6 +241,10 @@ const IntelligenciaDatosTemperatura = () => {
           display: true,
           text: "Fecha y Hora",
         },
+        ticks: {
+          maxRotation: 45, // Rotar las etiquetas
+          minRotation: 45  // Mantener rotación consistente
+        }
       },
       y: {
         title: {
@@ -249,6 +261,7 @@ const IntelligenciaDatosTemperatura = () => {
     plugins: {
       legend: {
         position: "top",
+        padding: 5 // Reducir el padding de la leyenda
       },
       tooltip: {
         mode: "index",
@@ -280,18 +293,20 @@ const IntelligenciaDatosTemperatura = () => {
       <div className="content">
         <h1>Inteligencia de Datos de Temperatura</h1>
         <div className="controls">
-          <select
-            value={selectedDevice}
-            onChange={handleDeviceChange}
-            className="device-select"
-          >
-            <option value="">Seleccione un dispositivo</option>
-            {devices.map((device) => (
-              <option key={device.channel_id} value={device.channel_id}>
-                {device.name}
-              </option>
-            ))}
-          </select>
+          <div className="device-select-container">
+            <select
+              value={selectedDevice}
+              onChange={handleDeviceChange}
+              className="device-select"
+            >
+              <option value="">Seleccione un dispositivo</option>
+              {devices.map((device) => (
+                <option key={device.channel_id} value={device.channel_id}>
+                  {device.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="date-pickers">
             <DatePicker
               selected={startDate}

@@ -82,13 +82,20 @@ const TemperaturePowerAnalysis = () => {
         (loc) => loc.id === parseInt(selectedLocation)
       );
 
+      const formattedDate = moment(selectedDate).format("YYYY-MM-DD");
+
+      console.log("Enviando parámetros:", {
+        date: formattedDate,
+        ubicacion: selectedLocation,
+        channelId: location?.channels[0]?.id,
+      });
+
       const response = await axios.get(
-        "/api/powerAnalysis/temperature-power-analysis",
+        `/api/powerAnalysis/temperature-power-analysis/${formattedDate}`,
         {
           params: {
-            date: moment(selectedDate).format("YYYY-MM-DD"),
             ubicacion: selectedLocation,
-            channelId: location.channels[0].id,
+            channelId: location?.channels[0]?.id,
           },
         }
       );
@@ -106,7 +113,10 @@ const TemperaturePowerAnalysis = () => {
       setShowChart(true);
     } catch (error) {
       console.error("Error fetching data:", error);
-      toast.error("Error al obtener los datos. Por favor intente nuevamente.");
+      const errorMessage =
+        error.response?.data?.error ||
+        "Error al obtener los datos. Por favor intente nuevamente.";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -115,116 +125,118 @@ const TemperaturePowerAnalysis = () => {
   return (
     <div className="temperature-power-analysis">
       <Header title="Análisis de Temperatura y Potencia" />
+      <div className="content">
+        <h1>Análisis de Temperatura y Potencia</h1>
+        <div className="controls">
+          <div className="select-container">
+            <label>Ubicación:</label>
+            <select
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+            >
+              <option value="">Seleccionar Ubicación</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      <div className="controls">
-        <div className="select-container">
-          <label>Ubicación:</label>
-          <select
-            value={selectedLocation}
-            onChange={(e) => setSelectedLocation(e.target.value)}
+          <div className="select-container">
+            <label>Fecha:</label>
+            <DatePicker
+              selected={selectedDate}
+              onChange={(date) => setSelectedDate(date)}
+              dateFormat="dd/MM/yyyy"
+              maxDate={new Date()}
+              placeholderText="Seleccionar fecha"
+              className="date-picker"
+            />
+          </div>
+
+          <button
+            onClick={fetchData}
+            disabled={loading || !selectedLocation || !selectedDate}
+            className="fetch-button"
           >
-            <option value="">Seleccionar Ubicación</option>
-            {locations.map((loc) => (
-              <option key={loc.id} value={loc.id}>
-                {loc.nombre}
-              </option>
-            ))}
-          </select>
+            {loading ? "Cargando..." : "Obtener Datos"}
+          </button>
         </div>
 
-        <div className="select-container">
-          <label>Fecha:</label>
-          <DatePicker
-            selected={selectedDate}
-            onChange={(date) => setSelectedDate(date)}
-            dateFormat="yyyy-MM-dd"
-            maxDate={new Date()}
-            placeholderText="Seleccionar fecha"
-            className="date-picker"
-          />
-        </div>
-
-        <button
-          onClick={fetchData}
-          disabled={loading || !selectedLocation || !selectedDate}
-          className="fetch-button"
-        >
-          {loading ? "Cargando..." : "Obtener Datos"}
-        </button>
+        {showChart && data.length > 0 && (
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height={500}>
+              <LineChart data={data} margin={chartConfig.margins}>
+                <CartesianGrid
+                  strokeDasharray={chartConfig.gridConfig.strokeDasharray}
+                  stroke={chartConfig.gridConfig.stroke}
+                />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 12 }}
+                  label={{
+                    value: "Hora",
+                    position: "bottom",
+                    offset: 0,
+                    fontSize: 14,
+                  }}
+                />
+                <YAxis
+                  yAxisId="left"
+                  tick={{ fontSize: 12 }}
+                  label={{
+                    value: "Temperatura (°C)",
+                    angle: -90,
+                    position: "insideLeft",
+                    offset: -5,
+                    fontSize: 14,
+                  }}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 12 }}
+                  label={{
+                    value: "Potencia (kW)",
+                    angle: 90,
+                    position: "insideRight",
+                    offset: 10,
+                    fontSize: 14,
+                  }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend
+                  wrapperStyle={{
+                    paddingTop: "20px",
+                    fontSize: "14px",
+                  }}
+                />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="promedio_temperatura_externa"
+                  stroke={chartConfig.lineColors.temperature}
+                  name="Temperatura"
+                  dot={false}
+                  strokeWidth={2}
+                  activeDot={{ r: 6 }}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="promedio_potencia_kw"
+                  stroke={chartConfig.lineColors.power}
+                  name="Potencia"
+                  dot={false}
+                  strokeWidth={2}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
-
-      {showChart && data.length > 0 && (
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height={500}>
-            <LineChart data={data} margin={chartConfig.margins}>
-              <CartesianGrid
-                strokeDasharray={chartConfig.gridConfig.strokeDasharray}
-                stroke={chartConfig.gridConfig.stroke}
-              />
-              <XAxis
-                dataKey="time"
-                tick={{ fontSize: 12 }}
-                label={{
-                  value: "Hora",
-                  position: "bottom",
-                  offset: 0,
-                  fontSize: 14,
-                }}
-              />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 12 }}
-                label={{
-                  value: "Temperatura (°C)",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: -5,
-                  fontSize: 14,
-                }}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tick={{ fontSize: 12 }}
-                label={{
-                  value: "Potencia (kW)",
-                  angle: 90,
-                  position: "insideRight",
-                  offset: 10,
-                  fontSize: 14,
-                }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                wrapperStyle={{
-                  paddingTop: "20px",
-                  fontSize: "14px",
-                }}
-              />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="promedio_temperatura_externa"
-                stroke={chartConfig.lineColors.temperature}
-                name="Temperatura"
-                dot={false}
-                strokeWidth={2}
-                activeDot={{ r: 6 }}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="promedio_potencia_kw"
-                stroke={chartConfig.lineColors.power}
-                name="Potencia"
-                dot={false}
-                strokeWidth={2}
-                activeDot={{ r: 6 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </div>
   );
 };

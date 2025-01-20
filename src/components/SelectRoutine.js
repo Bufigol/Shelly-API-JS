@@ -4,26 +4,28 @@ import { useNavigate } from "react-router-dom";
 import jwt from "jsonwebtoken";
 import "../assets/css/SelectRoutine.css";
 import Header from "./Header";
-// import dashboardImage from '../assets/images/dashboard.png';
-// import temperaturaImage from '../assets/images/temperatura.png';
+import dashboardImage from "../assets/images/dashboard.png";
+import temperaturaImage from "../assets/images/temperatura.png";
 import ubicaciontiemporealinteriorImage from "../assets/images/ubicaciontiemporealinterior.png";
 import personSearchImage from "../assets/images/person_search.png";
 import interiorLocationsImage from "../assets/images/plano_super.png";
 import historicalMovementsImage from "../assets/images/historical_movements1.png";
-// import dataIntelligenceImage from '../assets/images/data_intelligence.png';
-// import configurationImage from '../assets/images/configuration.png';
-// import presenciaImage from '../assets/images/presencia.png';
-// import smsDataImage from '../assets/images/sms_data.png';
+import dataIntelligenceImage from "../assets/images/data_intelligence.png";
+import configurationImage from "../assets/images/configuration.png";
+import presenciaImage from "../assets/images/presencia.png";
+import smsDataImage from "../assets/images/sms_data.png";
 import doorStatusImage from "../assets/images/door_status.png";
 import userRegistrationImage from "../assets/images/user_registration.png";
 import thermometerImage from "../assets/images/thermometer.png";
-// import detectionImage from '../assets/images/detection.png';
+import detectionImage from "../assets/images/detection.png";
 import dashboardTemperaturaImage from "../assets/images/dashboard_temperatura.png";
 import descargadatostemp from "../assets/images/descargadatostemp.png";
 import paramTempIcon from "../assets/images/param_temp.png";
 import frostIcon from "../assets/images/frost.png";
 import thermo_electricImage from "../assets/images/thermo_electric.png";
-
+import dashboard_electricImage from "../assets/images/dashboarelectrcio.png";
+import consumototaldiario_electricImage from "../assets/images/consumototaldiario.png";
+import consumoelectrico_electricImage from "../assets/images/consumoelectrico.png";
 const routines = [
   //  { title: "Dashboard", image: dashboardImage, route: "/dashboard", permission: "view_dashboard" },
   //  { title: "Intrusiones Blind Spot", image: detectionImage, route: "/blind-spot-intrusions", permission: "view_blind_spot_intrusions" },
@@ -69,6 +71,7 @@ const routines = [
     route: "/register-user",
     permission: "create_users",
   },
+  /*
   {
     title: "Interior Ubicación en Tiempo Real",
     image: ubicaciontiemporealinteriorImage,
@@ -93,6 +96,7 @@ const routines = [
     route: "/consulta-historica-movimientos",
     permission: "search_exterior",
   },
+  */
   {
     title: "Análisis de Deshielo",
     image: frostIcon,
@@ -100,9 +104,27 @@ const routines = [
     permission: "view_defrost_analysis",
   },
   {
+    title: "Dashboard Electrico",
+    image: dashboard_electricImage,
+    route: "/dashboard-electrico",
+    permission: "view_temperature_data_intelligence",
+  },
+  {
     title: "Análisis de Temperatura y Potencia",
     image: thermo_electricImage,
     route: "/analisis-temperatura-potencia",
+    permission: "view_temperature_data_intelligence",
+  },
+  {
+    title: "Consumo Electrico",
+    image: consumoelectrico_electricImage,
+    route: "/consumo-electrico",
+    permission: "view_temperature_data_intelligence",
+  },
+  {
+    title: "Consumo total Diario",
+    image: consumototaldiario_electricImage,
+    route: "/consumo-total-diario",
     permission: "view_temperature_data_intelligence",
   },
 ];
@@ -144,7 +166,7 @@ const SelectRoutine = () => {
 
   return (
     <div className="select-routine">
-      <Header title="Dashboard TNS Track" />
+      <Header title="Dashboard TNS Track" className="header-title" />
       <div className="routine-cards">
         {routines.map((routine, index) => (
           <div
