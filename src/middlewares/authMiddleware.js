@@ -1,82 +1,51 @@
-const config = require('../config/js_files/config-loader');
+// src/middlewares/authMiddleware.js
+const jwt = require("jsonwebtoken");
+const configLoader = require("../config/js_files/config-loader"); 
 
 class AuthMiddleware {
-    constructor() {
-        this.config = config.getConfig();
+  constructor() {
+    this.jwtSecret = configLoader.getConfig().jwt.secret;
+    this.jwtIssuer = configLoader.getConfig().jwt.issuer;
+  }
+
+  authenticate(req, res, next) {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "No token provided" });
     }
 
-    // Middleware de autenticación básica
-    authenticate(req, res, next) {
-        const apiKey = req.header('X-API-Key');
-        
-        if (!apiKey) {
-            return res.status(401).json({
-                error: 'Authentication Error',
-                message: 'API key no proporcionada',
-                timestamp: new Date().toISOString()
-            });
-        }
+    const token = authHeader.split(" ")[1];
 
-        // Verificar API key contra la configuración
-        if (apiKey !== this.config.api.auth_key) {
-            return res.status(403).json({
-                error: 'Authentication Error',
-                message: 'API key inválida',
-                timestamp: new Date().toISOString()
-            });
-        }
-
-        next();
+    if (!token) {
+      return res.status(401).json({ message: "No token provided" });
     }
-
-    // Middleware para verificar permisos específicos
-    checkPermissions(requiredPermissions) {
-        return (req, res, next) => {
-            // Aquí podrías implementar lógica más compleja de permisos
-            // Por ahora solo verificamos la autenticación básica
-            this.authenticate(req, res, next);
-        };
+    try {
+      const decoded = jwt.verify(token, this.jwtSecret, {
+        issuer: this.jwtIssuer,
+      });
+      req.user = decoded;
+      next();
+    } catch (error) {
+      console.error("Error al verificar token:", error);
+      return res.status(403).json({ message: "Invalid token" });
     }
+  }
 
-    // Middleware para limitar tasa de solicitudes
-    rateLimit(options = {}) {
-        const {
-            windowMs = 15 * 60 * 1000, // 15 minutos por defecto
-            max = 100 // 100 solicitudes por ventana por defecto
-        } = options;
-
-        const requests = new Map();
-
-        return (req, res, next) => {
-            const clientIp = req.ip;
-            const now = Date.now();
-            const windowStart = now - windowMs;
-
-            // Limpiar solicitudes antiguas
-            requests.forEach((timestamp, ip) => {
-                if (timestamp < windowStart) {
-                    requests.delete(ip);
-                }
-            });
-
-            // Verificar límite de tasa
-            const clientRequests = Array.from(requests.entries())
-                .filter(([ip, timestamp]) => ip === clientIp && timestamp > windowStart)
-                .length;
-
-            if (clientRequests >= max) {
-                return res.status(429).json({
-                    error: 'Rate Limit Exceeded',
-                    message: 'Demasiadas solicitudes, intente más tarde',
-                    timestamp: new Date().toISOString()
-                });
-            }
-
-            // Registrar nueva solicitud
-            requests.set(clientIp, now);
-            next();
-        };
-    }
+  authorize(requiredPermissions) {
+    return (req, res, next) => {
+      const userPermissions = req.user?.permissions || "";
+      const hasRequiredPermissions = requiredPermissions.every((permission) =>
+        userPermissions.includes(permission)
+      );
+      if (!hasRequiredPermissions) {
+        return res
+          .status(403)
+          .json({ message: "Unauthorized: Insufficient permissions" });
+      }
+      next();
+    };
+  }
 }
 
 module.exports = new AuthMiddleware();
