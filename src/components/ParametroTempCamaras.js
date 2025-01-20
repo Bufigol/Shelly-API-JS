@@ -15,26 +15,51 @@ const ParametroTempCamaras = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const token = localStorage.getItem("token"); // Asumiendo que guardas el token en localStorage
+
         const paramsResponse = await axios.get(
-          "/api/teltonica/temperatura-umbrales"
+          "/api/config/teltonica/temperatura-umbrales",
+          {
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
         );
-        if(Array.isArray(paramsResponse.data)){
-         setParams(paramsResponse.data);
+
+        if (paramsResponse.data && Array.isArray(paramsResponse.data)) {
+          setParams(paramsResponse.data);
         } else {
-            console.error("Error: La respuesta de la API no es un array", paramsResponse.data)
-            setMessage("Error al cargar los parámetros actuales: respuesta inesperada del servidor");
+          console.error("Invalid response format:", paramsResponse);
+          setMessage("Error: Formato de respuesta inválido");
         }
 
-        const channelsResponse = await axios.get("/api/ubibot/channel-status");
-        if (Array.isArray(channelsResponse.data)){
-            setChannels(channelsResponse.data)
-        } else{
-            console.error("Error: La respuesta de la API no es un array", channelsResponse.data)
-            setMessage("Error al cargar los canales: respuesta inesperada del servidor");
+        const channelsResponse = await axios.get("/api/ubibot/channel-status", {
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (channelsResponse.data && Array.isArray(channelsResponse.data)) {
+          setChannels(channelsResponse.data);
+        } else {
+          console.error("Invalid channels response:", channelsResponse);
+          setMessage("Error: Formato de respuesta de canales inválido");
         }
       } catch (error) {
         console.error("Error fetching data:", error);
-        setMessage("Error al cargar los datos");
+        if (error.response?.status === 401) {
+          setMessage(
+            "Error de autenticación. Por favor, inicie sesión nuevamente."
+          );
+        } else {
+          setMessage(
+            error.response?.data?.error || "Error al cargar los datos"
+          );
+        }
       } finally {
         setLoading(false);
       }
@@ -42,7 +67,6 @@ const ParametroTempCamaras = () => {
 
     fetchData();
   }, []);
-
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -103,41 +127,43 @@ const ParametroTempCamaras = () => {
       <Header title="Parámetros de Temperatura Cámaras" image={paramTempIcon} />
       <div className="content">
         <form onSubmit={handleSubmit}>
-          {Array.isArray(params) && params.length > 0 && params.map((param, index) => (
-            <div key={param.param_id} className="form-group">
-              <h3>{param.nombre_parametro}</h3>
-              <div>
-                <label htmlFor={`minTemp-${param.param_id}`}>
-                  Temperatura Mínima (°C):
-                </label>
-                <input
-                  type="number"
-                  id={`minTemp-${param.param_id}`}
-                  value={param.minimo}
-                  onChange={(e) =>
-                    handleChange(index, "minimo", e.target.value)
-                  }
-                  step="0.01"
-                  required
-                />
+          {Array.isArray(params) &&
+            params.length > 0 &&
+            params.map((param, index) => (
+              <div key={param.param_id} className="form-group">
+                <h3>{param.nombre_parametro}</h3>
+                <div>
+                  <label htmlFor={`minTemp-${param.param_id}`}>
+                    Temperatura Mínima (°C):
+                  </label>
+                  <input
+                    type="number"
+                    id={`minTemp-${param.param_id}`}
+                    value={param.minimo}
+                    onChange={(e) =>
+                      handleChange(index, "minimo", e.target.value)
+                    }
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor={`maxTemp-${param.param_id}`}>
+                    Temperatura Máxima (°C):
+                  </label>
+                  <input
+                    type="number"
+                    id={`maxTemp-${param.param_id}`}
+                    value={param.maximo}
+                    onChange={(e) =>
+                      handleChange(index, "maximo", e.target.value)
+                    }
+                    step="0.01"
+                    required
+                  />
+                </div>
               </div>
-              <div>
-                <label htmlFor={`maxTemp-${param.param_id}`}>
-                  Temperatura Máxima (°C):
-                </label>
-                <input
-                  type="number"
-                  id={`maxTemp-${param.param_id}`}
-                  value={param.maximo}
-                  onChange={(e) =>
-                    handleChange(index, "maximo", e.target.value)
-                  }
-                  step="0.01"
-                  required
-                />
-              </div>
-            </div>
-          ))}
+            ))}
           <button type="submit" disabled={loading}>
             {loading ? "Actualizando..." : "Actualizar Parámetros"}
           </button>
@@ -145,24 +171,25 @@ const ParametroTempCamaras = () => {
 
         <h3>Estado de los Canales</h3>
         <div className="channels-list">
-          {Array.isArray(channels) && channels.map((channel) => (
-            <div key={channel.channel_id} className="channel-item">
-              <span>{channel.name}</span>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={channel.esOperativa === 1}
-                  onChange={(e) =>
-                    handleChannelStatusChange(
-                      channel.channel_id,
-                      e.target.checked
-                    )
-                  }
-                />
-                <span className="slider round"></span>
-              </label>
-            </div>
-          ))}
+          {Array.isArray(channels) &&
+            channels.map((channel) => (
+              <div key={channel.channel_id} className="channel-item">
+                <span>{channel.name}</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={channel.esOperativa === 1}
+                    onChange={(e) =>
+                      handleChannelStatusChange(
+                        channel.channel_id,
+                        e.target.checked
+                      )
+                    }
+                  />
+                  <span className="slider round"></span>
+                </label>
+              </div>
+            ))}
         </div>
 
         {message && (
