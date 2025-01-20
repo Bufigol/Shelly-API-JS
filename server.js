@@ -131,7 +131,7 @@ class Server {
     const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
 
     // Primero configurar todas las rutas de la API
-    this.app.use("/api", configRoutes); // Cambiado para manejar todas las rutas de config bajo /api
+    this.app.use("/api/config", configRoutes);
     this.app.use("/api/devices", deviceRoutes);
     this.app.use("/api/totals", totalesRoutes);
     this.app.use("/api/analysis", analysisRoutes);

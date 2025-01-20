@@ -15,7 +15,8 @@ const ParametroTempCamaras = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem("token"); // Asumiendo que guardas el token en localStorage
+        const token = localStorage.getItem("token");
+        console.log("Token enviado:", token); // Log para debug
 
         const paramsResponse = await axios.get(
           "/api/config/teltonica/temperatura-umbrales",
@@ -72,7 +73,7 @@ const ParametroTempCamaras = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      await axios.post("/api/teltonica/temperatura-umbrales", params);
+      await axios.post("/api/config/teltonica/temperatura-umbrales", params);
       setMessage("Parámetros actualizados exitosamente");
     } catch (error) {
       console.error("Error updating temperature thresholds:", error);
