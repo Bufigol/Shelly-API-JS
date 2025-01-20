@@ -5,19 +5,14 @@ const config = require("../config/js_files/config-loader");
 const { convertToMySQLDateTime } = require("../utils/transformUtils");
 const { isDifferenceGreaterThan } = require("../utils/math_utils");
 const sgMailConfig = require("../config/jsons/sgMailConfig.json");
-const twilioConfig = require("../config/jsons/twilio.json");
+const smsConfig = require("../config/jsons/destinatariosSmsUbibot.json");
 const moment = require("moment-timezone");
-const twilio = require("twilio");
 const axios = require("axios");
+const MODEM_URL = 'http://192.168.8.1';
 
 // Configuración de SendGrid
 const SENDGRID_API_KEY = sgMailConfig.SENDGRID_API_KEY;
 
-// Configuración de Twilio
-const twilioClient = new twilio(
-  twilioConfig.accountSid,
-  twilioConfig.authToken
-);
 
 const INTERVALO_SIN_CONEXION_SENSOR = 95;
 
@@ -356,7 +351,7 @@ class UbibotService {
       content: [
         {
           type: "text/plain",
-          value: `La temperatura en ${channelName} está fuera de los límites establecidos.
+          value: `La temperatura en ${channelName} está fuera de los límites establecidos en los parámetros.
                     Temperatura: ${temperature}°C
                     Timestamp: ${timestamp}
                     Límites permitidos: ${minima_temp_camara}°C / ${maxima_temp_camara}°C`,
@@ -423,35 +418,109 @@ class UbibotService {
     maxima_temp_camara
   ) {
     const message = `Alerta: La temperatura en ${channelName} está fuera de los límites. 
-                         Temperatura: ${temperature}°C 
-                         Timestamp: ${timestamp} 
-                         Límites permitidos: ${minima_temp_camara}°C - ${maxima_temp_camara}°C`;
+                   Temperatura: ${temperature}°C 
+                   Timestamp: ${timestamp} 
+                   Límites permitidos: ${minima_temp_camara}°C - ${maxima_temp_camara}°C`;
 
-    const destinatarios = twilioConfig.destinatarios;
-
+    const destinatarios = smsConfig.sms_destinatarios;
     console.log("Destinatarios SMS:", destinatarios);
 
-    for (const destinatario of destinatarios) {
-      try {
-        const result = await twilioClient.messages.create({
-          body: message,
-          from: twilioConfig.phoneNumber,
-          to: destinatario,
+    try {
+      // Verificar conexión con el módem
+      await this.checkModemConnection();
+
+      // Obtener credenciales
+      const { sessionId, token } = await this.getToken();
+
+      const headers = {
+        Accept: "*/*",
+        "Accept-Encoding": "gzip, deflate",
+        "Accept-Language": "es-ES,es;q=0.9",
+        Connection: "keep-alive",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        Cookie: `SessionID=${sessionId}`,
+        Host: "192.168.8.1",
+        Origin: MODEM_URL,
+        Referer: `${MODEM_URL}/html/smsinbox.html`,
+        "X-Requested-With": "XMLHttpRequest",
+        __RequestVerificationToken: token,
+      };
+
+      // Enviar SMS a cada destinatario
+      for (const destinatario of destinatarios) {
+        const smsData =
+          `<?xml version="1.0" encoding="UTF-8"?>\n` +
+          `<request>\n` +
+          `  <Index>-1</Index>\n` +
+          `  <Phones>\n` +
+          `    <Phone>${destinatario}</Phone>\n` +
+          `  </Phones>\n` +
+          `  <Sca></Sca>\n` +
+          `  <Content>${message}</Content>\n` +
+          `  <Length>${message.length}</Length>\n` +
+          `  <Reserved>1</Reserved>\n` +
+          `  <Date>${
+            new Date().toISOString().replace("T", " ").split(".")[0]
+          }</Date>\n` +
+          `</request>`;
+
+        const response = await axios({
+          method: "post",
+          url: `${MODEM_URL}/api/sms/send-sms`,
+          data: smsData,
+          headers: headers,
+          transformRequest: [(data) => data],
+          validateStatus: (status) => status >= 200 && status < 400,
         });
-        console.log(
-          `SMS de alerta enviado a ${destinatario}. SID: ${result.sid}`
-        );
-      } catch (error) {
-        console.error(
-          `Error al enviar SMS de alerta a ${destinatario}:`,
-          error.message
-        );
-        if (error.code) {
-          console.error("Código de error Twilio:", error.code);
+
+        if (response.data.includes("<response>OK</response>")) {
+          console.log(`SMS de alerta enviado exitosamente a ${destinatario}`);
+        } else {
+          throw new Error(
+            `Error al enviar SMS a ${destinatario}: ${response.data}`
+          );
         }
+
+        // Esperar un poco entre cada envío
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
+
+      return true;
+    } catch (error) {
+      console.error("Error al enviar SMS:", error.message);
+      return false;
     }
   }
+  async getToken() {
+    try {
+      const response = await axios.get(
+        `${MODEM_URL}/api/webserver/SesTokInfo`,
+        {
+          headers: {
+            Accept: "*/*",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        }
+      );
+
+      const responseText = response.data;
+      const sessionIdMatch = responseText.match(/<SesInfo>(.*?)<\/SesInfo>/);
+      const tokenMatch = responseText.match(/<TokInfo>(.*?)<\/TokInfo>/);
+
+      if (!sessionIdMatch || !tokenMatch) {
+        throw new Error("No se pudo obtener el token y la sesión");
+      }
+
+      return {
+        sessionId: sessionIdMatch[1].replace("SessionID=", ""),
+        token: tokenMatch[1],
+      };
+    } catch (error) {
+      console.error("Error obteniendo token:", error.message);
+      throw error;
+    }
+  }
+
 
   async getLastSensorReading(channelId) {
     try {
@@ -471,6 +540,17 @@ class UbibotService {
         error.message
       );
       return null;
+    }
+  }
+
+  async checkModemConnection() {
+    try {
+      await axios.get(`${MODEM_URL}/api/monitoring/status`);
+      console.log("Conexión con el módem establecida");
+      return true;
+    } catch (error) {
+      console.error("Error conectando con el módem:", error.message);
+      throw new Error("No se pudo establecer conexión con el módem");
     }
   }
 }

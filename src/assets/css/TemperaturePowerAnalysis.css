@@ -77,12 +77,16 @@
 
 /* Contenedor del gráfico */
 .chart-container {
-  margin-top: 2rem;
-  padding: 1rem;
+  margin-top: 1rem; /* Reducir el margen superior */
+  padding: 0.5rem; /* Reducir el padding */
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  height: calc(100% - 2rem); /* Ajustar la altura para dejar espacio para el título */
+  display: flex;
+  flex-direction: column;
 }
+
 
 /* Tooltip personalizado */
 .custom-tooltip {
@@ -116,4 +120,26 @@
   .fetch-button {
     width: 100%;
   }
+}
+
+/* Ajustar el contenedor del gráfico ResponsiveContainer */
+.recharts-responsive-container {
+  flex: 1;
+  min-height: 400px; /* Establecer una altura mínima */
+  margin: 0.5rem 0; /* Ajustar márgenes */
+}
+
+/* Ajustar la leyenda */
+.recharts-legend-wrapper {
+  padding-top: 0 !important; /* Reducir el espacio de la leyenda */
+}
+
+/* Ajustar las etiquetas de los ejes */
+.recharts-label {
+  font-size: 12px !important; /* Reducir tamaño de fuente de las etiquetas */
+}
+
+/* Ajustar el espaciado del grid */
+.recharts-cartesian-grid {
+  padding: 0 !important;
 }
