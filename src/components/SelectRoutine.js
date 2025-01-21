@@ -51,26 +51,16 @@ const routines = [
     route: "/inteligencia-datos-temperatura",
     permission: "view_temperature_data_intelligence",
   },
-  {
-    title: "Parámetros Temperatura Cámaras",
-    image: paramTempIcon,
-    route: "/parametro-temp-camaras",
-    permission: "view_temp_params",
-  },
-  {
+  
+  /*{
     title: "Puertas Status Cierre / Apertura",
     image: doorStatusImage,
     route: "/door-status-matrix",
     permission: "view_door_status",
-  },
+  },*/
   //  { title: "Datos Análisis Forense", image: dataIntelligenceImage, route: "/inteligencia-de-datos", permission: "view_data_intelligence" },
   //  { title: "Parametrización", image: configurationImage, route: "/configuracion", permission: "view_configuration" },
-  {
-    title: "Registrar Usuario",
-    image: userRegistrationImage,
-    route: "/register-user",
-    permission: "create_users",
-  },
+
   /*
   {
     title: "Interior Ubicación en Tiempo Real",
@@ -96,13 +86,13 @@ const routines = [
     route: "/consulta-historica-movimientos",
     permission: "search_exterior",
   },
-  */
+ 
   {
     title: "Análisis de Deshielo",
     image: frostIcon,
     route: "/analisis-deshielo",
     permission: "view_defrost_analysis",
-  },
+  } */,
   {
     title: "Dashboard Electrico",
     image: dashboard_electricImage,
@@ -127,6 +117,19 @@ const routines = [
     route: "/consumo-total-diario",
     permission: "view_temperature_data_intelligence",
   },
+  {
+    title: "Parámetros Temperatura Cámaras",
+    image: paramTempIcon,
+    route: "/parametro-temp-camaras",
+    permission: "view_temp_params",
+  }
+  /*{,
+  {
+    title: "Registrar Usuario",
+    image: userRegistrationImage,
+    route: "/register-user",
+    permission: "create_users",
+  }*/
 ];
 
 const SelectRoutine = () => {
