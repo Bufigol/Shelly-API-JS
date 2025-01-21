@@ -18,15 +18,33 @@ const UserRegistration = () => {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await axios.get('/api/usuarios/users');
+        const token = localStorage.getItem('token');
+        
+        if (!token) {
+          navigate('/');
+          return;
+        }
+
+        const config = {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        };
+
+        const response = await axios.get('/api/usuarios/users', config);
         setUsers(response.data);
       } catch (error) {
         console.error('Error fetching users:', error);
+        if (error.response?.status === 401) {
+          localStorage.removeItem('token');
+          navigate('/');
+        }
       }
     };
 
     fetchUsers();
-  }, []);
+  }, [navigate]);
 
   const handleUserChange = (e) => {
     const user = users.find(u => u.id === parseInt(e.target.value));
@@ -46,36 +64,53 @@ const UserRegistration = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const updatedPermissions = permissions.join(',');
-      if (selectedUser) {
-        // Actualizar usuario existente
-        await axios.post('/api/usuarios/register', { 
-          userId: selectedUser.id, 
-          username, 
-          email, 
-          permissions: updatedPermissions
-        });
-        setMessage('Permisos actualizados con éxito');
-      } else {
-        // Crear nuevo usuario
-        await axios.post('/api/usuarios/register', { 
-          username, 
-          password, 
-          email, 
-          permissions: updatedPermissions
-        });
-        setMessage('Usuario registrado con éxito');
-      }
+      const token = localStorage.getItem('token');
       
-      // Actualizar la lista de usuarios después de crear/actualizar
-      const response = await axios.get('/api/usuarios/users');
+      if (!token) {
+        navigate('/');
+        return;
+      }
+
+      const config = {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+
+      const updatedPermissions = permissions.join(',');
+      const userData = selectedUser 
+        ? { 
+            userId: selectedUser.id, 
+            username, 
+            email, 
+            permissions: updatedPermissions
+          }
+        : { 
+            username, 
+            password, 
+            email, 
+            permissions: updatedPermissions
+          };
+
+      await axios.post('/api/usuarios/register', userData, config);
+      
+      setMessage(selectedUser ? 'Permisos actualizados con éxito' : 'Usuario registrado con éxito');
+      
+      // Update users list
+      const response = await axios.get('/api/usuarios/users', config);
       setUsers(response.data);
       
       setTimeout(() => {
         navigate('/select-routine');
       }, 2000);
     } catch (error) {
-      setMessage('Error: ' + (error.response?.data || error.message));
+      console.error('Error:', error);
+      setMessage('Error: ' + (error.response?.data?.message || error.message));
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/');
+      }
     }
   };
 
@@ -153,7 +188,9 @@ const UserRegistration = () => {
             </tbody>
           </table>
         </div>
-        <button type="submit" className="register-button">{selectedUser ? 'Actualizar Permisos' : 'Registrar'}</button>
+        <button type="submit" className="register-button">
+          {selectedUser ? 'Actualizar Permisos' : 'Registrar'}
+        </button>
       </form>
       {message && <p className="message">{message}</p>}
     </div>

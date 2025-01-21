@@ -1,5 +1,5 @@
 const config = require('../config/js_files/config-loader');
-
+const jwt = require('jsonwebtoken'); // 
 class AuthMiddleware {
     constructor() {
         this.config = config.getConfig();
@@ -7,26 +7,38 @@ class AuthMiddleware {
 
     // Middleware de autenticación básica
     authenticate(req, res, next) {
-        const apiKey = req.header('X-API-Key');
-        
-        if (!apiKey) {
+        try {
+            const authHeader = req.headers.authorization;
+            
+            if (!authHeader) {
+                return res.status(401).json({
+                    error: 'Authentication Error',
+                    message: 'No authentication token provided'
+                });
+            }
+    
+            if (!authHeader.startsWith('Bearer ')) {
+                return res.status(401).json({
+                    error: 'Authentication Error',
+                    message: 'Invalid token format'
+                });
+            }
+    
+            const token = authHeader.split(' ')[1];
+            
+            // Verify the token
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+            
+            // Add user info to request
+            req.user = decoded;
+            
+            next();
+        } catch (error) {
             return res.status(401).json({
                 error: 'Authentication Error',
-                message: 'API key no proporcionada',
-                timestamp: new Date().toISOString()
+                message: 'Invalid token'
             });
         }
-
-        // Verificar API key contra la configuración
-        if (apiKey !== this.config.api.auth_key) {
-            return res.status(403).json({
-                error: 'Authentication Error',
-                message: 'API key inválida',
-                timestamp: new Date().toISOString()
-            });
-        }
-
-        next();
     }
 
     // Middleware para verificar permisos específicos
