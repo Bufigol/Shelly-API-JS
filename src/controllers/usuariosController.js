@@ -12,30 +12,43 @@ class usuariosController {
   async handleLogin(req, res) {
     const { username, password } = req.body;
     try {
-      const [user] = await databaseService.pool.query(
-        "SELECT * FROM users WHERE username = ?",
-        [username]
-      );
-      if (user.length === 0) {
-        return res.status(400).send("Invalid username or password");
-      }
+        const [user] = await databaseService.pool.query(
+            "SELECT * FROM users WHERE username = ?",
+            [username]
+        );
+        
+        if (user.length === 0) {
+            return res.status(400).json({ message: "Invalid username or password" });
+        }
 
-      const validPassword = await bcrypt.compare(password, user[0].password);
-      if (!validPassword) {
-        return res.status(400).send("Invalid username or password");
-      }
+        const validPassword = await bcrypt.compare(password, user[0].password);
+        if (!validPassword) {
+            return res.status(400).json({ message: "Invalid username or password" });
+        }
 
-      const token = jwt.sign(
-        { userId: user[0].id, permissions: user[0].permissions },
-        "your_jwt_secret",
-        { expiresIn: "1h" }
-      );
-      res.json({ token });
+        const token = jwt.sign(
+            { 
+                userId: user[0].id, 
+                permissions: user[0].permissions,
+                username: user[0].username 
+            },
+            process.env.JWT_SECRET || 'your_jwt_secret',
+            { expiresIn: '24h' }
+        );
+
+        res.json({ 
+            token,
+            user: {
+                id: user[0].id,
+                username: user[0].username,
+                permissions: user[0].permissions
+            }
+        });
     } catch (error) {
-      console.error("Error logging in user:", error);
-      res.status(500).send("Server Error");
+        console.error("Error logging in user:", error);
+        res.status(500).json({ message: "Server Error" });
     }
-  }
+}
 
   async getUsers(req, res) {
     try {
