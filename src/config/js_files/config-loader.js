@@ -10,6 +10,7 @@ class ConfigLoader {
       api: "../jsons/api-credentials.json",
       database: "../jsons/database.json",
       measurement: "../jsons/precios_energia.json",
+      jwt: "../jsons/jwt-config.json",
     };
     this.cachedConfig = null;
     this.lastLoadTime = null;
@@ -38,7 +39,19 @@ class ConfigLoader {
       const dbDetails = this.parseJdbcUrl(dbConfig.url);
 
       // Cargar configuración de Ubibot
-      const ubibotConfig = this.loadJsonFile("../jsons/ubibot_account_info.json");
+      const ubibotConfig = this.loadJsonFile(
+        "../jsons/ubibot_account_info.json"
+      );
+
+      // Cargar configuración JWT (opcional)
+      let jwtConfig = {
+        jwt: { secret: process.env.JWT_SECRET || "default_secret_key" },
+      };
+      try {
+        jwtConfig = this.loadJsonFile(this.configPaths.jwt);
+      } catch (e) {
+        console.log("JWT config file not found, using default configuration");
+      }
 
       // Combinar todas las configuraciones
       this.config = {
@@ -48,11 +61,16 @@ class ConfigLoader {
           retryAttempts: 3,
           retryDelay: 5000,
         },
+        jwt: {
+          secret: jwtConfig.jwt.secret,
+          expiresIn: jwtConfig.jwt.expires_in || "1h",
+          issuer: jwtConfig.jwt.issuer || "tns-track",
+        },
         ubibot: {
           accountKey: ubibotConfig.ACCOUNT_KEY,
           tokenFile: ubibotConfig.TOKEN_FILE,
           excludedChannels: ubibotConfig.EXCLUDED_CHANNELS,
-          collectionInterval: 600000, // Valor por defecto para el intervalo
+          collectionInterval: 600000,
         },
         database: {
           host: dbDetails.host,
@@ -65,8 +83,8 @@ class ConfigLoader {
         measurement: {
           precio_kwh: measurementConfig.precios_energia.precio_kwh.valor,
           intervalos: {
-            medicion: 10, // segundos
-            max_desviacion: 2, // segundos
+            medicion: 10,
+            max_desviacion: 2,
             actualizacion: {
               hora: measurementConfig.precios_energia.configuracion_calculo
                 .intervalo_actualizacion_promedios.hora,
@@ -77,9 +95,9 @@ class ConfigLoader {
             },
           },
           calidad: {
-            umbral_minimo: 0.8, // 80% de lecturas válidas requeridas
-            max_intentos: 3, // Máximo número de reintentos
-            tiempo_espera: 5000, // Tiempo entre reintentos (ms)
+            umbral_minimo: 0.8,
+            max_intentos: 3,
+            tiempo_espera: 5000,
           },
           zona_horaria:
             measurementConfig.precios_energia.metadatos.zona_horaria,
@@ -91,7 +109,6 @@ class ConfigLoader {
 
       this.validateConfig();
 
-      // Actualizar caché
       this.cachedConfig = this.config;
       this.lastLoadTime = Date.now();
 
@@ -113,7 +130,6 @@ class ConfigLoader {
   }
 
   parseJdbcUrl(jdbcUrl) {
-    // Limpiar URL JDBC
     const cleanUrl = jdbcUrl.replace("jdbc:", "");
     const matches = cleanUrl.match(/mysql:\/\/([^:]+):(\d+)\/(.+)/);
 
@@ -156,6 +172,18 @@ class ConfigLoader {
     if (!ubibot.accountKey || !ubibot.tokenFile) {
       throw new Error("Missing required Ubibot configuration fields");
     }
+    const { jwt } = this.config;
+    if (!jwt?.secret) {
+      console.warn(
+        "WARNING: Using default JWT secret. This is not recommended for production."
+      );
+    }
+    if (!jwt?.expiresIn) {
+      console.warn("WARNING: Using default JWT expiration time (1h)");
+    }
+    if (!jwt?.issuer) {
+      console.warn("WARNING: Using default JWT issuer (tns-track)");
+    }
   }
 
   isCacheValid() {
@@ -170,21 +198,18 @@ class ConfigLoader {
     return this.loadConfigurations();
   }
 
-  // Método para recargar la configuración bajo demanda
   reloadConfig() {
     this.cachedConfig = null;
     this.lastLoadTime = null;
     return this.loadConfigurations();
   }
 
-  // Método para obtener un valor específico de configuración
   getValue(path) {
     return path
       .split(".")
       .reduce((obj, key) => obj && obj[key], this.getConfig());
   }
 
-  // Método para verificar si una configuración existe
   hasConfig(path) {
     return this.getValue(path) !== undefined;
   }
