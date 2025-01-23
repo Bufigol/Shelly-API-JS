@@ -1,9 +1,10 @@
 const config = require('../config/js_files/config-loader');
 const jwt = require('jsonwebtoken'); // 
 class AuthMiddleware {
-    constructor() {
-        this.config = config.getConfig();
-    }
+  constructor() {
+    this.jwtSecret = configLoader.getConfig().jwt.secret;
+    this.jwtIssuer = configLoader.getConfig().jwt.issuer;
+  }
 
     // Middleware de autenticación básica
     authenticate(req, res, next) {
