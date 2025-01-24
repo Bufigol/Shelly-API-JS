@@ -43,7 +43,7 @@ class Server {
    */
   setupMiddleware() {
     const corsOptions = {
-      origin: ["http://localhost:3000", "http://localhost:8080"],
+      origin: ["http://localhost:3000", "http://192.168.1.130:3000"],
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
@@ -51,14 +51,14 @@ class Server {
     this.app.use(cors(corsOptions));
     this.app.use(express.json());
 
-    this.app.use("/api", (req, res, next) => {
+    // Configurar el middleware para las rutas de la API
+    this.app.use("/storage/api", (req, res, next) => {
       res.header("Content-Type", "application/json");
       next();
     });
 
-    // Servir archivos estáticos
-    this.app.use(express.static(path.join(__dirname, "public")));
-    this.app.use;
+    // Servir archivos estáticos bajo la ruta /storage
+    this.app.use("/storage", express.static(path.join(__dirname, "public")));
 
     // Configuración de CSP
     this.setupContentSecurityPolicy();
@@ -95,7 +95,7 @@ class Server {
    * Configura las rutas del servidor
    *
    * El servidor tiene un endpoint status en /
-   * y utiliza los siguientes módulos de rutas:
+   * y utiliza los siguientes módulos de rutas bajo /storage/api:
    *
    * - deviceRoutes
    * - configRoutes
@@ -130,49 +130,39 @@ class Server {
     const gpsDataRoutes = require("./src/routes/gpsDataRoutes");
     const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
 
-    // Primero configurar todas las rutas de la API
-    this.app.use("/api/devices", deviceRoutes);
-    this.app.use("/api/config", configRoutes);
-    this.app.use("/api/totals", totalesRoutes);
-    this.app.use("/api/analysis", analysisRoutes);
-    this.app.use("/api/usuarios", usuariosRoutes);
-    this.app.use("/api/personal", personalRoutes);
-    this.app.use("/api/sms", smsRoutes);
-    this.app.use("/api/sectores", sectoresRoutes);
-    this.app.use("/api/powerAnalysis", powerAnalysisRoutes);
-    this.app.use("/api/gps", gpsRoutes);
-    this.app.use("/api/beacons", beaconsRoutes);
-    this.app.use("/api/ubibot", ubibotRoutes);
-    this.app.use("/api/blindspot", blindSpotRoutes);
-    this.app.use("/gps-data", gpsDataRoutes);
+    // Crear un router para agrupar todas las rutas de la API
+    const apiRouter = express.Router();
 
-    // Servir archivos estáticos después de las rutas de la API
-    this.app.use(express.static(path.join(__dirname, "public")));
+    // Configurar las rutas de la API
+    apiRouter.use("/devices", deviceRoutes);
+    apiRouter.use("/config", configRoutes);
+    apiRouter.use("/totals", totalesRoutes);
+    apiRouter.use("/analysis", analysisRoutes);
+    apiRouter.use("/usuarios", usuariosRoutes);
+    apiRouter.use("/personal", personalRoutes);
+    apiRouter.use("/sms", smsRoutes);
+    apiRouter.use("/sectores", sectoresRoutes);
+    apiRouter.use("/powerAnalysis", powerAnalysisRoutes);
+    apiRouter.use("/gps", gpsRoutes);
+    apiRouter.use("/beacons", beaconsRoutes);
+    apiRouter.use("/ubibot", ubibotRoutes);
+    apiRouter.use("/blindspot", blindSpotRoutes);
+    apiRouter.use("/gps-data", gpsDataRoutes);
+
+    // Montar el router de la API en /storage/api
+    this.app.use("/storage/api", apiRouter);
 
     // Ruta específica para la página principal
-    this.app.get("/", (req, res) => {
+    this.app.get("/storage", (req, res) => {
       res.sendFile(path.join(__dirname, "public", "index.html"));
     });
 
-    // Catch-all route para React Router debe ser lo último
-    this.app.get("*", (req, res, next) => {
-      // Si la petición es para la API, pasar al siguiente middleware
-      if (req.url.startsWith("/api/")) {
-        return next();
-      }
-      // Si no es una petición de API, enviar el index.html
+    // Catch-all route para React Router
+    this.app.get("/storage/*", (req, res) => {
       res.sendFile(path.join(__dirname, "public", "index.html"));
     });
   }
 
-  /**
-   * Sets up error handling for the server. This method is used to
-   * install a middleware function that will catch any async errors
-   * and send a 500 response with a JSON body containing an error
-   * message and the original error message (if in development mode).
-   * @see https://expressjs.com/en/guide/error-handling.html
-   * @private
-   */
   setupErrorHandling() {
     // Error handler for async errors
     this.app.use((err, req, res, next) => {
@@ -187,35 +177,12 @@ class Server {
     });
   }
 
-  /**
-   * Wraps a route handler function to catch any async errors and call
-   * `next(err)` with the error.
-   *
-   * @param {Function} fn - The route handler function to wrap.
-   * @return {Function} A new route handler function that wraps the original
-   *   one and catches any errors.
-   */
   handleAsyncRoute(fn) {
     return (req, res, next) => {
       Promise.resolve(fn(req, res, next)).catch(next);
     };
   }
 
-  /**
-   * Returns an object with information about the current status of the server's services.
-   *
-   * @return {Object} Object with the following properties:
-   * - collector: Object with information about the Shelly and Ubibot collectors.
-   *   - shelly: Object with properties running (a boolean indicating if the collector is running) and stats (an object with collector statistics).
-   *   - ubibot: Object with properties running (a boolean indicating if the collector is running) and stats (an object with collector statistics).
-   * - database: Object with a single property connected (a boolean indicating if the database connection is established).
-   * - energyAverages: Object with a single property initialized (a boolean indicating if the energy averages service has been initialized).
-   * - totalEnergy: Object with a single property initialized (a boolean indicating if the total energy service has been initialized).
-   * - server: Object with properties about the server's runtime environment.
-   *   - uptime: Number of seconds the server has been running.
-   *   - memory: Object with properties rss, heapTotal, and heapUsed, with the memory usage of the server in bytes.
-   *   - nodeVersion: String with the version of Node.js running the server.
-   */
   getServiceStatus() {
     return {
       collector: {
@@ -245,22 +212,6 @@ class Server {
     };
   }
 
-  /**
-   * Initializes all services and collectors necessary for the server.
-   *
-   * This method performs the following actions:
-   * 1. Initializes the database service and tests the connection.
-   * 2. Initializes the energy averages service.
-   * 3. Initializes the total energy service.
-   * 4. Starts the Shelly data collector.
-   * 5. Starts the Ubibot data collector.
-   *
-   * If any of these steps fail, an error is logged and re-thrown to be
-   * handled by the caller.
-   *
-   * @throws {Error} If any service or collector fails to initialize.
-   */
-
   async initializeServices() {
     console.log("Initializing services...");
 
@@ -289,12 +240,6 @@ class Server {
     }
   }
 
-  /**
-   * Inicializa los servicios y levanta el servidor. Si ocurre un error,
-   * se registra en la consola y se sale del proceso con estado 1.
-   * @throws {Error} Si ocurre un error al inicializar los servicios o levantar
-   * el servidor.
-   */
   async start() {
     try {
       await this.initializeServices();
@@ -312,15 +257,6 @@ class Server {
     }
   }
 
-  /**
-   * Gracefully shuts down the server, stopping all services and closing all
-   * database connections.
-   *
-   * This function is called automatically when the process receives a SIGTERM or
-   * SIGINT signal.
-   *
-   * @return {Promise<void>}
-   */
   async shutdown() {
     console.log("\n🛑 Starting graceful shutdown...");
     if (this.server) {
@@ -342,9 +278,7 @@ class Server {
 }
 
 const server = new Server();
-server
-  .start()
-  .catch((err) => console.error("Error al iniciar el servidor:", err));
+server.start().catch((err) => console.error("Error al iniciar el servidor:", err));
 
 module.exports = {
   server,

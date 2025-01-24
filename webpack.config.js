@@ -17,6 +17,7 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, "public"),
     filename: "bundle.js",
+    publicPath: '/storage/'
   },
   module: {
     rules: [
@@ -57,22 +58,20 @@ module.exports = {
     compress: true,
     port: 3000,
     host: "0.0.0.0",
-    allowedHosts: ["localhost", "thenext.ddns.net", "tnstrack.ddns.net"],
+    allowedHosts: ["localhost", "192.168.1.130", "thenext.ddns.net", "tnstrack.ddns.net"],
     historyApiFallback: {
       index: "index.html",
       rewrites: [
         { from: /^\/bundle.js$/, to: "/bundle.js" },
-         { from: /^\/reset-password\/([a-z0-9]+)$/, to: '/index.html' },
+        { from: /^\/reset-password\/([a-z0-9]+)$/, to: '/index.html' },
         { from: /./, to: "/index.html" },
       ],
-  },
-    proxy: [
-      {
-        context: ["/api"],
-        target: process.env.API_URL || "http://localhost:1337",
-        changeOrigin: true,
-        secure: false,
-      },
-    ],
-  },
+    },
+    proxy: [{
+      context: ["/api"],
+      target: process.env.API_URL || "http://localhost:1337",
+      changeOrigin: true,
+      secure: false,
+    }]
+  }
 };
