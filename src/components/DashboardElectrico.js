@@ -4,8 +4,12 @@ import moment from 'moment';
 import '../assets/css/DashboardElectrico.css';
 import Header from './Header';
 
+// Modificamos el componente PowerDisplay para incluir la unidad kW
 const PowerDisplay = ({ value }) => {
-  const formattedValue = value.toFixed(1).padStart(5, ' ');
+  // Convertimos el valor de W a kW dividiendo por 1000
+  const valueInKw = value / 1000;
+  const formattedValue = valueInKw.toFixed(1).padStart(5, ' ');
+
   return (
     <div className="seven-segment-display">
       {formattedValue.split('').map((char, index) => (
@@ -13,6 +17,7 @@ const PowerDisplay = ({ value }) => {
           {char}
         </span>
       ))}
+      <span className="segment unit">kW</span>
     </div>
   );
 };
@@ -32,7 +37,7 @@ const DashboardElectrico = () => {
     try {
       setLoading(true);
       const response = await axios.get('/api/devices/latest-measurements');
-      
+
       if (response.data.success && Array.isArray(response.data.data) && response.data.data.length > 0) {
         setDeviceData(response.data.data);
         setError(null);
