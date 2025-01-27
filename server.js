@@ -131,8 +131,8 @@ class Server {
     const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
 
     // Primero configurar todas las rutas de la API
-    this.app.use("/api", configRoutes); // Cambiado para manejar todas las rutas de config bajo /api
     this.app.use("/api/devices", deviceRoutes);
+    this.app.use("/api/config", configRoutes);
     this.app.use("/api/totals", totalesRoutes);
     this.app.use("/api/analysis", analysisRoutes);
     this.app.use("/api/usuarios", usuariosRoutes);
@@ -281,8 +281,8 @@ class Server {
       await this.shellyCollector.start();
       console.log("✅ Shelly Data collector started");
 
-      //await this.ubibotCollector.start();
-      //console.log("✅ Ubibot data collector started");
+      await this.ubibotCollector.start();
+      console.log("✅ Ubibot data collector started");
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;

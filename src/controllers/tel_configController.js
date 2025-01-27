@@ -5,7 +5,7 @@ class tel_ConfigController {
   async getSystemParameters(req, res, next) {
     try {
       // Ejecutar una consulta SQL para seleccionar todos los registros de la tabla 'configuracion'
-      const [results] = await pool.query("SELECT * FROM configuracion");
+      const [results] = await databaseService.pool.query("SELECT * FROM configuracion");
 
       // Enviar los resultados de la consulta como una respuesta JSON
       res.json(results);
@@ -24,11 +24,11 @@ class tel_ConfigController {
 
     try {
       // Vaciar la tabla 'configuracion' antes de insertar nuevas configuraciones
-      await pool.query("TRUNCATE TABLE configuracion");
+      await databaseService.pool.query("TRUNCATE TABLE configuracion");
 
       // Insertar cada configuración en la tabla 'configuracion'
       for (const config of configuraciones) {
-        await pool.query(
+        await databaseService.pool.query(
           "INSERT INTO configuracion (beacon_id, min_tiempo_permanencia, max_tiempo_permanencia, umbral_verde, umbral_amarillo, umbral_rojo) VALUES (?, ?, ?, ?, ?, ?)",
           [
             config.beacon_id,
@@ -58,7 +58,7 @@ class tel_ConfigController {
       const { beaconID } = req.params;
 
       // Ejecutar una consulta SQL para seleccionar los registros de la tabla 'configuracion' donde el beaconID coincida
-      const [results] = await pool.query(
+      const [results] = await databaseService.pool.query(
         "SELECT * FROM configuracion WHERE beacon_id = ?",
         [beaconID]
       );
@@ -95,7 +95,7 @@ class tel_ConfigController {
     const params = req.body;
     try {
       for (const param of params) {
-        await pool.query(
+        await databaseService.pool.query(
           "UPDATE parametrizaciones SET minimo = ?, maximo = ? WHERE param_id = ?",
           [param.minimo, param.maximo, param.param_id]
         );
@@ -110,7 +110,7 @@ class tel_ConfigController {
   async getConfigUmbrales(req, res, next) {
     try {
       // Ejecutar una consulta SQL para seleccionar el primer registro de la tabla 'umbrales'
-      const [results] = await pool.query("SELECT * FROM configuracion LIMIT 1");
+      const [results] = await databaseService.pool.query("SELECT * FROM configuracion LIMIT 1");
 
       // Enviar el primer resultado de la consulta como una respuesta JSON
       res.json(results[0]);
@@ -128,10 +128,10 @@ class tel_ConfigController {
     const { umbral_verde, umbral_amarillo, umbral_rojo } = req.body;
     try {
       // Vaciar la tabla 'umbrales' antes de insertar nuevos umbrales
-      await pool.query("TRUNCATE TABLE configuracion");
+      await databaseService.pool.query("TRUNCATE TABLE configuracion");
 
       // Insertar los nuevos umbrales en la tabla 'umbrales'
-      await pool.query(
+      await databaseService.pool.query(
         "INSERT INTO umbrales (umbral_verde, umbral_amarillo, umbral_rojo) VALUES (?, ?, ?)",
         [umbral_verde, umbral_amarillo, umbral_rojo]
       );
