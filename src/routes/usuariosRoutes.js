@@ -6,11 +6,11 @@ const usuariosController = require('../controllers/usuariosController');
 router.post('/login', usuariosController.handleLogin.bind(usuariosController));
 
 // Proteger rutas que requieren autenticación
-router.get('/users', authMiddleware.authenticate.bind(authMiddleware), 
+router.get('/users', authMiddleware.authenticate.bind(authMiddleware),
     usuariosController.getUsers.bind(usuariosController)
 );
 
-router.post('/register', authMiddleware.authenticate.bind(authMiddleware), 
+router.post('/register', authMiddleware.authenticate.bind(authMiddleware),
     usuariosController.registerUser.bind(usuariosController)
 );
 

@@ -1,6 +1,7 @@
 // config/config-loader.js
 const fs = require("fs");
 const path = require("path");
+const jwtConfigLoader = require('./jwt-config');
 
 class ConfigLoader {
   constructor() {
@@ -14,6 +15,7 @@ class ConfigLoader {
     this.cachedConfig = null;
     this.lastLoadTime = null;
     this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutos en milisegundos
+    this.jwtConfig = jwtConfigLoader;
 
     this.loadConfigurations();
   }
@@ -40,7 +42,7 @@ class ConfigLoader {
       // Cargar configuración de Ubibot
       const ubibotConfig = this.loadJsonFile("../jsons/ubibot_account_info.json");
 
-      // Combinar todas las configuraciones
+
       this.config = {
         api: apiConfig.shelly_cloud.api,
         collection: {
@@ -69,11 +71,11 @@ class ConfigLoader {
             max_desviacion: 2, // segundos
             actualizacion: {
               hora: measurementConfig.precios_energia.configuracion_calculo
-                .intervalo_actualizacion_promedios.hora,
+                  .intervalo_actualizacion_promedios.hora,
               dia: measurementConfig.precios_energia.configuracion_calculo
-                .intervalo_actualizacion_promedios.dia,
+                  .intervalo_actualizacion_promedios.dia,
               mes: measurementConfig.precios_energia.configuracion_calculo
-                .intervalo_actualizacion_promedios.mes,
+                  .intervalo_actualizacion_promedios.mes,
             },
           },
           calidad: {
@@ -82,11 +84,12 @@ class ConfigLoader {
             tiempo_espera: 5000, // Tiempo entre reintentos (ms)
           },
           zona_horaria:
-            measurementConfig.precios_energia.metadatos.zona_horaria,
+          measurementConfig.precios_energia.metadatos.zona_horaria,
           proveedor:
-            measurementConfig.precios_energia.metadatos.proveedor_energia,
+          measurementConfig.precios_energia.metadatos.proveedor_energia,
           tipo_tarifa: measurementConfig.precios_energia.metadatos.tipo_tarifa,
         },
+        jwt: this.jwtConfig.getJwtConfig(),
       };
 
       this.validateConfig();
@@ -132,10 +135,10 @@ class ConfigLoader {
     // Validación de configuración de base de datos
     const { database } = this.config;
     if (
-      !database.host ||
-      !database.port ||
-      !database.database ||
-      !database.username
+        !database.host ||
+        !database.port ||
+        !database.database ||
+        !database.username
     ) {
       throw new Error("Missing required database configuration fields");
     }
@@ -156,13 +159,16 @@ class ConfigLoader {
     if (!ubibot.accountKey || !ubibot.tokenFile) {
       throw new Error("Missing required Ubibot configuration fields");
     }
+    if (!this.jwtConfig.hasConfig('secret')) {
+      throw new Error('Missing JWT secret configuration');
+    }
   }
 
   isCacheValid() {
     return (
-      this.cachedConfig &&
-      this.lastLoadTime &&
-      Date.now() - this.lastLoadTime < this.CACHE_DURATION
+        this.cachedConfig &&
+        this.lastLoadTime &&
+        Date.now() - this.lastLoadTime < this.CACHE_DURATION
     );
   }
 
@@ -174,14 +180,15 @@ class ConfigLoader {
   reloadConfig() {
     this.cachedConfig = null;
     this.lastLoadTime = null;
+    this.jwtConfig.reloadConfig();
     return this.loadConfigurations();
   }
 
   // Método para obtener un valor específico de configuración
   getValue(path) {
     return path
-      .split(".")
-      .reduce((obj, key) => obj && obj[key], this.getConfig());
+        .split(".")
+        .reduce((obj, key) => obj && obj[key], this.getConfig());
   }
 
   // Método para verificar si una configuración existe

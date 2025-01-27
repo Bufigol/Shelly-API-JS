@@ -23,22 +23,23 @@ const LandingPage = () => {
     const handleLogin = async (e) => {
         e.preventDefault();
         try {
-            const response = await fetch('/api/usuarios/login', {
+            const response = await fetch('/api/auth/login', { // Utilizar la ruta correcta
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
             });
 
             if (!response.ok) {
-                throw new Error('Login failed');
+                const data = await response.json();
+                throw new Error(data.message || 'Login failed');
             }
 
             const data = await response.json();
             localStorage.setItem('token', data.token);
-            localStorage.setItem('permissions', data.permissions);
+            localStorage.setItem('permissions', JSON.stringify(data.user.permissions));
             navigate('/select-routine');
         } catch (error) {
-            setError('Invalid username or password');
+            setError(error.message);
         }
     };
 

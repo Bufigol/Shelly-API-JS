@@ -6,8 +6,9 @@ const UbibotCollector = require("./collectors/ubibot-collector");
 const databaseService = require("./src/services/database-service");
 const energyAveragesService = require("./src/services/energy-averages-service");
 const totalEnergyService = require("./src/services/total-energy-service");
-const deviceRoutes = require("./src/routes/deviceRoutes");
-const configRoutes = require("./src/routes/configRoutes");
+const authMiddleware = require("./src/middlewares/authMiddleware");
+const routes = require('./src/routes'); // Importar las rutas
+const configLoader = require('./config/config-loader');
 
 class Server {
   /**
@@ -68,6 +69,10 @@ class Server {
       console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
       next();
     });
+
+    // Configuración de middleware
+    require('./src/middlewares').setup(this.app);
+
   }
 
   /**
@@ -175,7 +180,7 @@ class Server {
    */
   setupErrorHandling() {
     // Error handler for async errors
-    this.app.use((err, req, res, next) => {
+    this.app.use((err, req, res) => {
       console.error("Error:", err);
       res.status(500).json({
         error: "Internal server error",
@@ -283,6 +288,13 @@ class Server {
 
       await this.ubibotCollector.start();
       console.log("✅ Ubibot data collector started");
+
+      // Comprobación de configuración JWT
+      const jwtConfig = configLoader.getValue('jwt');
+      if (!jwtConfig || !jwtConfig.secret) {
+        throw new Error('JWT configuration is missing or incomplete');
+      }
+      console.log("✅ JWT configuration loaded");
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
