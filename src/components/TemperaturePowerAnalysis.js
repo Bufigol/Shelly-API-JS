@@ -42,7 +42,7 @@ const chartConfig = {
     temperature: "#8884d8",
     power: "#82ca9d",
   },
-  margins: { top: 10, right: 40, left: 40, bottom: 20 },
+  margins: { top: 10, right: 40, left: 40, bottom: 60 },
   gridConfig: { strokeDasharray: "3 3", stroke: "#e0e0e0" },
 };
 
@@ -210,14 +210,17 @@ const TemperaturePowerAnalysis = () => {
                   wrapperStyle={{
                     paddingTop: "20px",
                     fontSize: "14px",
+                    marginTop: "20px"
                   }}
+                  verticalAlign="bottom"
+                  height={36}
                 />
                 <Line
                   yAxisId="left"
                   type="monotone"
                   dataKey="promedio_temperatura_externa"
                   stroke={chartConfig.lineColors.temperature}
-                  name="Temperatura"
+                  name="Temperatura (°C)"
                   dot={false}
                   strokeWidth={2}
                   activeDot={{ r: 6 }}
@@ -227,7 +230,7 @@ const TemperaturePowerAnalysis = () => {
                   type="monotone"
                   dataKey="promedio_potencia_kw"
                   stroke={chartConfig.lineColors.power}
-                  name="Potencia"
+                  name="Potencia (kW)"
                   dot={false}
                   strokeWidth={2}
                   activeDot={{ r: 6 }}

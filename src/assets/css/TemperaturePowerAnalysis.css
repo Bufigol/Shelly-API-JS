@@ -13,7 +13,7 @@
   padding: 2rem;
   background-color: white;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* Controles alineados como los otros componentes */
@@ -77,12 +77,12 @@
 
 /* Contenedor del gráfico */
 .chart-container {
-  margin-top: 1rem; /* Reducir el margen superior */
-  padding: 0.5rem; /* Reducir el padding */
+  margin-top: 1rem;
+  padding: 1rem;
   background-color: white;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  height: calc(100% - 2rem); /* Ajustar la altura para dejar espacio para el título */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  height: calc(100% - 2rem);
   display: flex;
   flex-direction: column;
 }
@@ -94,11 +94,12 @@
   border: 1px solid #ccc;
   border-radius: 4px;
   padding: 0.5rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* Ajustes para iOS */
 @supports (-webkit-touch-callout: none) {
+
   .select-container select,
   .date-picker {
     font-size: 16px;
@@ -115,7 +116,7 @@
   .controls {
     padding: 1rem 0.5rem;
   }
-  
+
   .select-container,
   .fetch-button {
     width: 100%;
@@ -125,21 +126,34 @@
 /* Ajustar el contenedor del gráfico ResponsiveContainer */
 .recharts-responsive-container {
   flex: 1;
-  min-height: 400px; /* Establecer una altura mínima */
-  margin: 0.5rem 0; /* Ajustar márgenes */
+  min-height: 400px;
+  /* Establecer una altura mínima */
+  margin: 0.5rem 0;
+  /* Ajustar márgenes */
 }
 
 /* Ajustar la leyenda */
 .recharts-legend-wrapper {
-  padding-top: 0 !important; /* Reducir el espacio de la leyenda */
+  margin-top: 20px !important;
+  padding-top: 20px !important;
 }
 
 /* Ajustar las etiquetas de los ejes */
 .recharts-label {
-  font-size: 12px !important; /* Reducir tamaño de fuente de las etiquetas */
+  font-size: 12px !important;
+  /* Reducir tamaño de fuente de las etiquetas */
 }
 
 /* Ajustar el espaciado del grid */
 .recharts-cartesian-grid {
   padding: 0 !important;
+}
+
+/* Ajustar el espaciado entre los items de la leyenda */
+.recharts-default-legend {
+  padding: 0 20px !important;
+}
+
+.recharts-legend-item {
+  margin-right: 20px !important;
 }

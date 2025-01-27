@@ -8,7 +8,7 @@ const sgMailConfig = require("../config/jsons/sgMailConfig.json");
 const smsConfig = require("../config/jsons/destinatariosSmsUbibot.json");
 const moment = require("moment-timezone");
 const axios = require("axios");
-const MODEM_URL = "http://192.168.8.1";
+const MODEM_URL = "http://192.168.1.140";
 
 // Configuración de SendGrid
 const SENDGRID_API_KEY = sgMailConfig.SENDGRID_API_KEY;
@@ -599,12 +599,14 @@ class UbibotService {
 
   async checkModemConnection() {
     try {
-      await axios.get(`${MODEM_URL}/api/monitoring/status`);
-      console.log("Conexión con el módem establecida");
+      await axios.get(`${MODEM_URL}/api/monitoring/status`, {
+        timeout: 5000  // Añadir timeout para conexión remota
+      });
+      console.log('Conexión con el módem remoto establecida');
       return true;
     } catch (error) {
-      console.error("Error conectando con el módem:", error.message);
-      throw new Error("No se pudo establecer conexión con el módem");
+      console.error('Error conectando con el módem remoto:', error.message);
+      throw new Error('No se pudo establecer conexión con el módem remoto');
     }
   }
 }
