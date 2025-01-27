@@ -27,36 +27,12 @@ import dashboard_electricImage from "../assets/images/dashboarelectrcio.png";
 import consumototaldiario_electricImage from "../assets/images/consumototaldiario.png";
 import consumoelectrico_electricImage from "../assets/images/consumoelectrico.png";
 const routines = [
-  {
-    title: "Dashboard",
-    image: dashboardImage,
-    route: "/dashboard",
-    permission: "view_dashboard",
-  },
-  {
-    title: "Intrusiones Blind Spot",
-    image: detectionImage,
-    route: "/blind-spot-intrusions",
-    permission: "view_blind_spot_intrusions",
-  },
-  {
-    title: "Sectores Presencia Personal",
-    image: presenciaImage,
-    route: "/presencia",
-    permission: "view_presence",
-  },
-  {
-    title: "Mensajes SOS Visualización por Ubicación",
-    image: smsDataImage,
-    route: "/sms-data",
-    permission: "view_sms",
-  },
-  {
-    title: "Temperatura",
-    image: temperaturaImage,
-    route: "/temperatura",
-    permission: "view_temperature",
-  },
+  //  { title: "Dashboard", image: dashboardImage, route: "/dashboard", permission: "view_dashboard" },
+  //  { title: "Intrusiones Blind Spot", image: detectionImage, route: "/blind-spot-intrusions", permission: "view_blind_spot_intrusions" },
+  //
+  //  { title: "Sectores Presencia Personal", image: presenciaImage, route: "/presencia", permission: "view_presence" },
+  //  { title: "Mensajes SOS Visualización por Ubicación", image: smsDataImage, route: "/sms-data", permission: "view_sms" },
+  //  { title: "Temperatura", image: temperaturaImage, route: "/temperatura", permission: "view_temperature" },
   {
     title: "Dashboard de Temperatura",
     image: dashboardTemperaturaImage,
@@ -75,26 +51,17 @@ const routines = [
     route: "/inteligencia-datos-temperatura",
     permission: "view_temperature_data_intelligence",
   },
-
-  {
+  
+  /*{
     title: "Puertas Status Cierre / Apertura",
     image: doorStatusImage,
     route: "/door-status-matrix",
     permission: "view_door_status",
-  },
-  {
-    title: "Datos Análisis Forense",
-    image: dataIntelligenceImage,
-    route: "/inteligencia-de-datos",
-    permission: "view_data_intelligence",
-  },
-  {
-    title: "Parametrización",
-    image: configurationImage,
-    route: "/configuracion",
-    permission: "view_configuration",
-  },
+  },*/
+  //  { title: "Datos Análisis Forense", image: dataIntelligenceImage, route: "/inteligencia-de-datos", permission: "view_data_intelligence" },
+  //  { title: "Parametrización", image: configurationImage, route: "/configuracion", permission: "view_configuration" },
 
+  /*
   {
     title: "Interior Ubicación en Tiempo Real",
     image: ubicaciontiemporealinteriorImage,
@@ -119,13 +86,13 @@ const routines = [
     route: "/consulta-historica-movimientos",
     permission: "search_exterior",
   },
-
+ 
   {
     title: "Análisis de Deshielo",
     image: frostIcon,
     route: "/analisis-deshielo",
     permission: "view_defrost_analysis",
-  },
+  } */,
   {
     title: "Dashboard Electrico",
     image: dashboard_electricImage,
@@ -155,13 +122,14 @@ const routines = [
     image: paramTempIcon,
     route: "/parametro-temp-camaras",
     permission: "view_temp_params",
-  },
+  }
+  /*{,
   {
     title: "Registrar Usuario",
     image: userRegistrationImage,
     route: "/register-user",
     permission: "create_users",
-  },
+  }*/
 ];
 
 const SelectRoutine = () => {

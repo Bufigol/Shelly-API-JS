@@ -5,9 +5,7 @@ class tel_ConfigController {
   async getSystemParameters(req, res, next) {
     try {
       // Ejecutar una consulta SQL para seleccionar todos los registros de la tabla 'configuracion'
-      const [results] = await databaseService.pool.query(
-        "SELECT * FROM configuracion"
-      );
+      const [results] = await databaseService.pool.query("SELECT * FROM configuracion");
 
       // Enviar los resultados de la consulta como una respuesta JSON
       res.json(results);
@@ -112,9 +110,7 @@ class tel_ConfigController {
   async getConfigUmbrales(req, res, next) {
     try {
       // Ejecutar una consulta SQL para seleccionar el primer registro de la tabla 'umbrales'
-      const [results] = await databaseService.pool.query(
-        "SELECT * FROM configuracion LIMIT 1"
-      );
+      const [results] = await databaseService.pool.query("SELECT * FROM configuracion LIMIT 1");
 
       // Enviar el primer resultado de la consulta como una respuesta JSON
       res.json(results[0]);

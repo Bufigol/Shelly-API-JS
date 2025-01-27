@@ -39,7 +39,10 @@ router.get(
 
 router.get(
   "/teltonica/temperatura-umbrales",
-  authMiddleware.authenticate.bind(authMiddleware), // Agregar esto
+  (req, res, next) => {
+    console.log("Ruta temperatura-umbrales accedida"); // Log para debug
+    next();
+  },
   tel_configController.getConfigTemperaturaUmbral.bind(tel_configController)
 );
 
