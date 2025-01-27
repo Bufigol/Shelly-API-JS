@@ -72,11 +72,20 @@ const ParametroTempCamaras = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      await axios.post("/api/teltonica/temperatura-umbrales", params);
+      const token = localStorage.getItem("token");
+
+      await axios.post("/api/config/teltonica/temperatura-umbrales", params, {
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
       setMessage("Parámetros actualizados exitosamente");
     } catch (error) {
       console.error("Error updating temperature thresholds:", error);
-      setMessage("Error al actualizar los parámetros");
+      setMessage(error.response?.data?.error || "Error al actualizar los parámetros");
     } finally {
       setLoading(false);
     }
@@ -90,10 +99,22 @@ const ParametroTempCamaras = () => {
 
   const handleChannelStatusChange = async (channelId, newStatus) => {
     try {
-      await axios.post("/api/ubibot/update-channel-status", {
-        channelId,
-        esOperativa: newStatus ? 1 : 0,
-      });
+      const token = localStorage.getItem("token");
+
+      await axios.post("/api/ubibot/update-channel-status",
+        {
+          channelId,
+          esOperativa: newStatus ? 1 : 0,
+        },
+        {
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
       setChannels(
         channels.map((channel) =>
           channel.channel_id === channelId
@@ -101,10 +122,14 @@ const ParametroTempCamaras = () => {
             : channel
         )
       );
+
       setMessage(`Estado del canal ${channelId} actualizado correctamente`);
     } catch (error) {
       console.error("Error updating channel status:", error);
-      setMessage(`Error al actualizar el estado del canal ${channelId}`);
+      setMessage(
+        error.response?.data?.error ||
+        `Error al actualizar el estado del canal ${channelId}`
+      );
     }
   };
 
@@ -194,9 +219,8 @@ const ParametroTempCamaras = () => {
 
         {message && (
           <p
-            className={`message ${
-              message.includes("Error") ? "error" : "success"
-            }`}
+            className={`message ${message.includes("Error") ? "error" : "success"
+              }`}
           >
             {message}
           </p>
