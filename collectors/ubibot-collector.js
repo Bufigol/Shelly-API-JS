@@ -27,7 +27,7 @@ class UbibotCollector {
    */
   constructor() {
     const { ubibot: ubibotConfig } = config.getConfig();
-    this.collectionInterval = ubibotConfig.collectionInterval || 600000; // Default 10 minutes
+    this.collectionInterval = ubibotConfig.collectionInterval || 240000; // Default 10 minutes
     this.isRunning = false;
     this.intervalId = null;
     this.retryCount = 0;
