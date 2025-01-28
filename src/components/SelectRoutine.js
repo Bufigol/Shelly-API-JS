@@ -112,9 +112,21 @@ const routines = [
     permission: "view_temperature_data_intelligence",
   },
   {
-    title: "Consumo total Diario",
+    title: "Consumo total por Dia",
     image: consumototaldiario_electricImage,
     route: "/consumo-total-diario",
+    permission: "view_temperature_data_intelligence",
+  },
+  {
+    title: "Consumo total por Mes",
+    image: consumototaldiario_electricImage,
+    route: "/consumo-total-mensual",
+    permission: "view_temperature_data_intelligence",
+  },
+  {
+    title: "Consumo total por año",
+    image: consumototaldiario_electricImage,
+    route: "/consumo-total-anual",
     permission: "view_temperature_data_intelligence",
   },
   {
