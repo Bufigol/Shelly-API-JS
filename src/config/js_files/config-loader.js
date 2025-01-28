@@ -1,10 +1,11 @@
-// config/config-loader.js
-const fs = require("fs");
+// config/js_files/config-loader.js
+const BaseConfigLoader = require("./base-config-loader");
+const JwtConfigLoader = require("./jwt-config");
 const path = require("path");
-const jwtConfigLoader = require('./jwt-config');
 
-class ConfigLoader {
+class ConfigLoader extends BaseConfigLoader {
   constructor() {
+    super();
     this.config = {};
     this.measurementConfig = {};
     this.configPaths = {
@@ -12,15 +13,17 @@ class ConfigLoader {
       database: "../jsons/database.json",
       measurement: "../jsons/precios_energia.json",
     };
-    this.cachedConfig = null;
-    this.lastLoadTime = null;
-    this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutos en milisegundos
-    this.jwtConfig = jwtConfigLoader;
+    this.jwtConfig = JwtConfigLoader;
 
-    this.loadConfigurations();
+    this.loadConfiguration(); 
   }
 
-  loadConfigurations() {
+  /**
+   * Carga todas las configuraciones del sistema
+   * @returns {Object} Configuración completa del sistema
+   * @throws {Error} Si hay errores en la carga de configuración
+   */
+  loadConfiguration() {
     try {
       // Verificar si podemos usar la caché
       if (this.isCacheValid()) {
@@ -40,9 +43,11 @@ class ConfigLoader {
       const dbDetails = this.parseJdbcUrl(dbConfig.url);
 
       // Cargar configuración de Ubibot
-      const ubibotConfig = this.loadJsonFile("../jsons/ubibot_account_info.json");
+      const ubibotConfig = this.loadJsonFile(
+        "../jsons/ubibot_account_info.json"
+      );
 
-
+      // Construir objeto de configuración
       this.config = {
         api: apiConfig.shelly_cloud.api,
         collection: {
@@ -54,7 +59,7 @@ class ConfigLoader {
           accountKey: ubibotConfig.ACCOUNT_KEY,
           tokenFile: ubibotConfig.TOKEN_FILE,
           excludedChannels: ubibotConfig.EXCLUDED_CHANNELS,
-          collectionInterval: 600000, // Valor por defecto para el intervalo
+          collectionInterval: 600000,
         },
         database: {
           host: dbDetails.host,
@@ -67,26 +72,26 @@ class ConfigLoader {
         measurement: {
           precio_kwh: measurementConfig.precios_energia.precio_kwh.valor,
           intervalos: {
-            medicion: 10, // segundos
-            max_desviacion: 2, // segundos
+            medicion: 10,
+            max_desviacion: 2,
             actualizacion: {
               hora: measurementConfig.precios_energia.configuracion_calculo
-                  .intervalo_actualizacion_promedios.hora,
+                .intervalo_actualizacion_promedios.hora,
               dia: measurementConfig.precios_energia.configuracion_calculo
-                  .intervalo_actualizacion_promedios.dia,
+                .intervalo_actualizacion_promedios.dia,
               mes: measurementConfig.precios_energia.configuracion_calculo
-                  .intervalo_actualizacion_promedios.mes,
+                .intervalo_actualizacion_promedios.mes,
             },
           },
           calidad: {
-            umbral_minimo: 0.8, // 80% de lecturas válidas requeridas
-            max_intentos: 3, // Máximo número de reintentos
-            tiempo_espera: 5000, // Tiempo entre reintentos (ms)
+            umbral_minimo: 0.8,
+            max_intentos: 3,
+            tiempo_espera: 5000,
           },
           zona_horaria:
-          measurementConfig.precios_energia.metadatos.zona_horaria,
+            measurementConfig.precios_energia.metadatos.zona_horaria,
           proveedor:
-          measurementConfig.precios_energia.metadatos.proveedor_energia,
+            measurementConfig.precios_energia.metadatos.proveedor_energia,
           tipo_tarifa: measurementConfig.precios_energia.metadatos.tipo_tarifa,
         },
         jwt: this.jwtConfig.getJwtConfig(),
@@ -105,18 +110,13 @@ class ConfigLoader {
     }
   }
 
-  loadJsonFile(filename) {
-    try {
-      const filePath = path.join(__dirname, filename);
-      const fileContent = fs.readFileSync(filePath, "utf8");
-      return JSON.parse(fileContent);
-    } catch (error) {
-      throw new Error(`Error loading ${filename}: ${error.message}`);
-    }
-  }
-
+  /**
+   * Parsea una URL JDBC a sus componentes
+   * @param {string} jdbcUrl URL JDBC a parsear
+   * @returns {Object} Componentes de la URL
+   * @throws {Error} Si el formato de la URL es inválido
+   */
   parseJdbcUrl(jdbcUrl) {
-    // Limpiar URL JDBC
     const cleanUrl = jdbcUrl.replace("jdbc:", "");
     const matches = cleanUrl.match(/mysql:\/\/([^:]+):(\d+)\/(.+)/);
 
@@ -131,14 +131,18 @@ class ConfigLoader {
     };
   }
 
+  /**
+   * Valida la configuración completa del sistema
+   * @throws {Error} Si hay campos requeridos faltantes o valores inválidos
+   */
   validateConfig() {
     // Validación de configuración de base de datos
     const { database } = this.config;
     if (
-        !database.host ||
-        !database.port ||
-        !database.database ||
-        !database.username
+      !database.host ||
+      !database.port ||
+      !database.database ||
+      !database.username
     ) {
       throw new Error("Missing required database configuration fields");
     }
@@ -155,46 +159,57 @@ class ConfigLoader {
       throw new Error("Missing required measurement configuration fields");
     }
 
+    // Validación de configuración de Ubibot
     const { ubibot } = this.config;
     if (!ubibot.accountKey || !ubibot.tokenFile) {
       throw new Error("Missing required Ubibot configuration fields");
     }
-    if (!this.jwtConfig.hasConfig('secret')) {
-      throw new Error('Missing JWT secret configuration');
+
+    // Validación de configuración JWT
+    if (!this.jwtConfig.hasConfig("secret")) {
+      throw new Error("Missing JWT secret configuration");
     }
   }
 
-  isCacheValid() {
-    return (
-        this.cachedConfig &&
-        this.lastLoadTime &&
-        Date.now() - this.lastLoadTime < this.CACHE_DURATION
-    );
-  }
-
+  /**
+   * Obtiene la configuración actual
+   * @returns {Object} Configuración actual del sistema
+   */
   getConfig() {
-    return this.loadConfigurations();
+    return this.loadConfiguration();
   }
 
-  // Método para recargar la configuración bajo demanda
+  /**
+   * Recarga todas las configuraciones
+   * @returns {Object} Nueva configuración del sistema
+   */
   reloadConfig() {
     this.cachedConfig = null;
     this.lastLoadTime = null;
     this.jwtConfig.reloadConfig();
-    return this.loadConfigurations();
+    return this.loadConfiguration();
   }
 
-  // Método para obtener un valor específico de configuración
+  /**
+   * Obtiene un valor específico de la configuración usando notación de punto
+   * @param {string} path Ruta al valor (ejemplo: "database.host")
+   * @returns {any} Valor encontrado en la ruta especificada
+   */
   getValue(path) {
     return path
-        .split(".")
-        .reduce((obj, key) => obj && obj[key], this.getConfig());
+      .split(".")
+      .reduce((obj, key) => obj && obj[key], this.getConfig());
   }
 
-  // Método para verificar si una configuración existe
+  /**
+   * Verifica si existe una configuración en la ruta especificada
+   * @param {string} path Ruta a verificar
+   * @returns {boolean} true si existe la configuración
+   */
   hasConfig(path) {
     return this.getValue(path) !== undefined;
   }
 }
 
+// Exporta una única instancia para mantener el patrón Singleton
 module.exports = new ConfigLoader();
