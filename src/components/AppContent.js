@@ -4,6 +4,10 @@ import { jwtDecode } from "jwt-decode";
 import DashboardElectrico from "./DashboardElectrico";
 import ConsumoElectrico from "./ConsumoElectrico";
 import ConsumoTotalDiario from "./ConsumoTotalDiario";
+
+import ConsumoTotalMensual from "./ConsumoTotalMensual";
+import ConsumoTotalAnual from "./ConsumoTotalAnual";
+
 import DashboardTemperatura from "./DashboardTemperatura"; // Cambiado
 import LastKnownPosition from "./LastKnownPosition"; // Cambiado
 import UbicacionTiempoRealInteriores from "./UbicacionTiempoRealInteriores"; // Cambiado
@@ -83,6 +87,8 @@ function AppContent() {
         <Route path="/dashboard-electrico" element={<DashboardElectrico />} />
         <Route path="/consumo-electrico" element={<ConsumoElectrico />} />
         <Route path="/consumo-total-diario" element={<ConsumoTotalDiario />} />
+        <Route path="/consumo-total-mensual" element={<ConsumoTotalMensual />} />
+        <Route path="/consumo-total-anual" element={<ConsumoTotalAnual />} />
         <Route
           path="/select-routine"
           element={
