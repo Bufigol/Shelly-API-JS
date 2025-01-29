@@ -43,7 +43,7 @@ class TotalesController {
     async getMonthlyTotalsByDevice(req, res, next) {
         try {
             const { date } = req.validatedDates;
-    
+
             const query = `
                 SELECT 
                     std.fecha_local,
@@ -61,15 +61,58 @@ class TotalesController {
                 ORDER BY
                     std.fecha_local, cur.nombre_ubicacion, sd.nombre
             `;
-  
+
             const [rows] = await databaseService.pool.query(query, [date, date]);
-    
+
             res.json(transformUtils.transformApiResponse(rows));
-            
         } catch (error) {
             next(error);
         }
-      }
+    }
+
+    async getYearlyTotalsByDevice(req, res, next) {
+        try {
+            const { year } = req.validatedDates;
+
+            const query = `
+                SELECT 
+                    stm.id,
+                    stm.shelly_id,
+                    stm.año as anio,
+                    stm.mes,
+                    stm.energia_activa_total,
+                    stm.energia_reactiva_total,
+                    stm.potencia_maxima,
+                    stm.potencia_minima,
+                    stm.precio_kwh_promedio,
+                    stm.costo_total,
+                    stm.dias_con_datos,
+                    stm.horas_con_datos,
+                    stm.fecha_creacion,
+                    stm.fecha_actualizacion,
+                    cur.nombre_ubicacion as ubicacion_nombre,
+                    sd.nombre as dispositivo_nombre
+                FROM 
+                    sem_totales_mes stm
+                JOIN 
+                    sem_dispositivos sd ON stm.shelly_id = sd.shelly_id
+                JOIN 
+                    catalogo_ubicaciones_reales cur ON sd.ubicacion = cur.idcatalogo_ubicaciones_reales
+                WHERE 
+                    stm.año = ?
+                ORDER BY 
+                    stm.mes ASC, 
+                    cur.nombre_ubicacion,
+                    sd.nombre
+            `;
+
+            const [rows] = await databaseService.pool.query(query, [parseInt(year)]);
+
+            res.json(transformUtils.transformApiResponse(rows));
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new TotalesController();
