@@ -13,12 +13,14 @@ class TotalesController {
                     dispo.ubicacion,
                     tot.shelly_id,
                     tot.hora_local,
+                    tot.fecha_actualizacion,
                     tot.energia_activa_total,
                     tot.costo_total, 
                     SUM(tot.costo_total) OVER (
                         PARTITION BY tot.shelly_id
                         ORDER BY tot.hora_local
                     ) AS costo_acumulado
+
                 FROM 
                     sem_totales_hora AS tot
                 JOIN
@@ -52,7 +54,8 @@ class TotalesController {
                     std.costo_total,
                     std.precio_kwh_promedio,
                     cur.nombre_ubicacion as ubicacion_nombre,
-                    sd.nombre as dispositivo_nombre
+                    sd.nombre as dispositivo_nombre,
+                    std.fecha_actualizacion
                 FROM sem_totales_dia std
                 JOIN sem_dispositivos sd ON std.shelly_id = sd.shelly_id
                 JOIN catalogo_ubicaciones_reales cur ON sd.ubicacion = cur.idcatalogo_ubicaciones_reales
