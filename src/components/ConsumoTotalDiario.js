@@ -23,6 +23,7 @@ import "react-toastify/dist/ReactToastify.css";
 import Header from "./Header";
 import moment from "moment-timezone";
 import "../assets/css/ConsumoTotalDiario.css";
+import DashboardStats from '../utils/DashboardStats';
 
 // Configuraciones iniciales
 moment.tz.setDefault("America/Santiago");
@@ -43,7 +44,7 @@ ChartJS.register(
 const chartConfig = {
   colors: {
     bar: "rgba(255, 193, 7, 0.8)",
-    barHover: "rgba(255, 193, 7, 1)",
+    barHover: "rgba(255, 141, 102, 1)",
     line: "rgba(54, 162, 235, 1)",
     lineHover: "rgba(54, 162, 235, 0.8)",
     grid: "rgba(0, 0, 0, 0.1)",
@@ -289,6 +290,7 @@ const ConsumoTotalDiario = () => {
       <Header title="Consumo Total Diario" />
       <div className="content">
         <h1>Consumo Total Diario</h1>
+        
         <div className="controls">
           <div className="select-container">
             <label>Fecha:</label>
@@ -302,7 +304,6 @@ const ConsumoTotalDiario = () => {
               locale="es"
             />
           </div>
-
           <button
             onClick={handleFetchData}
             disabled={loading || !selectedDate}
@@ -310,6 +311,14 @@ const ConsumoTotalDiario = () => {
           >
             {loading ? "Cargando..." : "Obtener Datos"}
           </button>
+          {data.length > 0 && (
+          <div className="mb-6">
+            <DashboardStats
+              data={data}
+              period="daily"
+            />
+          </div>
+        )}
         </div>
 
         {error && <div className="error-message">{error}</div>}

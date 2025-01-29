@@ -22,6 +22,8 @@ import "react-toastify/dist/ReactToastify.css";
 import Header from "./Header";
 import moment from "moment-timezone";
 import "../assets/css/ConsumoTotalDiario.css";
+import DashboardStats from '../utils/DashboardStats';
+
 
 // Configuraciones iniciales
 moment.tz.setDefault("America/Santiago");
@@ -311,6 +313,14 @@ const ConsumoTotalMensual = () => {
                     >
                         {loading ? "Cargando..." : "Obtener Datos"}
                     </button>
+                    {data.length > 0 && (
+                        <div className="mb-6">
+                            <DashboardStats
+                                data={data}
+                                period="monthly"
+                            />
+                        </div>
+                    )}
                 </div>
 
                 {error && <div className="error-message">{error}</div>}
