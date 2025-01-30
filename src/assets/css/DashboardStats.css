@@ -1,0 +1,83 @@
+/* DashboardStats.css */
+.dashboard-stats {
+    width: 100%;
+    margin-bottom: 1.5rem;
+}
+
+.dashboard-cards {
+    display: flex;
+    gap: 1.5rem;
+    padding: 0.5rem;
+}
+
+.dashboard-card {
+    flex: 1;
+    border-radius: 0.75rem;
+    padding: 1rem 1.5rem;
+    transition: transform 0.2s ease-in-out;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.dashboard-card:hover {
+    transform: scale(1.02);
+}
+
+.dashboard-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.dashboard-card-title {
+    font-size: 0.95rem;
+    /* Reducido de 1.125rem */
+    font-weight: 700;
+    color: rgb(154, 52, 18);
+}
+
+.dashboard-card-icon {
+    font-size: 1.25rem;
+    /* Reducido proporcionalmente */
+    opacity: 0.8;
+}
+
+.dashboard-card-content {
+    margin-top: 0.5rem;
+}
+
+.dashboard-card-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: rgb(194, 65, 12);
+}
+
+.dashboard-card-subtitle {
+    font-size: 0.875rem;
+    color: rgb(234, 88, 12);
+    margin-top: 0.5rem;
+}
+
+/* Estilos específicos para cada tarjeta */
+.card-money {
+    background: linear-gradient(135deg, #fef6e4 0%, #fef3c7 100%);
+}
+
+.card-energy {
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+}
+
+.card-date {
+    background: linear-gradient(135deg, #fef3c7 0%, #fef6e4 100%);
+}
+
+/* Media queries para responsividad */
+@media (max-width: 768px) {
+    .dashboard-cards {
+        flex-direction: column;
+    }
+
+    .dashboard-card {
+        margin-bottom: 1rem;
+    }
+}

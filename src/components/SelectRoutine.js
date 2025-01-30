@@ -26,6 +26,8 @@ import thermo_electricImage from "../assets/images/thermo_electric.png";
 import dashboard_electricImage from "../assets/images/dashboarelectrcio.png";
 import consumototaldiario_electricImage from "../assets/images/consumototaldiario.png";
 import consumoelectrico_electricImage from "../assets/images/consumoelectrico.png";
+import consumototalmes_electricImage from "../assets/images/consumototalmes.png";
+import consumototalano_electricImage from "../assets/images/consumototalano.png";
 const routines = [
   //  { title: "Dashboard", image: dashboardImage, route: "/dashboard", permission: "view_dashboard" },
   //  { title: "Intrusiones Blind Spot", image: detectionImage, route: "/blind-spot-intrusions", permission: "view_blind_spot_intrusions" },
@@ -112,20 +114,20 @@ const routines = [
     permission: "view_temperature_data_intelligence",
   },
   {
-    title: "Consumo total por Dia",
+    title: "Consumo Total por Dia",
     image: consumototaldiario_electricImage,
     route: "/consumo-total-diario",
     permission: "view_temperature_data_intelligence",
   },
   {
-    title: "Consumo total por Mes",
-    image: consumototaldiario_electricImage,
+    title: "Consumo Total por Mes",
+    image: consumototalmes_electricImage,
     route: "/consumo-total-mensual",
     permission: "view_temperature_data_intelligence",
   },
   {
-    title: "Consumo total por año",
-    image: consumototaldiario_electricImage,
+    title: "Consumo Total por Año",
+    image: consumototalano_electricImage,
     route: "/consumo-total-anual",
     permission: "view_temperature_data_intelligence",
   },

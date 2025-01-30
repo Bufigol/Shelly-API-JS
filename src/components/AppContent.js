@@ -4,10 +4,8 @@ import { jwtDecode } from "jwt-decode";
 import DashboardElectrico from "./DashboardElectrico";
 import ConsumoElectrico from "./ConsumoElectrico";
 import ConsumoTotalDiario from "./ConsumoTotalDiario";
-
 import ConsumoTotalMensual from "./ConsumoTotalMensual";
 import ConsumoTotalAnual from "./ConsumoTotalAnual";
-
 import DashboardTemperatura from "./DashboardTemperatura"; // Cambiado
 import LastKnownPosition from "./LastKnownPosition"; // Cambiado
 import UbicacionTiempoRealInteriores from "./UbicacionTiempoRealInteriores"; // Cambiado
