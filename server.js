@@ -6,9 +6,8 @@ const UbibotCollector = require("./collectors/ubibot-collector");
 const databaseService = require("./src/services/database-service");
 const energyAveragesService = require("./src/services/energy-averages-service");
 const totalEnergyService = require("./src/services/total-energy-service");
-const authMiddleware = require("./src/middlewares/authMiddleware");
-const routes = require('./src/routes'); // Importar las rutas
-const configLoader = require('./config/config-loader');
+const deviceRoutes = require("./src/routes/deviceRoutes");
+const configRoutes = require("./src/routes/configRoutes");
 
 class Server {
   /**
@@ -69,10 +68,6 @@ class Server {
       console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
       next();
     });
-
-    // Configuración de middleware
-    require('./src/middlewares').setup(this.app);
-
   }
 
   /**
@@ -89,8 +84,8 @@ class Server {
   setupContentSecurityPolicy() {
     this.app.use((req, res, next) => {
       res.setHeader(
-          "Content-Security-Policy",
-          "default-src 'self'; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
+        "Content-Security-Policy",
+        "default-src 'self'; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
       );
       next();
     });
@@ -180,14 +175,14 @@ class Server {
    */
   setupErrorHandling() {
     // Error handler for async errors
-    this.app.use((err, req, res) => {
+    this.app.use((err, req, res, next) => {
       console.error("Error:", err);
       res.status(500).json({
         error: "Internal server error",
         message:
-            process.env.NODE_ENV === "development"
-                ? err.message
-                : "An unexpected error occurred",
+          process.env.NODE_ENV === "development"
+            ? err.message
+            : "An unexpected error occurred",
       });
     });
   }
@@ -283,18 +278,11 @@ class Server {
       await this.services.totalEnergy.initialize();
       console.log("✅ Total energy service initialized");
 
-      await this.shellyCollector.start();
+      //await this.shellyCollector.start();
       console.log("✅ Shelly Data collector started");
 
-      await this.ubibotCollector.start();
+      //await this.ubibotCollector.start();
       console.log("✅ Ubibot data collector started");
-
-      // Comprobación de configuración JWT
-      const jwtConfig = configLoader.getValue('jwt');
-      if (!jwtConfig || !jwtConfig.secret) {
-        throw new Error('JWT configuration is missing or incomplete');
-      }
-      console.log("✅ JWT configuration loaded");
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
@@ -355,8 +343,8 @@ class Server {
 
 const server = new Server();
 server
-    .start()
-    .catch((err) => console.error("Error al iniciar el servidor:", err));
+  .start()
+  .catch((err) => console.error("Error al iniciar el servidor:", err));
 
 module.exports = {
   server,

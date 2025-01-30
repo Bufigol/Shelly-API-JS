@@ -16,5 +16,10 @@ router.get('/monthly/:month',
     totalesController.getMonthlyTotalsByDevice.bind(totalesController)
 );
 
+// Endpoint para obtener los totales mensuales por dispositivo para un año
+router.get('/yearly/:year',
+    validationMiddleware.validateYearParams.bind(validationMiddleware),
+    totalesController.getYearlyTotalsByDevice.bind(totalesController)
+);
 
 module.exports = router;

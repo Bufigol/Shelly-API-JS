@@ -13,12 +13,14 @@ class TotalesController {
                     dispo.ubicacion,
                     tot.shelly_id,
                     tot.hora_local,
+                    tot.fecha_actualizacion,
                     tot.energia_activa_total,
                     tot.costo_total, 
                     SUM(tot.costo_total) OVER (
                         PARTITION BY tot.shelly_id
                         ORDER BY tot.hora_local
                     ) AS costo_acumulado
+
                 FROM 
                     sem_totales_hora AS tot
                 JOIN
@@ -43,8 +45,13 @@ class TotalesController {
     async getMonthlyTotalsByDevice(req, res, next) {
         try {
             const { date } = req.validatedDates;
-    
+
             const query = `
+                WITH LatestUpdate AS (
+                    SELECT MAX(fecha_actualizacion) as ultima_actualizacion
+                    FROM sem_totales_dia std
+                    WHERE YEAR(std.fecha_local) = YEAR(?) AND MONTH(std.fecha_local) = MONTH(?)
+                )
                 SELECT 
                     std.fecha_local,
                     std.shelly_id,
@@ -52,24 +59,75 @@ class TotalesController {
                     std.costo_total,
                     std.precio_kwh_promedio,
                     cur.nombre_ubicacion as ubicacion_nombre,
-                    sd.nombre as dispositivo_nombre
+                    sd.nombre as dispositivo_nombre,
+                    lu.ultima_actualizacion as fecha_actualizacion
                 FROM sem_totales_dia std
                 JOIN sem_dispositivos sd ON std.shelly_id = sd.shelly_id
                 JOIN catalogo_ubicaciones_reales cur ON sd.ubicacion = cur.idcatalogo_ubicaciones_reales
+                CROSS JOIN LatestUpdate lu
                 WHERE
                     YEAR(std.fecha_local) = YEAR(?) AND MONTH(std.fecha_local) = MONTH(?)
                 ORDER BY
-                    std.fecha_local, cur.nombre_ubicacion, sd.nombre
+                    std.fecha_local DESC, 
+                    cur.nombre_ubicacion, 
+                    sd.nombre
             `;
-  
-            const [rows] = await databaseService.pool.query(query, [date, date]);
-    
+
+            const [rows] = await databaseService.pool.query(query, [date, date, date, date]);
+
             res.json(transformUtils.transformApiResponse(rows));
-            
         } catch (error) {
             next(error);
         }
-      }
+    }
+
+
+
+    async getYearlyTotalsByDevice(req, res, next) {
+        try {
+            const { year } = req.validatedDates;
+
+            const query = `
+                SELECT 
+                    stm.id,
+                    stm.shelly_id,
+                    stm.año as anio,
+                    stm.mes,
+                    stm.energia_activa_total,
+                    stm.energia_reactiva_total,
+                    stm.potencia_maxima,
+                    stm.potencia_minima,
+                    stm.precio_kwh_promedio,
+                    stm.costo_total,
+                    stm.dias_con_datos,
+                    stm.horas_con_datos,
+                    stm.fecha_creacion,
+                    stm.fecha_actualizacion,
+                    cur.nombre_ubicacion as ubicacion_nombre,
+                    sd.nombre as dispositivo_nombre
+                FROM 
+                    sem_totales_mes stm
+                JOIN 
+                    sem_dispositivos sd ON stm.shelly_id = sd.shelly_id
+                JOIN 
+                    catalogo_ubicaciones_reales cur ON sd.ubicacion = cur.idcatalogo_ubicaciones_reales
+                WHERE 
+                    stm.año = ?
+                ORDER BY 
+                    stm.mes ASC, 
+                    cur.nombre_ubicacion,
+                    sd.nombre
+            `;
+
+            const [rows] = await databaseService.pool.query(query, [parseInt(year)]);
+
+            res.json(transformUtils.transformApiResponse(rows));
+        } catch (error) {
+            next(error);
+        }
+    }
+
+
 }
 
 module.exports = new TotalesController();
