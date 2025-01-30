@@ -47,6 +47,11 @@ class TotalesController {
             const { date } = req.validatedDates;
 
             const query = `
+                WITH LatestUpdate AS (
+                    SELECT MAX(fecha_actualizacion) as ultima_actualizacion
+                    FROM sem_totales_dia std
+                    WHERE YEAR(std.fecha_local) = YEAR(?) AND MONTH(std.fecha_local) = MONTH(?)
+                )
                 SELECT 
                     std.fecha_local,
                     std.shelly_id,
@@ -55,23 +60,28 @@ class TotalesController {
                     std.precio_kwh_promedio,
                     cur.nombre_ubicacion as ubicacion_nombre,
                     sd.nombre as dispositivo_nombre,
-                    std.fecha_actualizacion
+                    lu.ultima_actualizacion as fecha_actualizacion
                 FROM sem_totales_dia std
                 JOIN sem_dispositivos sd ON std.shelly_id = sd.shelly_id
                 JOIN catalogo_ubicaciones_reales cur ON sd.ubicacion = cur.idcatalogo_ubicaciones_reales
+                CROSS JOIN LatestUpdate lu
                 WHERE
                     YEAR(std.fecha_local) = YEAR(?) AND MONTH(std.fecha_local) = MONTH(?)
                 ORDER BY
-                    std.fecha_local, cur.nombre_ubicacion, sd.nombre
+                    std.fecha_local DESC, 
+                    cur.nombre_ubicacion, 
+                    sd.nombre
             `;
 
-            const [rows] = await databaseService.pool.query(query, [date, date]);
+            const [rows] = await databaseService.pool.query(query, [date, date, date, date]);
 
             res.json(transformUtils.transformApiResponse(rows));
         } catch (error) {
             next(error);
         }
     }
+
+
 
     async getYearlyTotalsByDevice(req, res, next) {
         try {
@@ -116,6 +126,8 @@ class TotalesController {
             next(error);
         }
     }
+
+
 }
 
 module.exports = new TotalesController();
