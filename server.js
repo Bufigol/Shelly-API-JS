@@ -129,6 +129,7 @@ class Server {
     const ubibotRoutes = require("./src/routes/ubibotRoutes");
     const gpsDataRoutes = require("./src/routes/gpsDataRoutes");
     const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
+    const outRoutes = require("./src/routes/outRoutes");
 
     // Primero configurar todas las rutas de la API
     this.app.use("/api/devices", deviceRoutes);
@@ -145,6 +146,7 @@ class Server {
     this.app.use("/api/ubibot", ubibotRoutes);
     this.app.use("/api/blindspot", blindSpotRoutes);
     this.app.use("/gps-data", gpsDataRoutes);
+    this.app.use('/api/out', outRoutes); //para ser utilizado desde fuera
 
     // Servir archivos estáticos después de las rutas de la API
     this.app.use(express.static(path.join(__dirname, "public")));
