@@ -146,7 +146,7 @@ class Server {
     this.app.use("/api/ubibot", ubibotRoutes);
     this.app.use("/api/blindspot", blindSpotRoutes);
     this.app.use("/gps-data", gpsDataRoutes);
-	this.app.use('/api/out', outRoutes); //para ser utilizado desde fuera
+	  this.app.use('/api/out', outRoutes); //para ser utilizado desde fuera
 
     // Servir archivos estáticos después de las rutas de la API
     this.app.use(express.static(path.join(__dirname, "public")));

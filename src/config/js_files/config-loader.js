@@ -10,7 +10,7 @@ class ConfigLoader extends BaseConfigLoader {
     this.measurementConfig = {};
     this.configPaths = {
       api: "../jsons/api-credentials.json",
-      database: "../jsons/database.json",
+      database: "../jsons/ddbb_produccion.json",
       measurement: "../jsons/precios_energia.json",
     };
     this.jwtConfig = JwtConfigLoader;
