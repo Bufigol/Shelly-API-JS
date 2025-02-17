@@ -259,15 +259,4 @@ class ShellyCollector {
   }
 }
 
-let shellyCollector;
-
-(async () => {
-  try {
-    shellyCollector = new ShellyCollector();
-    module.exports = shellyCollector;
-    console.log("✅ ShellyCollector inicializado correctamente");
-  } catch (error) {
-    console.error("❌ Error al inicializar ShellyCollector:", error);
-    process.exit(1);
-  }
-})();
+module.exports = ShellyCollector;

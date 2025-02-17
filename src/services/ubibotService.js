@@ -165,7 +165,7 @@ class UbibotService {
       const [channelInfo] = await connection.query(
         "SELECT c.name, c.esOperativa, p.minimo AS minima_temp_camara, p.maximo AS maxima_temp_camara " +
           "FROM channels_ubibot c " +
-          "JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id " +
+          "JOIN parametrizaciones p ON c.idParametizacion = p.param_id " +
           "WHERE c.channel_id = ?",
         [channelId]
       );
