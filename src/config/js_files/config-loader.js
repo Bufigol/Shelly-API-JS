@@ -12,20 +12,31 @@ class ConfigLoader extends BaseConfigLoader {
       api: "../jsons/api-credentials.json",
       database: "../jsons/ddbb_produccion.json",
       measurement: "../jsons/precios_energia.json",
+      databaseUbibot: "../jsons/database_ubibot_onPremise.json"
     };
     this.jwtConfig = JwtConfigLoader;
 
-    this.loadConfiguration(); 
+    this.loadConfiguration();
   }
 
+
   /**
-   * Carga todas las configuraciones del sistema
-   * @returns {Object} Configuración completa del sistema
-   * @throws {Error} Si hay errores en la carga de configuración
+   * Carga la configuración de la aplicación desde archivos JSON
+   *
+   * Primero, se verifica si la caché actual es válida. Si es así, se devuelve
+   * inmediatamente la configuración en caché.
+   *
+   * Luego, se cargan las configuraciones de la API de Shelly Cloud, las bases
+   * de datos y la configuración de mediciones. Se parsean las URLs JDBC de las
+   * bases de datos y se construye el objeto de configuración.
+   *
+   * Finalmente, se valida la configuración y se actualiza la caché.
+   *
+   * @returns {Object} - Configuración cargada
+   * @throws {Error} - Si hay errores al cargar o parsear los archivos de configuración
    */
   loadConfiguration() {
     try {
-      // Verificar si podemos usar la caché
       if (this.isCacheValid()) {
         return this.cachedConfig;
       }
@@ -33,19 +44,19 @@ class ConfigLoader extends BaseConfigLoader {
       // Cargar configuración de API
       const apiConfig = this.loadJsonFile(this.configPaths.api);
 
-      // Cargar configuración de base de datos
-      const dbConfig = this.loadJsonFile(this.configPaths.database);
+      // Cargar configuraciones de bases de datos
+      const mainDbConfig = this.loadJsonFile(this.configPaths.database);
+      const ubibotDbConfig = this.loadJsonFile(this.configPaths.databaseUbibot);
 
       // Cargar configuración de mediciones
       const measurementConfig = this.loadJsonFile(this.configPaths.measurement);
 
-      // Parsear la URL JDBC
-      const dbDetails = this.parseJdbcUrl(dbConfig.url);
+      // Parsear las URLs JDBC
+      const mainDbDetails = this.parseJdbcUrl(mainDbConfig.url);
+      const ubibotDbDetails = this.parseJdbcUrl(ubibotDbConfig.url);
 
       // Cargar configuración de Ubibot
-      const ubibotConfig = this.loadJsonFile(
-        "../jsons/ubibot_account_info.json"
-      );
+      const ubibotConfig = this.loadJsonFile("../jsons/ubibot_account_info.json");
 
       // Construir objeto de configuración
       this.config = {
@@ -61,13 +72,33 @@ class ConfigLoader extends BaseConfigLoader {
           excludedChannels: ubibotConfig.EXCLUDED_CHANNELS,
           collectionInterval: 600000,
         },
+        // Nueva estructura para bases de datos
+        databases: {
+          main: {
+            host: mainDbDetails.host,
+            port: mainDbDetails.port,
+            database: mainDbDetails.database,
+            username: mainDbConfig.username,
+            password: mainDbConfig.password,
+            pool: mainDbConfig.pool,
+          },
+          ubibot: {
+            host: ubibotDbDetails.host,
+            port: ubibotDbDetails.port,
+            database: ubibotDbDetails.database,
+            username: ubibotDbConfig.username,
+            password: ubibotDbConfig.password,
+            pool: ubibotDbConfig.pool,
+          },
+        },
+        // Mantener compatibilidad con código existente
         database: {
-          host: dbDetails.host,
-          port: dbDetails.port,
-          database: dbDetails.database,
-          username: dbConfig.username,
-          password: dbConfig.password,
-          pool: dbConfig.pool,
+          host: mainDbDetails.host,
+          port: mainDbDetails.port,
+          database: mainDbDetails.database,
+          username: mainDbConfig.username,
+          password: mainDbConfig.password,
+          pool: mainDbConfig.pool,
         },
         measurement: {
           precio_kwh: measurementConfig.precios_energia.precio_kwh.valor,
@@ -75,12 +106,9 @@ class ConfigLoader extends BaseConfigLoader {
             medicion: 10,
             max_desviacion: 2,
             actualizacion: {
-              hora: measurementConfig.precios_energia.configuracion_calculo
-                .intervalo_actualizacion_promedios.hora,
-              dia: measurementConfig.precios_energia.configuracion_calculo
-                .intervalo_actualizacion_promedios.dia,
-              mes: measurementConfig.precios_energia.configuracion_calculo
-                .intervalo_actualizacion_promedios.mes,
+              hora: measurementConfig.precios_energia.configuracion_calculo.intervalo_actualizacion_promedios.hora,
+              dia: measurementConfig.precios_energia.configuracion_calculo.intervalo_actualizacion_promedios.dia,
+              mes: measurementConfig.precios_energia.configuracion_calculo.intervalo_actualizacion_promedios.mes,
             },
           },
           calidad: {
@@ -88,10 +116,8 @@ class ConfigLoader extends BaseConfigLoader {
             max_intentos: 3,
             tiempo_espera: 5000,
           },
-          zona_horaria:
-            measurementConfig.precios_energia.metadatos.zona_horaria,
-          proveedor:
-            measurementConfig.precios_energia.metadatos.proveedor_energia,
+          zona_horaria: measurementConfig.precios_energia.metadatos.zona_horaria,
+          proveedor: measurementConfig.precios_energia.metadatos.proveedor_energia,
           tipo_tarifa: measurementConfig.precios_energia.metadatos.tipo_tarifa,
         },
         jwt: this.jwtConfig.getJwtConfig(),
@@ -131,20 +157,35 @@ class ConfigLoader extends BaseConfigLoader {
     };
   }
 
-  /**
-   * Valida la configuración completa del sistema
-   * @throws {Error} Si hay campos requeridos faltantes o valores inválidos
-   */
+
+/**
+ * Validates the application's configuration to ensure all required fields are present.
+ *
+ * This method performs a comprehensive validation of several critical parts
+ * of the application configuration, including database settings, API details,
+ * measurement configurations, Ubibot settings, and JWT secret configuration.
+ * 
+ * It checks each of these sections for the presence of necessary fields and 
+ * throws an error if any required field is missing. Specifically, it validates:
+ * 
+ * - Databases: Ensures that each database configuration includes host, port,
+ *   database name, and username.
+ * - API: Confirms that the API configuration has a URL, device ID, and auth key.
+ * - Measurements: Verifies that the configuration includes the price per kWh and
+ *   measurement intervals.
+ * - Ubibot: Checks for the presence of account key and token file in the Ubibot
+ *   configuration.
+ * - JWT: Ensures that the JWT configuration contains a secret.
+ *
+ * @throws {Error} If any required configuration fields are missing.
+ */
+
   validateConfig() {
-    // Validación de configuración de base de datos
-    const { database } = this.config;
-    if (
-      !database.host ||
-      !database.port ||
-      !database.database ||
-      !database.username
-    ) {
-      throw new Error("Missing required database configuration fields");
+    // Validación de bases de datos
+    for (const [dbName, dbConfig] of Object.entries(this.config.databases)) {
+      if (!dbConfig.host || !dbConfig.port || !dbConfig.database || !dbConfig.username) {
+        throw new Error(`Missing required database configuration fields for ${dbName}`);
+      }
     }
 
     // Validación de configuración de API
