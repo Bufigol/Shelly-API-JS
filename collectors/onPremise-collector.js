@@ -1,183 +1,214 @@
 // collectors/onPremise-collector.js
-const onPremiseController = require("../src/controllers/onPremiseController");
-class onPremiseCollector {
+const mysql = require("mysql2/promise");
+const axios = require("axios");
+const config = require("../config/js_files/config-loader");
+
+class OnPremiseCollector {
   /**
-   * Initializes a new instance of the onPremiseCollector class.
-   *
-   * The constructor initializes the onPremiseCollector with the following properties:
-   *
-   * - `collectionInterval`: The interval in milliseconds between two consecutive collections. If not specified, defaults to 10 seconds.
-   * - `isRunning`: A boolean indicating whether the collector is currently running. Initially set to false.
-   * - `intervalId`: The ID of the interval used to run the collector. Initially set to null.
-   * - `retryCount`: The number of times the collector has retried to collect data. Initially set to 0.
-   * - `maxRetries`: The maximum number of times the collector will retry to collect data. Defaults to 3.
-   * - `retryDelay`: The delay in milliseconds between two consecutive retries. Defaults to 5 seconds.
-   * - `metrics`: An object to hold metrics about the collector's performance. The object has the following properties:
-   *   - `successfulCollections`: The number of successful collections.
-   *   - `failedCollections`: The number of failed collections.
-   *   - `totalRetries`: The total number of retries.
-   *   - `lastError`: The last error that occurred during data collection.
-   *   - `lastSuccessTime`: The timestamp of the last successful collection.
+   * Initializes the OnPremise collector with configuration for both
+   * real-time database synchronization and API data collection.
    */
   constructor() {
-    this.collectionInterval = 10000; // Default 10 seconds;
+    // Collection intervals
+    this.apiCollectionInterval = 10000; // 10 seconds for API
+    this.dbSyncBatchSize = 1000; // Process 1000 records per batch
+
+    // Status flags
     this.isRunning = false;
-    this.intervalId = null;
+    this.apiIntervalId = null;
+    this.dbSyncIntervalId = null;
+
+    // Retry configuration
     this.retryCount = 0;
     this.maxRetries = 3;
     this.retryDelay = 5000;
+
+    // Metric tracking
     this.metrics = {
-      successfulCollections: 0,
-      failedCollections: 0,
-      totalRetries: 0,
-      lastError: null,
-      lastSuccessTime: null,
+      apiCollection: {
+        successfulCollections: 0,
+        failedCollections: 0,
+        totalRetries: 0,
+        lastError: null,
+        lastSuccessTime: null,
+      },
+      dbSync: {
+        recordsProcessed: 0,
+        batchesProcessed: 0,
+        lastSyncTime: null,
+        lastError: null,
+        lastProcessedId: 0,
+      },
     };
+
+    // Database pools
+    this.mainDbPool = null;
+    this.optOppDbPool = null;
   }
 
   /**
-   * Starts the Ubibot onPremise data collector.
-   *
-   * If the collector is already running, this method does nothing.
-   *
-   * Otherwise, it sets the collector's `isRunning` property to true and starts the collection process.
-   * The collection process will be repeated at regular intervals using an interval ID stored in the `intervalId` property.
-   * The interval is set to the value of the `collectionInterval` property.
-   *
-   * @async
-   * @returns {void}
+   * Initializes database connections and starts the collector processes.
+   */
+  async initialize() {
+    try {
+      // Initialize database connections
+      const dbConfig = config.getConfig().database;
+
+      this.mainDbPool = mysql.createPool({
+        host: dbConfig.host,
+        user: dbConfig.username,
+        password: dbConfig.password,
+        database: dbConfig.database,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+      });
+
+      // Initialize opt_opp database connection
+      // Note: Replace with actual opt_opp database configuration
+      this.optOppDbPool = mysql.createPool({
+        host: process.env.OPT_OPP_HOST || "localhost",
+        user: process.env.OPT_OPP_USER || "user",
+        password: process.env.OPT_OPP_PASSWORD || "password",
+        database: "opt_opp",
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+      });
+
+      await this.testConnections();
+      console.log("✅ Database connections initialized successfully");
+
+      return true;
+    } catch (error) {
+      console.error("Error initializing collector:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Tests both database connections.
+   */
+  async testConnections() {
+    try {
+      await this.mainDbPool.query("SELECT 1");
+      await this.optOppDbPool.query("SELECT 1");
+      return true;
+    } catch (error) {
+      console.error("Database connection test failed:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Starts both the API collection and database synchronization processes.
    */
   async start() {
     if (this.isRunning) {
-      console.log("Ubibot onPremise collector already running.");
+      console.log("OnPremise collector is already running");
       return;
     }
 
-    console.log("🚀 Starting Ubibot onPremise data collector...");
-    this.isRunning = true;
-    await this.collect();
-    this.intervalId = setInterval(
-      () => this.collect(),
-      this.collectionInterval
-    );
-  }
+    try {
+      await this.initialize();
 
-  /**
-   * Stops the Ubibot onPremise data collector.
-   *
-   * If the collector is not running, this method does nothing.
-   *
-   * Otherwise, it sets the collector's `isRunning` property to false, clears the interval ID stored in the `intervalId` property, and prints the collection statistics.
-   *
-   * @returns {void}
-   */
-  stop() {
-    if (!this.isRunning) return;
+      console.log("🚀 Starting OnPremise collector...");
+      this.isRunning = true;
 
-    console.log("🛑 Stopping Ubibot onPremise data collector...");
-    clearInterval(this.intervalId);
-    this.isRunning = false;
-    this.intervalId = null;
-    this.printCollectionStats();
-  }
+      // Start API collection
+      await this.collectApiData();
+      this.apiIntervalId = setInterval(
+        () => this.collectApiData(),
+        this.apiCollectionInterval
+      );
 
-  /**
-   * Prints the collection statistics to the console.
-   *
-   * The statistics include the number of successful collections, the number of failed collections, the total number of retries,
-   * the success rate, the last successful collection timestamp, and the last error message, if any.
-   *
-   * @returns {void}
-   */
-  printCollectionStats() {
-    console.log("\n📊 Ubibot onPremise Collection Statistics:");
-    console.log(
-      `Successful collections: ${this.metrics.successfulCollections}`
-    );
-    console.log(`Failed collections: ${this.metrics.failedCollections}`);
-    console.log(`Total retries: ${this.metrics.totalRetries}`);
-    console.log(
-      `Success rate: ${(
-        (this.metrics.successfulCollections /
-          (this.metrics.successfulCollections +
-            this.metrics.failedCollections)) *
-        100
-      ).toFixed(2)}%`
-    );
-    console.log(
-      `Last successful collection: ${
-        this.metrics.lastSuccessTime
-          ? new Date(this.metrics.lastSuccessTime).toISOString()
-          : "Never"
-      }`
-    );
-    if (this.metrics.lastError) {
-      console.log(`Last error: ${this.metrics.lastError}`);
+      // Start database synchronization
+      this.startDatabaseSync();
+
+      console.log("✅ OnPremise collector started successfully");
+    } catch (error) {
+      console.error("Error starting collector:", error);
+      this.stop();
+      throw error;
     }
   }
+
   /**
-   * Returns the collector statistics as an object.
-   *
-   * The returned object contains the following properties:
-   *
-   * - `isRunning`: A boolean indicating whether the collector is currently running.
-   * - `successfulCollections`: The number of successful collections.
-   * - `failedCollections`: The number of failed collections.
-   * - `totalRetries`: The total number of retries.
-   * - `lastError`: The last error that occurred during data collection.
-   * - `lastSuccessTime`: The timestamp of the last successful collection.
-   * - `collectionInterval`: The interval in milliseconds between two consecutive collections.
-   *
-   * @returns {Object} The collector statistics.
+   * Stops all collection processes and closes database connections.
+   */
+  async stop() {
+    if (!this.isRunning) return;
+
+    console.log("🛑 Stopping OnPremise collector...");
+
+    // Clear intervals
+    if (this.apiIntervalId) {
+      clearInterval(this.apiIntervalId);
+      this.apiIntervalId = null;
+    }
+
+    if (this.dbSyncIntervalId) {
+      clearInterval(this.dbSyncIntervalId);
+      this.dbSyncIntervalId = null;
+    }
+
+    // Close database connections
+    if (this.mainDbPool) {
+      await this.mainDbPool.end();
+      this.mainDbPool = null;
+    }
+
+    if (this.optOppDbPool) {
+      await this.optOppDbPool.end();
+      this.optOppDbPool = null;
+    }
+
+    this.isRunning = false;
+    this.printCollectorStats();
+  }
+
+  /**
+   * Prints collector statistics to the console.
+   */
+  printCollectorStats() {
+    console.log("\n📊 OnPremise Collector Statistics:");
+
+    // API Collection Stats
+    console.log("\nAPI Collection:");
+    console.log(
+      `Successful collections: ${this.metrics.apiCollection.successfulCollections}`
+    );
+    console.log(
+      `Failed collections: ${this.metrics.apiCollection.failedCollections}`
+    );
+    console.log(`Total retries: ${this.metrics.apiCollection.totalRetries}`);
+
+    // Database Sync Stats
+    console.log("\nDatabase Synchronization:");
+    console.log(`Records processed: ${this.metrics.dbSync.recordsProcessed}`);
+    console.log(`Batches processed: ${this.metrics.dbSync.batchesProcessed}`);
+    console.log(`Last sync time: ${this.metrics.dbSync.lastSyncTime}`);
+
+    // Error Information
+    if (this.metrics.apiCollection.lastError) {
+      console.log(`\nLast API error: ${this.metrics.apiCollection.lastError}`);
+    }
+    if (this.metrics.dbSync.lastError) {
+      console.log(`Last DB sync error: ${this.metrics.dbSync.lastError}`);
+    }
+  }
+
+  /**
+   * Returns the current collector statistics.
    */
   getCollectorStats() {
     return {
       isRunning: this.isRunning,
-      ...this.metrics,
-      collectionInterval: this.collectionInterval,
+      metrics: this.metrics,
+      apiCollectionInterval: this.apiCollectionInterval,
+      dbSyncBatchSize: this.dbSyncBatchSize,
     };
-  }
-  async collect() {
-    try {
-      console.log("\n📥 Starting Ubibot data collection cycle...");
-      const channels = await ubibotController.getChannels();
-
-      if (!channels || channels.length === 0) {
-        console.log(`No se encontraron canales habilitados para procesar`);
-        this.updateMetrics(
-          false,
-          Date.now(),
-          `No se encontraron canales habilitados para procesar`
-        );
-        return;
-      }
-      for (const channel of channels) {
-        try {
-          const channelData = await ubibotController.getChannelData(
-            channel.channel_id
-          );
-          if (channelData) {
-            await ubibotService.processChannelData(channelData);
-            await ubibotService.processSensorReadings(
-              channelData.channel_id,
-              JSON.parse(channelData.last_values)
-            );
-          }
-        } catch (error) {
-          console.error(
-            `Error processing channel ${channel.channel_id}:`,
-            error.message
-          );
-          this.handleCollectionError(error);
-        }
-      }
-
-      this.updateMetrics(true, Date.now());
-      console.log("✅ Ubibot collection cycle completed successfully\n");
-    } catch (error) {
-      this.handleCollectionError(error);
-    }
   }
 }
 
-module.exports = onPremiseCollector;
+module.exports = OnPremiseCollector;
