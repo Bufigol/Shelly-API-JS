@@ -57,7 +57,7 @@ module.exports = {
     compress: true,
     port: 3000,
     host: "0.0.0.0",
-    allowedHosts: ["localhost", "thenext.ddns.net", "tnstrack.ddns.net"],
+    allowedHosts: ["localhost"],
     historyApiFallback: {
       index: "index.html",
       rewrites: [

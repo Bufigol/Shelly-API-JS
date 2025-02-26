@@ -88,13 +88,13 @@ const routines = [
     route: "/consulta-historica-movimientos",
     permission: "search_exterior",
   },
- 
+ */
   {
     title: "Análisis de Deshielo",
     image: frostIcon,
     route: "/analisis-deshielo",
     permission: "view_defrost_analysis",
-  } */,
+  } ,
   {
     title: "Dashboard Electrico",
     image: dashboard_electricImage,
