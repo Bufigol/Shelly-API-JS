@@ -65,7 +65,7 @@ class UbibotService {
         const hasChanges = Object.keys(basicInfo).some((key) =>
           basicInfo[key] instanceof Date
             ? basicInfo[key].getTime() !==
-              new Date(currentChannel[key]).getTime()
+            new Date(currentChannel[key]).getTime()
             : basicInfo[key] !== currentChannel[key]
         );
 
@@ -91,17 +91,17 @@ class UbibotService {
   }
 
   /**
-   * Processes the sensor readings from a Ubibot channel and inserts them into the database.
-   * Converts the timestamp from UTC to the Santiago timezone and logs the timestamp information.
-   * If sensor readings are not present or the timestamp is missing, logs an error and returns.
-   * After data insertion, checks parameters and sends notifications if necessary.
-   *
-   * @param {number} channelId - The ID of the Ubibot channel.
-   * @param {Object} lastValues - The latest sensor readings, including fields for temperature, humidity, light, etc.
-   * @returns {Promise<void>}
-   */
-
-  async processSensorReadings(channelId, lastValues) {
+ * Processes the sensor readings from a Ubibot channel and inserts them into the database.
+ * Converts the timestamp from UTC to the Santiago timezone and logs the timestamp information.
+ * If sensor readings are not present or the timestamp is missing, logs an error and returns.
+ * After data insertion, checks parameters and sends notifications if necessary.
+ *
+ * @param {number} channelId - The ID of the Ubibot channel.
+ * @param {Object} lastValues - The latest sensor readings, including fields for temperature, humidity, light, etc.
+ * @param {Object} channelData - The complete channel data, including the net status.
+ * @returns {Promise<void>}
+ */
+  async processSensorReadings(channelId, lastValues, channelData) {
     const connection = await pool.getConnection();
     try {
       if (!lastValues || !lastValues.field1 || !lastValues.field1.created_at) {
@@ -117,8 +117,11 @@ class UbibotService {
       console.log("UTC Timestamp:", utcTimestamp.format());
       console.log("Santiago Time:", santiagoTime.format());
 
+      // Obtener el estado online del canal
+      const channelNetStatus = channelData.net || "1";
+
       await connection.query(
-        "INSERT INTO sensor_readings_ubibot (channel_id, timestamp, temperature, humidity, light, voltage, wifi_rssi, external_temperature,external_temperature_timestamp, insercion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sensor_readings_ubibot (channel_id, timestamp, temperature, humidity, light, voltage, wifi_rssi, external_temperature, external_temperature_timestamp, insercion, channel_online_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           channelId,
           utcTimestamp.toDate(),
@@ -132,6 +135,7 @@ class UbibotService {
             ? convertToMySQLDateTime(lastValues.field8.created_at)
             : null,
           santiagoTime.format("YYYY-MM-DD HH:mm:ss"),
+          channelNetStatus
         ]
       );
 
@@ -139,6 +143,7 @@ class UbibotService {
         channel_id: channelId,
         timestamp: utcTimestamp.toDate(),
         insercion: santiagoTime.format("YYYY-MM-DD HH:mm:ss"),
+        channel_online_status: channelNetStatus
       });
 
       // Verificar parámetros después de la inserción
@@ -164,9 +169,9 @@ class UbibotService {
       // Obtener la información del canal, incluyendo si está operativo y su grupo
       const [channelInfo] = await connection.query(
         "SELECT c.name, c.esOperativa, p.minimo AS minima_temp_camara, p.maximo AS maxima_temp_camara " +
-          "FROM channels_ubibot c " +
-          "JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id " +
-          "WHERE c.channel_id = ?",
+        "FROM channels_ubibot c " +
+        "JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id " +
+        "WHERE c.channel_id = ?",
         [channelId]
       );
 
@@ -454,12 +459,11 @@ class UbibotService {
                             <Content>${message}</Content>
                             <Length>${message.length}</Length>
                             <Reserved>1</Reserved>
-                            <Date>${
-                              new Date()
-                                .toISOString()
-                                .replace("T", " ")
-                                .split(".")[0]
-                            }</Date>
+                            <Date>${new Date()
+                .toISOString()
+                .replace("T", " ")
+                .split(".")[0]
+              }</Date>
                         </request>`;
 
             const response = await axios({

@@ -130,9 +130,11 @@ class UbibotCollector {
           );
           if (channelData) {
             await ubibotService.processChannelData(channelData);
+            // Pasamos channelData completo a processSensorReadings
             await ubibotService.processSensorReadings(
               channelData.channel_id,
-              JSON.parse(channelData.last_values)
+              JSON.parse(channelData.last_values),
+              channelData
             );
           }
         } catch (error) {
@@ -150,7 +152,6 @@ class UbibotCollector {
       this.handleCollectionError(error);
     }
   }
-
   /**
    * Updates metrics for the UbibotCollector.
    *
@@ -195,8 +196,7 @@ class UbibotCollector {
 
     if (this.retryCount <= this.maxRetries) {
       console.log(
-        `🔄 Retry ${this.retryCount}/${this.maxRetries} in ${
-          this.retryDelay / 1000
+        `🔄 Retry ${this.retryCount}/${this.maxRetries} in ${this.retryDelay / 1000
         }s...`
       );
       await new Promise((resolve) => setTimeout(resolve, this.retryDelay));
@@ -233,17 +233,16 @@ class UbibotCollector {
       ).toFixed(2)}%`
     );
     console.log(
-      `Last successful collection: ${
-        this.metrics.lastSuccessTime
-          ? new Date(this.metrics.lastSuccessTime).toISOString()
-          : "Never"
+      `Last successful collection: ${this.metrics.lastSuccessTime
+        ? new Date(this.metrics.lastSuccessTime).toISOString()
+        : "Never"
       }`
     );
     if (this.metrics.lastError) {
       console.log(`Last error: ${this.metrics.lastError}`);
     }
   }
-  
+
   /**
    * Returns the collector statistics as an object.
    *
