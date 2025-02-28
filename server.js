@@ -3,6 +3,7 @@ const cors = require("cors");
 const path = require("path");
 const ShellyCollector = require("./collectors/shelly-collector");
 const UbibotCollector = require("./collectors/ubibot-collector");
+const OnPremiseCollector = require("./collectors/onPremise-collector");
 const databaseService = require("./src/services/database-service");
 const energyAveragesService = require("./src/services/energy-averages-service");
 const totalEnergyService = require("./src/services/total-energy-service");
@@ -22,6 +23,7 @@ class Server {
     this.port = process.env.PORT || 1337;
     this.shellyCollector = new ShellyCollector();
     this.ubibotCollector = new UbibotCollector();
+    this.onPremiseCollector = new OnPremiseCollector();
     this.services = {
       database: databaseService,
       energyAverages: energyAveragesService,
@@ -129,6 +131,7 @@ class Server {
     const ubibotRoutes = require("./src/routes/ubibotRoutes");
     const gpsDataRoutes = require("./src/routes/gpsDataRoutes");
     const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
+    const outRoutes = require("./src/routes/outRoutes");
 
     // Primero configurar todas las rutas de la API
     this.app.use("/api/devices", deviceRoutes);
@@ -145,6 +148,7 @@ class Server {
     this.app.use("/api/ubibot", ubibotRoutes);
     this.app.use("/api/blindspot", blindSpotRoutes);
     this.app.use("/gps-data", gpsDataRoutes);
+    this.app.use("/api/out", outRoutes); //para ser utilizado desde fuera
 
     // Servir archivos estáticos después de las rutas de la API
     this.app.use(express.static(path.join(__dirname, "public")));
@@ -227,6 +231,10 @@ class Server {
           running: this.ubibotCollector.isRunning,
           stats: this.ubibotCollector.getCollectorStats(),
         },
+        onPremise: {
+          running: this.onPremiseCollector.isRunning,
+          stats: this.onPremiseCollector.getCollectorStats(),
+        },
       },
       database: {
         connected: this.services.database.connected,
@@ -278,11 +286,14 @@ class Server {
       await this.services.totalEnergy.initialize();
       console.log("✅ Total energy service initialized");
 
-      //await this.shellyCollector.start();
+      /*await this.shellyCollector.start();
       console.log("✅ Shelly Data collector started");
 
-      //await this.ubibotCollector.start();
+      await this.ubibotCollector.start();
       console.log("✅ Ubibot data collector started");
+
+      await this.onPremiseCollector.start();
+      console.log("✅ OnPremise collector started");*/
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
@@ -332,6 +343,9 @@ class Server {
 
     this.ubibotCollector.stop();
     console.log("✅ Ubibot data collector stopped");
+
+    this.onPremiseCollector.stop();
+    console.log("✅ OnPremise collector stopped");
 
     await this.services.database.close();
     console.log("✅ Database connections closed");

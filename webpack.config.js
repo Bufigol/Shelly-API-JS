@@ -3,7 +3,7 @@ const HtmlWebpackPlugin = require("html-webpack-plugin");
 const webpack = require("webpack");
 
 module.exports = {
-  mode: "development", // O 'production' al desplegar
+  mode: "development",
   entry: path.resolve(__dirname, "src", "index.js"),
   plugins: [
     new HtmlWebpackPlugin({
@@ -56,16 +56,15 @@ module.exports = {
     },
     compress: true,
     port: 3000,
-    host: "0.0.0.0",
-    allowedHosts: ["localhost", "thenext.ddns.net", "tnstrack.ddns.net"],
+    host: "localhost", // Cambiado a localhost
     historyApiFallback: {
       index: "index.html",
       rewrites: [
         { from: /^\/bundle.js$/, to: "/bundle.js" },
-         { from: /^\/reset-password\/([a-z0-9]+)$/, to: '/index.html' },
+        { from: /^\/reset-password\/([a-z0-9]+)$/, to: '/index.html' },
         { from: /./, to: "/index.html" },
       ],
-  },
+    },
     proxy: [
       {
         context: ["/api"],
