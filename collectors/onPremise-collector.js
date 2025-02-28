@@ -1,108 +1,55 @@
 // collectors/onPremise-collector.js
 const mysql = require("mysql2/promise");
 const axios = require("axios");
-const config = require("../config/js_files/config-loader");
+const moment = require("moment-timezone");
+const config = require("../src/config/js_files/config-loader");
 
 class OnPremiseCollector {
-  /**
-   * Initializes the OnPremise collector with configuration for both
-   * real-time database synchronization and API data collection.
-   */
   constructor() {
-    // Collection intervals
-    this.apiCollectionInterval = 10000; // 10 seconds for API
-    this.dbSyncBatchSize = 1000; // Process 1000 records per batch
-
-    // Status flags
+    this.dbPool = null;
+    this.initialized = false;
     this.isRunning = false;
-    this.apiIntervalId = null;
-    this.dbSyncIntervalId = null;
+    this.collectionInterval = 10000; // 10 segundos
+    this.collectorInterval = null;
 
-    // Retry configuration
-    this.retryCount = 0;
+    // Configuración de reintentos
     this.maxRetries = 3;
-    this.retryDelay = 5000;
-
-    // Metric tracking
-    this.metrics = {
-      apiCollection: {
-        successfulCollections: 0,
-        failedCollections: 0,
-        totalRetries: 0,
-        lastError: null,
-        lastSuccessTime: null,
-      },
-      dbSync: {
-        recordsProcessed: 0,
-        batchesProcessed: 0,
-        lastSyncTime: null,
-        lastError: null,
-        lastProcessedId: 0,
-      },
-    };
-
-    // Database pools
-    this.mainDbPool = null;
-    this.optOppDbPool = null;
+    this.retryTimeWindow = 10000; // 10 segundos para todos los reintentos
   }
 
-  /**
-   * Initializes database connections and starts the collector processes.
-   */
   async initialize() {
+    if (this.initialized) return;
+
     try {
-      // Initialize database connections
-      const dbConfig = config.getConfig().database;
-
-      this.mainDbPool = mysql.createPool({
-        host: dbConfig.host,
-        user: dbConfig.username,
-        password: dbConfig.password,
-        database: dbConfig.database,
+      const { databases } = config.getConfig();
+      this.dbPool = mysql.createPool({
+        host: databases.main.host,
+        port: databases.main.port,
+        user: databases.main.username,
+        password: databases.main.password,
+        database: databases.main.database,
         waitForConnections: true,
-        connectionLimit: 10,
+        connectionLimit: databases.main.pool.max_size,
         queueLimit: 0,
       });
 
-      // Initialize opt_opp database connection
-      // Note: Replace with actual opt_opp database configuration
-      this.optOppDbPool = mysql.createPool({
-        host: process.env.OPT_OPP_HOST || "localhost",
-        user: process.env.OPT_OPP_USER || "user",
-        password: process.env.OPT_OPP_PASSWORD || "password",
-        database: "opt_opp",
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-      });
-
-      await this.testConnections();
-      console.log("✅ Database connections initialized successfully");
-
-      return true;
+      await this.testConnection();
+      this.initialized = true;
+      console.log("✅ OnPremise collector initialized successfully");
     } catch (error) {
       console.error("Error initializing collector:", error);
       throw error;
     }
   }
 
-  /**
-   * Tests both database connections.
-   */
-  async testConnections() {
+  async testConnection() {
     try {
-      await this.mainDbPool.query("SELECT 1");
-      await this.optOppDbPool.query("SELECT 1");
-      return true;
+      await this.dbPool.query("SELECT 1");
     } catch (error) {
-      console.error("Database connection test failed:", error);
-      throw error;
+      throw new Error("Database connection test failed: " + error.message);
     }
   }
 
-  /**
-   * Starts both the API collection and database synchronization processes.
-   */
   async start() {
     if (this.isRunning) {
       console.log("OnPremise collector is already running");
@@ -111,21 +58,13 @@ class OnPremiseCollector {
 
     try {
       await this.initialize();
-
       console.log("🚀 Starting OnPremise collector...");
       this.isRunning = true;
-
-      // Start API collection
-      await this.collectApiData();
-      this.apiIntervalId = setInterval(
-        () => this.collectApiData(),
-        this.apiCollectionInterval
+      await this.collect();
+      this.collectorInterval = setInterval(
+        () => this.collect(),
+        this.collectionInterval
       );
-
-      // Start database synchronization
-      this.startDatabaseSync();
-
-      console.log("✅ OnPremise collector started successfully");
     } catch (error) {
       console.error("Error starting collector:", error);
       this.stop();
@@ -133,81 +72,250 @@ class OnPremiseCollector {
     }
   }
 
-  /**
-   * Stops all collection processes and closes database connections.
-   */
   async stop() {
     if (!this.isRunning) return;
 
     console.log("🛑 Stopping OnPremise collector...");
-
-    // Clear intervals
-    if (this.apiIntervalId) {
-      clearInterval(this.apiIntervalId);
-      this.apiIntervalId = null;
+    if (this.collectorInterval) {
+      clearInterval(this.collectorInterval);
+      this.collectorInterval = null;
     }
 
-    if (this.dbSyncIntervalId) {
-      clearInterval(this.dbSyncIntervalId);
-      this.dbSyncIntervalId = null;
-    }
-
-    // Close database connections
-    if (this.mainDbPool) {
-      await this.mainDbPool.end();
-      this.mainDbPool = null;
-    }
-
-    if (this.optOppDbPool) {
-      await this.optOppDbPool.end();
-      this.optOppDbPool = null;
+    if (this.dbPool) {
+      await this.dbPool.end();
+      this.dbPool = null;
     }
 
     this.isRunning = false;
-    this.printCollectorStats();
+    this.initialized = false;
   }
 
-  /**
-   * Prints collector statistics to the console.
-   */
-  printCollectorStats() {
-    console.log("\n📊 OnPremise Collector Statistics:");
+  async collect() {
+    try {
+      const channels = await this.getActiveChannels();
 
-    // API Collection Stats
-    console.log("\nAPI Collection:");
-    console.log(
-      `Successful collections: ${this.metrics.apiCollection.successfulCollections}`
-    );
-    console.log(
-      `Failed collections: ${this.metrics.apiCollection.failedCollections}`
-    );
-    console.log(`Total retries: ${this.metrics.apiCollection.totalRetries}`);
+      if (!channels || channels.length === 0) {
+        console.log("No active channels found");
+        return;
+      }
 
-    // Database Sync Stats
-    console.log("\nDatabase Synchronization:");
-    console.log(`Records processed: ${this.metrics.dbSync.recordsProcessed}`);
-    console.log(`Batches processed: ${this.metrics.dbSync.batchesProcessed}`);
-    console.log(`Last sync time: ${this.metrics.dbSync.lastSyncTime}`);
+      console.log(`Processing ${channels.length} active channels`);
 
-    // Error Information
-    if (this.metrics.apiCollection.lastError) {
-      console.log(`\nLast API error: ${this.metrics.apiCollection.lastError}`);
-    }
-    if (this.metrics.dbSync.lastError) {
-      console.log(`Last DB sync error: ${this.metrics.dbSync.lastError}`);
+      for (const channel of channels) {
+        try {
+          await this.processChannel(channel);
+        } catch (error) {
+          console.error(
+            `Error processing channel ${channel.chanel_id}:`,
+            error.message
+          );
+          await this.logError(channel.chanel_id, error.message);
+        }
+      }
+    } catch (error) {
+      console.error("Error in collection cycle:", error);
     }
   }
 
-  /**
-   * Returns the current collector statistics.
-   */
-  getCollectorStats() {
-    return {
-      isRunning: this.isRunning,
-      metrics: this.metrics,
-      apiCollectionInterval: this.apiCollectionInterval,
-      dbSyncBatchSize: this.dbSyncBatchSize,
-    };
+  async getActiveChannels() {
+    try {
+      const [channels] = await this.dbPool.query(
+        "SELECT chanel_id, apikey FROM api_equipo"
+      );
+      return channels;
+    } catch (error) {
+      console.error("Error fetching active channels:", error);
+      throw error;
+    }
+  }
+
+  async processChannel(channel) {
+    const startTime = Date.now();
+    let attempts = 0;
+
+    while (
+      attempts < this.maxRetries &&
+      Date.now() - startTime < this.retryTimeWindow
+    ) {
+      try {
+        const channelData = await this.fetchChannelData(
+          channel.chanel_id,
+          channel.apikey
+        );
+
+        if (await this.shouldProcessData(channel.chanel_id, channelData)) {
+          await this.insertChannelData(channel.chanel_id, channelData);
+          console.log(`Successfully processed channel ${channel.chanel_id}`);
+          return;
+        } else {
+          console.log(`Skipping channel ${channel.chanel_id} - No new data`);
+          return;
+        }
+      } catch (error) {
+        attempts++;
+        console.error(
+          `Attempt ${attempts} failed for channel ${channel.chanel_id}:`,
+          error.message
+        );
+
+        const remainingTime = this.retryTimeWindow - (Date.now() - startTime);
+        if (attempts < this.maxRetries && remainingTime > 1000) {
+          const waitTime = Math.min(
+            remainingTime / (this.maxRetries - attempts),
+            3000
+          );
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+  }
+
+  async shouldProcessData(channelId, channelData) {
+    try {
+      const [lastRecord] = await this.dbPool.query(
+        "SELECT created_at FROM api_channel_feeds WHERE channel_id = ? ORDER BY created_at DESC LIMIT 1",
+        [channelId]
+      );
+
+      if (lastRecord.length === 0) return true;
+
+      const newTimestamp = this.getTimestamp(channelData);
+      const lastTimestamp = moment(lastRecord[0].created_at).tz(
+        "America/Santiago"
+      );
+      const currentTimestamp = moment(newTimestamp).tz("America/Santiago");
+
+      if (currentTimestamp.isSame(lastTimestamp)) {
+        const lastEntryDate = moment(channelData.channel.last_entry_date).tz(
+          "America/Santiago"
+        );
+        return lastEntryDate.isAfter(lastTimestamp);
+      }
+
+      return currentTimestamp.isAfter(lastTimestamp);
+    } catch (error) {
+      console.error(
+        `Error checking timestamps for channel ${channelId}:`,
+        error
+      );
+      return false;
+    }
+  }
+
+  getTimestamp(channelData) {
+    try {
+      const lastValues = JSON.parse(channelData.channel.last_values || "{}");
+      if (lastValues.field7 && lastValues.field7.created_at) {
+        return lastValues.field7.created_at;
+      }
+      return channelData.channel.last_entry_date;
+    } catch (error) {
+      console.error("Error parsing timestamp:", error);
+      return channelData.channel.last_entry_date;
+    }
+  }
+
+  async fetchChannelData(channelId, apiKey) {
+    try {
+      const response = await axios.get(
+        `http://tns.thenextsecurity.cl:8443/channels/${channelId}`,
+        {
+          params: { api_key: apiKey },
+          timeout: 5000,
+        }
+      );
+
+      if (!response.data || response.data.result !== "success") {
+        throw new Error("Invalid API response structure");
+      }
+
+      return response.data;
+    } catch (error) {
+      throw new Error(`API error: ${error.message}`);
+    }
+  }
+
+  async insertChannelData(channelId, channelData) {
+    const connection = await this.dbPool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const channel = channelData.channel;
+      const lastValues = JSON.parse(channel.last_values || "{}");
+      const timestamp = moment(this.getTimestamp(channelData))
+        .tz("America/Santiago")
+        .format("YYYY-MM-DD HH:mm:ss");
+
+      // Verificar si ya existe un registro idéntico
+      const [existingRecords] = await connection.query(
+        `SELECT idchannel_feeds FROM api_channel_feeds 
+             WHERE channel_id = ? 
+             AND created_at = ?
+             AND field7 = ?
+             AND field4 = ?
+             AND field5 = ?
+             AND \`usage\` = ?
+             LIMIT 1`,
+        [
+          channelId,
+          timestamp,
+          lastValues.field7 ? lastValues.field7.value : null,
+          lastValues.field4 ? lastValues.field4.value : null,
+          lastValues.field5 ? lastValues.field5.value : null,
+          channel.usage,
+        ]
+      );
+
+      if (existingRecords.length > 0) {
+        await connection.rollback();
+        console.log(
+          `Duplicate record found for channel ${channelId} at ${timestamp}`
+        );
+        return false;
+      }
+
+      const feedData = {
+        channel_id: channelId,
+        created_at: timestamp,
+        latitude: channel.latitude,
+        longitude: channel.longitude,
+        elevation: channel.elevation,
+        status: channel.status,
+        usage: channel.usage,
+        log: lastValues.log ? lastValues.log.value : null,
+      };
+
+      // Agregar campos field1 a field20
+      for (let i = 1; i <= 20; i++) {
+        const fieldName = `field${i}`;
+        feedData[fieldName] = lastValues[fieldName]
+          ? lastValues[fieldName].value
+          : null;
+      }
+
+      await connection.query("INSERT INTO api_channel_feeds SET ?", [feedData]);
+
+      await connection.commit();
+      console.log(
+        `Successfully inserted new record for channel ${channelId} at ${timestamp}`
+      );
+      return true;
+    } catch (error) {
+      await connection.rollback();
+      throw new Error(`Error inserting data: ${error.message}`);
+    } finally {
+      connection.release();
+    }
+  }
+
+  async logError(channelId, message, data = {}) {
+    try {
+      await this.dbPool.query("INSERT INTO process_log (message) VALUES (?)", [
+        `Channel ${channelId}: ${message} - ${JSON.stringify(data)}`,
+      ]);
+    } catch (error) {
+      console.error("Error logging to process_log:", error);
+    }
   }
 }
 
