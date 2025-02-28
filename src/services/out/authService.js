@@ -1,13 +1,14 @@
 // src/services/out/authService.js
-const databaseService = require("./database-service");
-const apiAuthMiddleware = require("../middlewares/apiAuthMiddleware");
+const databaseService = require("../database-service");
+const apiAuthMiddleware = require("../../middlewares/apiAuthMiddleware");
+const configLoader = require("../../config/js_files/config-loader");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const sgMail = require("@sendgrid/mail");
 
 // Cargar configuración de SendGrid si existe
 try {
-  const sgConfig = require("../config/jsons/sgMailConfig.json");
+  const sgConfig = require("../../config/jsons/sgMailConfig.json");
   sgMail.setApiKey(sgConfig.SENDGRID_API_KEY);
 } catch (error) {
   console.error("Error cargando configuración de SendGrid:", error);
@@ -30,11 +31,11 @@ class AuthService {
       "SELECT * FROM api_usuario WHERE email = ?",
       [email]
     );
-    
+
     if (users.length === 0) {
       return { success: false };
     }
-    
+
     const user = users[0];
 
     // 2. Verificar la contraseña
@@ -59,18 +60,18 @@ class AuthService {
     const payload = {
       id_Usuario: user.id_Usuario,
       email: user.email,
-      permissions: permissions
+      permissions: permissions,
     };
 
     // 5. Generar el token JWT
     const token = apiAuthMiddleware.generateToken(payload);
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       token,
       userId: user.id_Usuario,
       email: user.email,
-      permissions
+      permissions,
     };
   }
 
@@ -139,9 +140,12 @@ class AuthService {
     const userId = users[0].id_Usuario;
 
     // 2. Generar token único
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
-    
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
     // 3. Almacenar token en la base de datos (crear tabla si no existe)
     await databaseService.pool.query(`
       CREATE TABLE IF NOT EXISTS api_password_reset (
@@ -169,21 +173,29 @@ class AuthService {
 
     // 6. Enviar email con el link de reseteo
     const resetUrl = `${baseUrl}/reset-password/${resetToken}`;
-    
+
     try {
       // Obtener configuración de email
-      let fromEmail = 'noreply@yourapp.com'; // Valor por defecto
+      let fromEmail = "noreply@yourapp.com"; // Valor por defecto
       try {
-        const sgConfig = require("../config/jsons/sgMailConfig.json");
-        fromEmail = sgConfig.email_contacto.from_verificado;
-      } catch (e) {
-        console.error("No se pudo cargar la configuración de email", e);
+        const sgConfig = configLoader.getValue("email") || {};
+        const apiKey = sgConfig.SENDGRID_API_KEY;
+        if (apiKey) {
+          sgMail.setApiKey(apiKey);
+          console.log("Configuración de SendGrid cargada correctamente");
+        } else {
+          console.warn(
+            "No se encontró API Key de SendGrid en la configuración"
+          );
+        }
+      } catch (error) {
+        console.error("Error cargando configuración de SendGrid:", error);
       }
-      
+
       await sgMail.send({
         to: email,
         from: fromEmail,
-        subject: 'Reseteo de contraseña',
+        subject: "Reseteo de contraseña",
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2>Reseteo de contraseña</h2>
@@ -192,7 +204,7 @@ class AuthService {
             <p>Este enlace es válido por 1 hora.</p>
             <p>Si no solicitaste resetear tu contraseña, ignora este correo.</p>
           </div>
-        `
+        `,
       });
     } catch (error) {
       console.error("Error al enviar email:", error);
@@ -208,7 +220,7 @@ class AuthService {
    */
   async confirmarResetPassword(token, password) {
     // 1. Calcular hash del token
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
     // 2. Buscar el token en la base de datos
     const [tokens] = await databaseService.pool.query(
@@ -218,9 +230,9 @@ class AuthService {
     );
 
     if (tokens.length === 0) {
-      return { 
-        success: false, 
-        message: "Token inválido o expirado" 
+      return {
+        success: false,
+        message: "Token inválido o expirado",
       };
     }
 
@@ -241,8 +253,8 @@ class AuthService {
       [userId]
     );
 
-    return { 
-      success: true
+    return {
+      success: true,
     };
   }
 }

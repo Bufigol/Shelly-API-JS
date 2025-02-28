@@ -35,7 +35,7 @@ router.post(
 // ====================================================================
 // Middleware de Autenticación (aplicado a todas las rutas siguientes)
 // ====================================================================
-router.use(apiAuthMiddleware.authenticate);
+router.use(apiAuthMiddleware.authenticate.bind(apiAuthMiddleware));
 
 // ====================================================================
 // Módulo de listado de equipos en tiempo real por cliente

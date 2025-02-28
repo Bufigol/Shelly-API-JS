@@ -19,13 +19,40 @@ class JwtConfigLoader extends BaseConfigLoader {
 
     try {
       const config = this.loadJsonFile(this.configPath);
-      this.validateConfig(config);
-      this.cachedConfig = config;
+
+      // Normalizar la configuración para manejar diferentes estructuras
+      const normalizedConfig = this.normalizeConfig(config);
+
+      this.validateConfig(normalizedConfig);
+      this.cachedConfig = normalizedConfig;
       this.lastLoadTime = Date.now();
-      return config;
+
+      console.log("JWT Config Loaded:", normalizedConfig);
+
+      return normalizedConfig;
     } catch (error) {
+      console.error("JWT Config Loading Error:", error);
       throw new Error(`Error loading JWT configuration: ${error.message}`);
     }
+  }
+
+  /**
+   * Normaliza la configuración para manejar diferentes estructuras
+   * @param {Object} config Configuración cargada
+   * @returns {Object} Configuración normalizada
+   */
+  normalizeConfig(config) {
+    // Si ya tiene la estructura correcta, devolverlo tal cual
+    if (config.jwt) return config;
+
+    // Si es un objeto plano, envolver en un objeto JWT
+    return {
+      jwt: {
+        secret: config.secret,
+        issuer: config.issuer,
+        expiresIn: config.expiresIn || "1h",
+      },
+    };
   }
 
   /**
@@ -34,9 +61,11 @@ class JwtConfigLoader extends BaseConfigLoader {
    * @throws {Error} Si falta algún campo requerido o hay valores inválidos
    */
   validateConfig(config) {
+    const jwtConfig = config.jwt || config;
+
     // Validación de campos obligatorios
-    const requiredFields = ["secret", "issuer", "expiresIn"];
-    const missingFields = requiredFields.filter((field) => !config[field]);
+    const requiredFields = ["secret", "issuer"];
+    const missingFields = requiredFields.filter((field) => !jwtConfig[field]);
 
     if (missingFields.length > 0) {
       throw new Error(
@@ -45,43 +74,20 @@ class JwtConfigLoader extends BaseConfigLoader {
     }
 
     // Validación de tipos y valores
-    if (typeof config.secret !== "string" || config.secret.length < 32) {
+    if (typeof jwtConfig.secret !== "string" || jwtConfig.secret.length < 32) {
       throw new Error("JWT secret must be a string of at least 32 characters");
     }
 
-    if (typeof config.issuer !== "string" || !config.issuer.trim()) {
+    if (typeof jwtConfig.issuer !== "string" || !jwtConfig.issuer.trim()) {
       throw new Error("JWT issuer must be a non-empty string");
     }
 
-    // Validación del formato de expiresIn
-    if (!this.isValidExpiresIn(config.expiresIn)) {
+    // Validación del formato de expiresIn (opcional)
+    if (jwtConfig.expiresIn && !this.isValidExpiresIn(jwtConfig.expiresIn)) {
       throw new Error(
         'Invalid expiresIn format. Must be a string like "1h", "2d", "7d", etc.'
       );
     }
-
-    // Validación de campos opcionales si están presentes
-    if (
-      config.algorithm &&
-      !["HS256", "HS384", "HS512", "RS256"].includes(config.algorithm)
-    ) {
-      throw new Error("Invalid JWT algorithm");
-    }
-
-    if (config.audience && typeof config.audience !== "string") {
-      throw new Error("JWT audience must be a string");
-    }
-  }
-
-  /**
-   * Valida el formato del campo expiresIn
-   * @param {string} expiresIn Valor a validar
-   * @returns {boolean} true si el formato es válido
-   */
-  isValidExpiresIn(expiresIn) {
-    // Acepta formatos como "60", "2 days", "10h", "7d"
-    const validFormat = /^(\d+)(s|m|h|d|w|y)?$/;
-    return typeof expiresIn === "string" && validFormat.test(expiresIn);
   }
 
   /**
@@ -89,7 +95,7 @@ class JwtConfigLoader extends BaseConfigLoader {
    * @returns {Object} Configuración JWT
    */
   getJwtConfig() {
-    return this.loadConfiguration();
+    return this.loadConfiguration().jwt;
   }
 
   /**
@@ -107,17 +113,20 @@ class JwtConfigLoader extends BaseConfigLoader {
    * @param {string} key Clave a verificar
    * @returns {boolean} true si existe la configuración
    */
-  hasJwtConfig(key) {
+  hasConfig(key) {
     const config = this.getJwtConfig();
     return config.hasOwnProperty(key);
   }
 
   /**
-   * Recarga la configuración JWT
-   * @returns {Object} Nueva configuración JWT
+   * Valida el formato del campo expiresIn
+   * @param {string} expiresIn Valor a validar
+   * @returns {boolean} true si el formato es válido
    */
-  reloadJwtConfig() {
-    return this.reloadConfig();
+  isValidExpiresIn(expiresIn) {
+    // Acepta formatos como "60", "2 days", "10h", "7d"
+    const validFormat = /^(\d+)(s|m|h|d|w|y)?$/;
+    return typeof expiresIn === "string" && validFormat.test(expiresIn);
   }
 }
 
