@@ -1,166 +1,240 @@
 DELIMITER //
 
--- Procedimiento para generar el resumen de una faena
-CREATE PROCEDURE generar_resumen_faena(IN p_faena_id INT)
-BEGIN
-    DECLARE v_porcentaje_verde DOUBLE;
-    DECLARE v_valor_verde VARCHAR(45);
-    DECLARE v_done INT DEFAULT FALSE;
-    DECLARE v_punto_id INT;
-    DECLARE v_lat DOUBLE;
-    DECLARE v_lon DOUBLE;
-    DECLARE v_temp DOUBLE;
-    DECLARE v_calidad VARCHAR(45);
-    DECLARE v_timestamp TIMESTAMP;
-    DECLARE v_max_dist DOUBLE DEFAULT 0;
-    DECLARE v_p1_lat DOUBLE;
-    DECLARE v_p1_lon DOUBLE;
-    DECLARE v_p2_lat DOUBLE;
-    DECLARE v_p2_lon DOUBLE;
-    DECLARE v_segment_min_dist DOUBLE;
-    DECLARE v_segment_max_dist DOUBLE;
-    DECLARE v_segment_p1_lat DOUBLE;
-    DECLARE v_segment_p1_lon DOUBLE;
-    DECLARE v_segment_p2_lat DOUBLE;
-    DECLARE v_segment_p2_lon DOUBLE;
-    
-    -- Cursor para obtener todos los puntos de la faena
-    DECLARE punto_cursor CURSOR FOR 
-        SELECT idDatos_por_faena, latitud, longitud, temperatura, calidad_temperatura, timestamp_dato
-        FROM api_datos_por_faena
-        WHERE id_faena = p_faena_id
-        ORDER BY timestamp_dato;
-    
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = TRUE;
-    
-    -- Obtener configuración - porcentaje verde
-    SELECT CAST(valor AS DOUBLE) INTO v_porcentaje_verde
-    FROM api_configuracion
-    WHERE id_api_configuracion = 17;  -- porcentaje verde en faena
-    
-    -- Obtener nombre semáforo verde
-    SELECT valor INTO v_valor_verde
-    FROM api_configuracion
-    WHERE id_api_configuracion = 7;   -- nombre semaforo verde
+DROP PROCEDURE IF EXISTS generar_resumen_faena_mejorado //
 
-    -- Crear tablas temporales para el procesamiento
-    DROP TEMPORARY TABLE IF EXISTS temp_puntos;
-    CREATE TEMPORARY TABLE temp_puntos (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        original_id INT,
-        lat DOUBLE,
-        lon DOUBLE,
-        temp DOUBLE,
-        calidad VARCHAR(45),
-        timestamp_punto TIMESTAMP,
-        distance_from_start DOUBLE DEFAULT 0,
-        segment INT DEFAULT 0
-    );
+CREATE PROCEDURE generar_resumen_faena_mejorado(IN p_id_faena INT)
+main_proc: BEGIN
+    DECLARE v_total_distancia DOUBLE DEFAULT 0;
+    DECLARE v_longitud_tramo DOUBLE DEFAULT 0;
+    DECLARE v_distancia_acumulada DOUBLE DEFAULT 0;
+    DECLARE v_temperatura_max DOUBLE;
+    DECLARE v_temperatura_min DOUBLE;
+    DECLARE v_temperatura_promedio DOUBLE;
+    DECLARE v_latitud_inicio DOUBLE;
+    DECLARE v_longitud_inicio DOUBLE;
+    DECLARE v_latitud_final DOUBLE;
+    DECLARE v_longitud_final DOUBLE;
+    DECLARE v_punto_anterior_lat DOUBLE;
+    DECLARE v_punto_anterior_lon DOUBLE;
+    DECLARE v_punto_actual_lat DOUBLE;
+    DECLARE v_punto_actual_lon DOUBLE;
+    DECLARE v_distancia_entre_puntos DOUBLE;
+    DECLARE v_numero_pasadas INT DEFAULT 0;
+    DECLARE v_cumple_rango TINYINT DEFAULT 1;
+    DECLARE v_punto_inicio_tramo INT DEFAULT 1;
+    DECLARE v_temperatura_umbral_min DOUBLE;
+    DECLARE v_temperatura_umbral_max DOUBLE;
+    DECLARE i INT DEFAULT 1;
     
-    -- Llenamos la tabla con los puntos de la faena
-    OPEN punto_cursor;
-    read_loop: LOOP
-        FETCH punto_cursor INTO v_punto_id, v_lat, v_lon, v_temp, v_calidad, v_timestamp;
-        IF v_done THEN
-            LEAVE read_loop;
-        END IF;
-        
-        INSERT INTO temp_puntos(original_id, lat, lon, temp, calidad, timestamp_punto)
-        VALUES (v_punto_id, v_lat, v_lon, v_temp, v_calidad, v_timestamp);
-    END LOOP;
-    CLOSE punto_cursor;
+    -- Obtener los umbrales de temperatura para verificar cumplimiento
+    SELECT CAST(valor AS DOUBLE) INTO v_temperatura_umbral_min
+    FROM api_configuracion
+    WHERE id_api_configuracion = 13;  -- Asumo que existe este ID para umbral mínimo
     
-    -- 1. Encontrar los dos puntos más distantes (extremos reales de la faena)
-    DROP TEMPORARY TABLE IF EXISTS temp_distancias;
-    CREATE TEMPORARY TABLE temp_distancias AS
-    SELECT p1.id AS id1, p1.lat AS lat1, p1.lon AS lon1, 
-           p2.id AS id2, p2.lat AS lat2, p2.lon AS lon2, 
-           calcular_distancia_en_metros(p1.lat, p1.lon, p2.lat, p2.lon) as dist
-    FROM temp_puntos p1
-    CROSS JOIN temp_puntos p2
-    WHERE p1.id < p2.id
-    ORDER BY dist DESC
+    -- Podemos obtener temperatura máxima de otro parámetro si existe
+    SELECT CAST(valor AS DOUBLE) INTO v_temperatura_umbral_max
+    FROM api_configuracion
+    WHERE id_api_configuracion = 16;  -- Asumo que existe este ID para umbral máximo
+    
+    -- Prevenir procesamiento recursivo si ya está en progreso
+    IF @GENERATING_SUMMARY IS TRUE THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Procesamiento recursivo detectado y evitado';
+        LEAVE main_proc;
+    END IF;
+    
+    -- Verificar si la faena existe y está cerrada
+    IF NOT EXISTS (
+        SELECT 1 FROM api_faena 
+        WHERE id_Faena = p_id_faena 
+        AND fecha_fin IS NOT NULL
+    ) THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Faena no encontrada o no finalizada';
+        LEAVE main_proc;
+    END IF;
+    
+    -- Calcular la distancia total de la faena
+    -- Primero obtenemos los datos ordenados por tiempo
+    DROP TEMPORARY TABLE IF EXISTS temp_puntos_ordenados;
+    CREATE TEMPORARY TABLE temp_puntos_ordenados AS
+    SELECT 
+        idDatos_por_faena, 
+        timestamp_dato, 
+        temperatura, 
+        latitud, 
+        longitud,
+        calidad_temperatura
+    FROM api_datos_por_faena
+    WHERE id_faena = p_id_faena
+    ORDER BY timestamp_dato;
+    
+    -- Calcular distancia total y obtener puntos iniciales/finales
+    SELECT 
+        latitud INTO v_latitud_inicio
+    FROM temp_puntos_ordenados
+    ORDER BY timestamp_dato
     LIMIT 1;
     
-    -- Obtener los puntos extremos
-    SELECT lat1, lon1, lat2, lon2, dist 
-    INTO v_p1_lat, v_p1_lon, v_p2_lat, v_p2_lon, v_max_dist
-    FROM temp_distancias;
+    SELECT 
+        longitud INTO v_longitud_inicio
+    FROM temp_puntos_ordenados
+    ORDER BY timestamp_dato
+    LIMIT 1;
     
-    -- 2. Calcular la distancia de cada punto desde el punto extremo p1
-    UPDATE temp_puntos 
-    SET distance_from_start = calcular_distancia_en_metros(v_p1_lat, v_p1_lon, lat, lon);
+    SELECT 
+        latitud INTO v_latitud_final
+    FROM temp_puntos_ordenados
+    ORDER BY timestamp_dato DESC
+    LIMIT 1;
     
-    -- 3. Dividir la distancia total en 5 segmentos y asignar cada punto a un segmento
-    UPDATE temp_puntos
-    SET segment = FLOOR(5 * distance_from_start / v_max_dist) + 1;
+    SELECT 
+        longitud INTO v_longitud_final
+    FROM temp_puntos_ordenados
+    ORDER BY timestamp_dato DESC
+    LIMIT 1;
     
-    -- Corregir los puntos que caen exactamente en el límite entre segmentos
-    UPDATE temp_puntos SET segment = 5 WHERE segment > 5;
+    -- Calcular distancia total iterando por los puntos
+    SELECT COUNT(*) INTO v_numero_pasadas FROM temp_puntos_ordenados;
     
-    -- 4. Procesar estadísticas para cada segmento
-    DELETE FROM api_resumen_Datos_por_faena WHERE id_faena = p_faena_id;
+    -- Si hay menos de 2 puntos, no podemos calcular distancia
+    IF v_numero_pasadas < 2 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'No hay suficientes puntos para calcular distancia';
+        LEAVE main_proc;
+    END IF;
     
-    -- Para cada segmento (1 a 5)
-    SET @i = 1;
-    segmentos_loop: WHILE @i <= 5 DO
-        -- Encontrar los límites del segmento
-        SET v_segment_min_dist = (@i-1) * v_max_dist / 5;
-        SET v_segment_max_dist = @i * v_max_dist / 5;
+    -- Calcular la distancia total y verificar cumplimiento de rangos
+    SET v_punto_anterior_lat = NULL;
+    SET v_punto_anterior_lon = NULL;
+    SET v_total_distancia = 0;
+    
+    BEGIN
+        DECLARE done INT DEFAULT FALSE;
+        DECLARE cur CURSOR FOR 
+            SELECT latitud, longitud, temperatura 
+            FROM temp_puntos_ordenados
+            ORDER BY timestamp_dato;
+        DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
         
-        -- Encontrar los puntos más cercanos a los límites del segmento
-        SELECT lat, lon INTO v_segment_p1_lat, v_segment_p1_lon
-        FROM temp_puntos
-        ORDER BY ABS(distance_from_start - v_segment_min_dist)
-        LIMIT 1;
+        OPEN cur;
         
-        SELECT lat, lon INTO v_segment_p2_lat, v_segment_p2_lon
-        FROM temp_puntos
-        ORDER BY ABS(distance_from_start - v_segment_max_dist)
-        LIMIT 1;
+        read_loop: LOOP
+            FETCH cur INTO v_punto_actual_lat, v_punto_actual_lon, v_temperatura_max;
+            
+            IF done THEN
+                LEAVE read_loop;
+            END IF;
+            
+            -- Verificar si temperatura está fuera de rango
+            IF v_temperatura_max < v_temperatura_umbral_min OR 
+               v_temperatura_max > v_temperatura_umbral_max THEN
+                SET v_cumple_rango = 0;
+            END IF;
+            
+            -- Calcular distancia incremental si tenemos un punto anterior
+            IF v_punto_anterior_lat IS NOT NULL AND v_punto_anterior_lon IS NOT NULL THEN
+                SET v_distancia_entre_puntos = calcular_distancia_en_metros(
+                    v_punto_anterior_lat, 
+                    v_punto_anterior_lon, 
+                    v_punto_actual_lat, 
+                    v_punto_actual_lon
+                );
+                SET v_total_distancia = v_total_distancia + v_distancia_entre_puntos;
+            END IF;
+            
+            -- Establecer punto actual como anterior para la próxima iteración
+            SET v_punto_anterior_lat = v_punto_actual_lat;
+            SET v_punto_anterior_lon = v_punto_actual_lon;
+        END LOOP;
         
-        -- Obtener estadísticas del segmento
-        DROP TEMPORARY TABLE IF EXISTS temp_stats;
-        CREATE TEMPORARY TABLE temp_stats AS
-        SELECT 
-            MAX(temp) AS max_temp,
-            MIN(temp) AS min_temp,
-            AVG(temp) AS avg_temp,
-            COUNT(*) AS punto_count,
-            SUM(CASE WHEN calidad = v_valor_verde THEN 1 ELSE 0 END) AS verde_count
-        FROM temp_puntos
-        WHERE segment = @i;
+        CLOSE cur;
+    END;
+    
+    -- Calcular el tamaño de cada tramo (20% de la distancia total)
+    SET v_longitud_tramo = v_total_distancia / 5;
+    
+    -- Procesar cada uno de los 5 tramos
+    SET i = 1;
+    WHILE i <= 5 DO
+        -- Calcular estadísticas para el tramo i
+        SET v_distancia_acumulada = 0;
+        SET v_punto_anterior_lat = NULL;
+        SET v_punto_anterior_lon = NULL;
+        SET v_temperatura_max = -999;
+        SET v_temperatura_min = 999;
+        SET v_temperatura_promedio = 0;
+        SET v_numero_pasadas = 0;
         
-        -- Obtener valores de las estadísticas
-        SELECT max_temp, min_temp, avg_temp, punto_count, verde_count 
-        INTO @max_temp, @min_temp, @avg_temp, @punto_count, @verde_count
-        FROM temp_stats;
+        -- Recorrer los puntos nuevamente para este tramo
+        BEGIN
+            DECLARE done INT DEFAULT FALSE;
+            DECLARE temp_suma DOUBLE DEFAULT 0;
+            DECLARE temp_count INT DEFAULT 0;
+            DECLARE cur CURSOR FOR 
+                SELECT latitud, longitud, temperatura 
+                FROM temp_puntos_ordenados
+                ORDER BY timestamp_dato;
+            DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+            
+            OPEN cur;
+            
+            tramo_loop: LOOP
+                FETCH cur INTO v_punto_actual_lat, v_punto_actual_lon, v_temperatura_promedio;
+                
+                IF done THEN
+                    LEAVE tramo_loop;
+                END IF;
+                
+                -- Calcular distancia incremental si tenemos un punto anterior
+                IF v_punto_anterior_lat IS NOT NULL AND v_punto_anterior_lon IS NOT NULL THEN
+                    SET v_distancia_entre_puntos = calcular_distancia_en_metros(
+                        v_punto_anterior_lat, 
+                        v_punto_anterior_lon, 
+                        v_punto_actual_lat, 
+                        v_punto_actual_lon
+                    );
+                    SET v_distancia_acumulada = v_distancia_acumulada + v_distancia_entre_puntos;
+                END IF;
+                
+                -- Establecer punto actual como anterior para la próxima iteración
+                SET v_punto_anterior_lat = v_punto_actual_lat;
+                SET v_punto_anterior_lon = v_punto_actual_lon;
+                
+                -- Verificar si estamos dentro del tramo actual
+                IF v_distancia_acumulada <= (i * v_longitud_tramo) AND 
+                   v_distancia_acumulada > ((i-1) * v_longitud_tramo) THEN
+                    -- Actualizar estadísticas para este tramo
+                    SET temp_suma = temp_suma + v_temperatura_promedio;
+                    SET temp_count = temp_count + 1;
+                    IF v_temperatura_promedio > v_temperatura_max THEN
+                        SET v_temperatura_max = v_temperatura_promedio;
+                    END IF;
+                    IF v_temperatura_promedio < v_temperatura_min THEN
+                        SET v_temperatura_min = v_temperatura_promedio;
+                    END IF;
+                END IF;
+                
+                -- Si pasamos del tramo actual, salimos del loop
+                IF v_distancia_acumulada > (i * v_longitud_tramo) THEN
+                    LEAVE tramo_loop;
+                END IF;
+            END LOOP;
+            
+            CLOSE cur;
+            
+            -- Calcular promedio si tenemos datos
+            IF temp_count > 0 THEN
+                SET v_temperatura_promedio = temp_suma / temp_count;
+                SET v_numero_pasadas = temp_count;
+            ELSE
+                SET v_temperatura_promedio = 0;
+                SET v_temperatura_max = 0;
+                SET v_temperatura_min = 0;
+            END IF;
+        END;
         
-        -- Calcular número de pasadas
-        DROP TEMPORARY TABLE IF EXISTS temp_pasadas;
-        CREATE TEMPORARY TABLE temp_pasadas AS
-        SELECT COUNT(*) AS num_pasadas
-        FROM (
-            SELECT 
-                DATE_FORMAT(timestamp_punto, '%Y-%m-%d %H:%i') AS time_group,
-                COUNT(*) AS segment_visits
-            FROM temp_puntos
-            WHERE segment = @i
-            GROUP BY time_group
-        ) AS segment_changes;
-        
-        SELECT num_pasadas INTO @pasadas FROM temp_pasadas;
-        
-        -- Si no hay pasadas pero hay puntos, al menos hay una pasada
-        IF @pasadas = 0 AND @punto_count > 0 THEN
-            SET @pasadas = 1;
-        END IF;
-        
-        -- Verificar si cumple con el porcentaje de verde requerido
-        SET @verde_pct = IF(@punto_count > 0, (@verde_count / @punto_count * 100), 0);
-        SET @cumple_rango = IF(@verde_pct >= v_porcentaje_verde, 1, 0);
-        
-        -- Insertar el registro de resumen para este segmento
+        -- Insertar o actualizar el resumen para este tramo
         INSERT INTO api_resumen_Datos_por_faena (
             id_faena,
             cuarto,
@@ -174,27 +248,34 @@ BEGIN
             numero_pasadas,
             cumple_rango_temperatura
         ) VALUES (
-            p_faena_id,
-            @i,
-            @max_temp,
-            @min_temp,
-            @avg_temp,
-            v_segment_p1_lat,
-            v_segment_p1_lon,
-            v_segment_p2_lat,
-            v_segment_p2_lon,
-            @pasadas,
-            @cumple_rango
-        );
+            p_id_faena,
+            i,
+            v_temperatura_max,
+            v_temperatura_min,
+            v_temperatura_promedio,
+            v_latitud_inicio,
+            v_longitud_inicio,
+            v_latitud_final,
+            v_longitud_final,
+            v_numero_pasadas,
+            v_cumple_rango
+        )
+        ON DUPLICATE KEY UPDATE
+            temperatura_maxima = v_temperatura_max,
+            temperatura_minima = v_temperatura_min,
+            promedio_temperatura = v_temperatura_promedio,
+            latitud_inicio = v_latitud_inicio,
+            longitud_inicio = v_longitud_inicio,
+            latitud_final = v_latitud_final,
+            longitud_final = v_longitud_final,
+            numero_pasadas = v_numero_pasadas,
+            cumple_rango_temperatura = v_cumple_rango;
         
-        SET @i = @i + 1;
-    END WHILE segmentos_loop;
+        SET i = i + 1;
+    END WHILE;
     
-    -- Limpiar las tablas temporales
-    DROP TEMPORARY TABLE IF EXISTS temp_puntos;
-    DROP TEMPORARY TABLE IF EXISTS temp_distancias;
-    DROP TEMPORARY TABLE IF EXISTS temp_stats;
-    DROP TEMPORARY TABLE IF EXISTS temp_pasadas;
-END//
+    -- Limpiar
+    DROP TEMPORARY TABLE IF EXISTS temp_puntos_ordenados;
+END //
 
 DELIMITER ;
