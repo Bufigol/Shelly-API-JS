@@ -11,8 +11,7 @@ class ConfigLoader extends BaseConfigLoader {
     this.configPaths = {
       api: "../jsons/api-credentials.json",
       database: "../jsons/ddbb_produccion.json",
-      measurement: "../jsons/precios_energia.json",
-      databaseUbibot: "../jsons/database_ubibot_onPremise.json"
+      measurement: "../jsons/precios_energia.json"
     };
     this.jwtConfig = JwtConfigLoader;
 
@@ -46,14 +45,11 @@ class ConfigLoader extends BaseConfigLoader {
 
       // Cargar configuraciones de bases de datos
       const mainDbConfig = this.loadJsonFile(this.configPaths.database);
-      const ubibotDbConfig = this.loadJsonFile(this.configPaths.databaseUbibot);
-
       // Cargar configuración de mediciones
       const measurementConfig = this.loadJsonFile(this.configPaths.measurement);
 
       // Parsear las URLs JDBC
       const mainDbDetails = this.parseJdbcUrl(mainDbConfig.url);
-      const ubibotDbDetails = this.parseJdbcUrl(ubibotDbConfig.url);
 
       // Cargar configuración de Ubibot
       const ubibotConfig = this.loadJsonFile("../jsons/ubibot_account_info.json");
@@ -81,15 +77,7 @@ class ConfigLoader extends BaseConfigLoader {
             username: mainDbConfig.username,
             password: mainDbConfig.password,
             pool: mainDbConfig.pool,
-          },
-          ubibot: {
-            host: ubibotDbDetails.host,
-            port: ubibotDbDetails.port,
-            database: ubibotDbDetails.database,
-            username: ubibotDbConfig.username,
-            password: ubibotDbConfig.password,
-            pool: ubibotDbConfig.pool,
-          },
+          }
         },
         // Mantener compatibilidad con código existente
         database: {
