@@ -171,3 +171,18 @@ CREATE TABLE `api_usuarios_permisos` (
   CONSTRAINT `fk_Permisos-usuarios_permisos-id_Permisos` FOREIGN KEY (`id_permiso`) REFERENCES `api_permisos` (`id_Permisos`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_usuario-usuario_permisos_id-Usuario` FOREIGN KEY (`id_usuario`) REFERENCES `api_usuario` (`id_Usuario`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `teltonika`.`api_log_modificaciones_usuario` (
+  `idapi_log_modificaciones_usuario` INT NOT NULL,
+  `time_stamp_modificacion` TIMESTAMP NOT NULL DEFAULT NOW(),
+  `id_usuario_implicado` INT NOT NULL,
+  `accion` TEXT NOT NULL,
+  PRIMARY KEY (`idapi_log_modificaciones_usuario`),
+  INDEX `fk_usuario_idx` (`id_usuario_implicado` ASC) VISIBLE,
+  CONSTRAINT `fk_usuario`
+    FOREIGN KEY (`id_usuario_implicado`)
+    REFERENCES `teltonika`.`api_usuario` (`id_Usuario`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION);
+ALTER TABLE `teltonika`.`api_log_modificaciones_usuario` 
+MODIFY COLUMN `idapi_log_modificaciones_usuario` INT NOT NULL AUTO_INCREMENT;
