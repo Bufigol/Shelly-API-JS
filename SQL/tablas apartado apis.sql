@@ -186,3 +186,10 @@ CREATE TABLE `teltonika`.`api_log_modificaciones_usuario` (
     ON UPDATE NO ACTION);
 ALTER TABLE `teltonika`.`api_log_modificaciones_usuario` 
 MODIFY COLUMN `idapi_log_modificaciones_usuario` INT NOT NULL AUTO_INCREMENT;
+
+CREATE TABLE `api_errores` (
+  `idapi_errores` int NOT NULL AUTO_INCREMENT,
+  `mensaje_de_error` json NOT NULL,
+  `timestamp_error` timestamp NOT NULL,
+  PRIMARY KEY (`idapi_errores`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
