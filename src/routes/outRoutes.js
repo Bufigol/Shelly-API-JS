@@ -201,23 +201,6 @@ router.get(
 );
 
 /**
- * @route POST /api/out/faenas
- * @description Crea una nueva faena asociada a una maquinaria
- * @access Privado (solo editor)
- * @body {Number} id_maquina - ID de la maquinaria
- * @body {String} [nombre_faena] - Nombre de la faena (opcional)
- * @body {String} [fecha_inicio] - Fecha de inicio de la faena (ISO8601, opcional)
- * @body {Number} [id_cliente] - ID del cliente (opcional)
- * @returns {Object} Datos de la faena creada
- */
-router.post(
-  "/faenas",
-  apiAuthMiddleware.checkPermissions(["editor"]),
-  apiValidationMiddleware.validateFaenaCreate,
-  outController.crearFaena
-);
-
-/**
  * @route PUT /api/out/faenas/:id
  * @description Actualiza información de una faena (id_Faena_externo, fecha_fin, etc.)
  * @access Privado (solo editor)
