@@ -400,32 +400,7 @@ exports.obtenerFaenaDetalle = async (req, res) => {
   }
 };
 
-exports.crearFaena = async (req, res) => {
-  try {
-    const result = await faenaService.crearFaena(req.body);
 
-    res.status(201).json({
-      success: true,
-      message: "Faena creada exitosamente",
-      data: { id_Faena: result.id_Faena },
-    });
-  } catch (error) {
-    console.error("Error al crear faena:", error);
-
-    if (error instanceof ValidationError) {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
-  }
-};
 
 exports.actualizarFaena = async (req, res) => {
   try {

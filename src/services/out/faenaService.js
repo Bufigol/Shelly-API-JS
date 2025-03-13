@@ -122,52 +122,6 @@ class FaenaService {
     }
   }
 
-  /**
-   * Crea una nueva faena
-   * @param {Object} datosFaena - Datos para crear faena
-   * @returns {Promise<Object>} Faena creada
-   */
-  async crearFaena(datosFaena) {
-    try {
-      const {
-        id_maquina,
-        fecha_inicio = new Date(),
-        fecha_fin = null,
-        id_cliente = 1, // Cliente por defecto si no se especifica
-        id_Faena_externo = null,
-      } = datosFaena;
-
-      // Validar que no haya faena activa para esta máquina
-      const [faenasActivas] = await databaseService.pool.query(
-        "SELECT id_Faena FROM api_faena WHERE id_maquina = ? AND fecha_fin IS NULL",
-        [id_maquina]
-      );
-
-      if (faenasActivas.length > 0) {
-        throw new ValidationError(
-          "Ya existe una faena activa para esta máquina"
-        );
-      }
-
-      const [result] = await databaseService.pool.query(
-        "INSERT INTO api_faena (fecha_inico, fecha_fin, id_maquina, id_cliente, id_Faena_externo) VALUES (?, ?, ?, ?, ?)",
-        [fecha_inicio, fecha_fin, id_maquina, id_cliente, id_Faena_externo]
-      );
-
-      return {
-        success: true,
-        id_Faena: result.insertId,
-        ...datosFaena,
-      };
-    } catch (error) {
-      await loggingService.registrarError(
-        "FaenaService.crearFaena",
-        `Error al crear faena para máquina ${datosFaena.id_maquina}`,
-        error
-      );
-      throw error;
-    }
-  }
 
   /**
    * Actualiza una faena existente

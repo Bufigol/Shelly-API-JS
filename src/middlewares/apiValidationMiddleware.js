@@ -80,31 +80,7 @@ class ApiValidationMiddleware {
     this.checkValidationErrors,
   ];
 
-  /**
-   * Validación para creación de faena
-   */
-  validateFaenaCreate = [
-    body("id_maquina")
-      .isInt()
-      .withMessage("ID de máquina debe ser un número entero"),
-    body("nombre_faena")
-      .optional()
-      .isString()
-      .withMessage("Nombre de faena debe ser texto"),
-    body("fecha_inicio")
-      .optional()
-      .isISO8601()
-      .withMessage("Formato de fecha de inicio inválido"),
-    body("fecha_fin")
-      .optional()
-      .isISO8601()
-      .withMessage("Formato de fecha de fin inválido"),
-    body("id_Faena_externo")
-      .optional()
-      .isString()
-      .withMessage("ID de faena externo debe ser texto"),
-    this.checkValidationErrors,
-  ];
+
 
   /**
    * Validación para actualización de faena
