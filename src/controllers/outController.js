@@ -61,29 +61,32 @@ exports.crearUsuario = async (req, res) => {
 exports.solicitarResetPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-    await authService.solicitarResetPassword(email, baseUrl);
+    // Ya no necesitamos construir una URL base, solo pasamos el email
+    await authService.solicitarResetPassword(email);
 
-    // Siempre devolvemos el mismo mensaje para no revelar si el email existe
+    // Mensaje actualizado para enfoque basado en API
     res.json({
       success: true,
       message:
-        "Si el correo existe, se ha enviado un enlace para resetear la contraseña",
+        "Si el correo existe, se ha enviado un token para resetear la contraseña",
+      details:
+        "Verifique su bandeja de entrada y use el token recibido junto a la nueva contraseña en el endpoint de reseteo",
     });
   } catch (error) {
-    console.error(error);
+    console.error("Error al solicitar reseteo de contraseña:", error);
     res.status(500).json({
       success: false,
       message: "Error en el servidor",
+      error: error.message,
     });
   }
 };
 
 exports.confirmarResetPassword = async (req, res) => {
   try {
-    const { token } = req.params;
-    const { password } = req.body;
+    // El token ahora viene en el cuerpo de la solicitud, no como parámetro de URL
+    const { token, password } = req.body;
 
     const result = await authService.confirmarResetPassword(token, password);
 
@@ -91,15 +94,17 @@ exports.confirmarResetPassword = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: result.message,
+        code: "INVALID_TOKEN",
       });
     }
 
     res.json({
       success: true,
       message: "Contraseña actualizada exitosamente",
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error(error);
+    console.error("Error al confirmar reseteo de contraseña:", error);
     res.status(500).json({
       success: false,
       message: "Error en el servidor",

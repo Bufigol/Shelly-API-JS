@@ -48,19 +48,19 @@ class ApiValidationMiddleware {
   ];
 
   /**
-   * Validación para la confirmación de reseteo de contraseña
+   * Validación para el reseteo de contraseña mediante token (enfoque API)
    */
-  validateNewPassword = [
-    param("token").notEmpty().withMessage("Token es requerido"),
+  validateTokenAndPassword = [
+    body("token")
+      .notEmpty()
+      .withMessage("Token es requerido")
+      .isLength({ min: 32, max: 128 })
+      .withMessage("Formato de token inválido"),
+
     body("password")
       .isLength({ min: 6 })
       .withMessage("La contraseña debe tener al menos 6 caracteres"),
-    body("confirmPassword").custom((value, { req }) => {
-      if (value !== req.body.password) {
-        throw new Error("Las contraseñas no coinciden");
-      }
-      return true;
-    }),
+
     this.checkValidationErrors,
   ];
 
