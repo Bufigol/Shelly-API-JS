@@ -43,30 +43,29 @@ router.post(
 );
 
 /**
- * @route POST /api/out/reset-password
- * @description Solicita un reseteo de contraseña enviando un email con un token
+ * @route POST /api/out/request-password-reset
+ * @description Solicita un token de reseteo de contraseña que será enviado por email
  * @access Público
  * @body {String} email - Correo electrónico del usuario
- * @returns {Object} Confirmación de envío de email
+ * @returns {Object} Confirmación de procesamiento de la solicitud
  */
 router.post(
-  "/reset-password",
+  "/request-password-reset",
   apiValidationMiddleware.validateEmail,
   outController.solicitarResetPassword
 );
 
 /**
- * @route POST /api/out/reset-password/:token
- * @description Confirma un reseteo de contraseña utilizando el token recibido
+ * @route POST /api/out/reset-password
+ * @description Aplica el cambio de contraseña utilizando el token recibido vía email
  * @access Público
- * @param {String} token - Token de reseteo
+ * @body {String} token - Token de reseteo recibido por email
  * @body {String} password - Nueva contraseña
- * @body {String} confirmPassword - Confirmación de la nueva contraseña
  * @returns {Object} Confirmación de cambio de contraseña
  */
 router.post(
-  "/reset-password/:token",
-  apiValidationMiddleware.validateNewPassword,
+  "/reset-password",
+  apiValidationMiddleware.validateTokenAndPassword,
   outController.confirmarResetPassword
 );
 
@@ -87,6 +86,22 @@ router.use(apiAuthMiddleware.authenticate.bind(apiAuthMiddleware));
  * @returns {Object} Lista de maquinarias con su estado (activa/inactiva)
  */
 router.get("/maquinas", outController.obtenerMaquinas);
+
+/**
+ * @route GET /api/out/maquinas/historico
+ * @description Busca información histórica para una maquinaria con filtros opcionales
+ * @access Privado
+ * @query {String} identificador_externo - Identificador externo de la maquinaria (obligatorio)
+ * @query {String} [fecha_inicio] - Fecha de inicio del período (ISO8601, opcional)
+ * @query {String} [fecha_fin] - Fecha de fin del período (ISO8601, opcional)
+ * @query {Number} [id_faena] - ID de faena específica (opcional)
+ * @returns {Object} Datos históricos de la maquinaria con información para gráficos
+ */
+router.get(
+  "/maquinas/historico",
+  apiValidationMiddleware.validateHistoricoConsolidado,
+  outController.obtenerHistoricoConsolidado
+);
 
 /**
  * @route GET /api/out/maquinas/:id
@@ -130,22 +145,6 @@ router.put(
   outController.actualizarMaquina
 );
 
-/**
- * @route GET /api/out/maquinas/historico
- * @description Busca información histórica para una maquinaria con filtros opcionales
- * @access Privado
- * @query {String} identificador_externo - Identificador externo de la maquinaria (obligatorio)
- * @query {String} [fecha_inicio] - Fecha de inicio del período (ISO8601, opcional)
- * @query {String} [fecha_fin] - Fecha de fin del período (ISO8601, opcional)
- * @query {Number} [id_faena] - ID de faena específica (opcional)
- * @returns {Object} Datos históricos de la maquinaria con información para gráficos
- */
-router.get(
-  "/maquinas/historico",
-  apiValidationMiddleware.validateHistoricoConsolidado,
-  outController.obtenerHistoricoConsolidado
-);
-
 // ====================================================================
 // Módulo de Faenas
 // ====================================================================
@@ -161,19 +160,6 @@ router.get(
  * @returns {Object} Lista de faenas que cumplen con los filtros
  */
 router.get("/faenas", outController.obtenerFaenas);
-
-/**
- * @route GET /api/out/faenas/:id
- * @description Obtiene información detallada de una faena específica
- * @access Privado
- * @param {Number} id - ID de la faena
- * @returns {Object} Detalles completos de la faena
- */
-router.get(
-  "/faenas/:id",
-  apiValidationMiddleware.validateFaenaId,
-  outController.obtenerFaenaDetalle
-);
 
 /**
  * @route GET /api/out/faenas/datos
@@ -199,6 +185,19 @@ router.get(
   "/faenas/resumen",
   apiValidationMiddleware.validateFaenaExterna,
   outController.obtenerResumenPorFaenaExterna
+);
+
+/**
+ * @route GET /api/out/faenas/:id
+ * @description Obtiene información detallada de una faena específica
+ * @access Privado
+ * @param {Number} id - ID de la faena
+ * @returns {Object} Detalles completos de la faena
+ */
+router.get(
+  "/faenas/:id",
+  apiValidationMiddleware.validateFaenaId,
+  outController.obtenerFaenaDetalle
 );
 
 /**
@@ -243,7 +242,7 @@ router.put(
  * @returns {File} Archivo CSV con los datos de la faena
  */
 router.get(
-  "/faenas/:id/export",
+  "/faenas/export/:id",
   apiValidationMiddleware.validateFaenaId,
   outController.exportarDatosFaena
 );

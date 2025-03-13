@@ -11,13 +11,13 @@ class ConfigLoader extends BaseConfigLoader {
     this.configPaths = {
       api: "../jsons/api-credentials.json",
       database: "../jsons/ddbb_produccion.json",
-      measurement: "../jsons/precios_energia.json"
+      measurement: "../jsons/precios_energia.json",
+      email: "../jsons/sgMailConfig.json", // Nuevo: ruta a la configuración de SendGrid
     };
     this.jwtConfig = JwtConfigLoader;
 
     this.loadConfiguration();
   }
-
 
   /**
    * Carga la configuración de la aplicación desde archivos JSON
@@ -45,6 +45,7 @@ class ConfigLoader extends BaseConfigLoader {
 
       // Cargar configuraciones de bases de datos
       const mainDbConfig = this.loadJsonFile(this.configPaths.database);
+
       // Cargar configuración de mediciones
       const measurementConfig = this.loadJsonFile(this.configPaths.measurement);
 
@@ -52,7 +53,20 @@ class ConfigLoader extends BaseConfigLoader {
       const mainDbDetails = this.parseJdbcUrl(mainDbConfig.url);
 
       // Cargar configuración de Ubibot
-      const ubibotConfig = this.loadJsonFile("../jsons/ubibot_account_info.json");
+      const ubibotConfig = this.loadJsonFile(
+        "../jsons/ubibot_account_info.json"
+      );
+
+      // Cargar configuración de SendGrid
+      let emailConfig = {};
+      try {
+        emailConfig = this.loadJsonFile(this.configPaths.email);
+        console.log("✅ Configuración de SendGrid cargada correctamente");
+      } catch (error) {
+        console.warn(
+          `⚠️ No se pudo cargar la configuración de SendGrid: ${error.message}`
+        );
+      }
 
       // Construir objeto de configuración
       this.config = {
@@ -68,6 +82,8 @@ class ConfigLoader extends BaseConfigLoader {
           excludedChannels: ubibotConfig.EXCLUDED_CHANNELS,
           collectionInterval: 600000,
         },
+        // Nueva configuración de email
+        email: emailConfig,
         // Nueva estructura para bases de datos
         databases: {
           main: {
@@ -77,7 +93,7 @@ class ConfigLoader extends BaseConfigLoader {
             username: mainDbConfig.username,
             password: mainDbConfig.password,
             pool: mainDbConfig.pool,
-          }
+          },
         },
         // Mantener compatibilidad con código existente
         database: {
@@ -94,9 +110,12 @@ class ConfigLoader extends BaseConfigLoader {
             medicion: 10,
             max_desviacion: 2,
             actualizacion: {
-              hora: measurementConfig.precios_energia.configuracion_calculo.intervalo_actualizacion_promedios.hora,
-              dia: measurementConfig.precios_energia.configuracion_calculo.intervalo_actualizacion_promedios.dia,
-              mes: measurementConfig.precios_energia.configuracion_calculo.intervalo_actualizacion_promedios.mes,
+              hora: measurementConfig.precios_energia.configuracion_calculo
+                .intervalo_actualizacion_promedios.hora,
+              dia: measurementConfig.precios_energia.configuracion_calculo
+                .intervalo_actualizacion_promedios.dia,
+              mes: measurementConfig.precios_energia.configuracion_calculo
+                .intervalo_actualizacion_promedios.mes,
             },
           },
           calidad: {
@@ -104,8 +123,10 @@ class ConfigLoader extends BaseConfigLoader {
             max_intentos: 3,
             tiempo_espera: 5000,
           },
-          zona_horaria: measurementConfig.precios_energia.metadatos.zona_horaria,
-          proveedor: measurementConfig.precios_energia.metadatos.proveedor_energia,
+          zona_horaria:
+            measurementConfig.precios_energia.metadatos.zona_horaria,
+          proveedor:
+            measurementConfig.precios_energia.metadatos.proveedor_energia,
           tipo_tarifa: measurementConfig.precios_energia.metadatos.tipo_tarifa,
         },
         jwt: this.jwtConfig.getJwtConfig(),
@@ -145,34 +166,40 @@ class ConfigLoader extends BaseConfigLoader {
     };
   }
 
-
-/**
- * Validates the application's configuration to ensure all required fields are present.
- *
- * This method performs a comprehensive validation of several critical parts
- * of the application configuration, including database settings, API details,
- * measurement configurations, Ubibot settings, and JWT secret configuration.
- * 
- * It checks each of these sections for the presence of necessary fields and 
- * throws an error if any required field is missing. Specifically, it validates:
- * 
- * - Databases: Ensures that each database configuration includes host, port,
- *   database name, and username.
- * - API: Confirms that the API configuration has a URL, device ID, and auth key.
- * - Measurements: Verifies that the configuration includes the price per kWh and
- *   measurement intervals.
- * - Ubibot: Checks for the presence of account key and token file in the Ubibot
- *   configuration.
- * - JWT: Ensures that the JWT configuration contains a secret.
- *
- * @throws {Error} If any required configuration fields are missing.
- */
+  /**
+   * Validates the application's configuration to ensure all required fields are present.
+   *
+   * This method performs a comprehensive validation of several critical parts
+   * of the application configuration, including database settings, API details,
+   * measurement configurations, Ubibot settings, and JWT secret configuration.
+   *
+   * It checks each of these sections for the presence of necessary fields and
+   * throws an error if any required field is missing. Specifically, it validates:
+   *
+   * - Databases: Ensures that each database configuration includes host, port,
+   *   database name, and username.
+   * - API: Confirms that the API configuration has a URL, device ID, and auth key.
+   * - Measurements: Verifies that the configuration includes the price per kWh and
+   *   measurement intervals.
+   * - Ubibot: Checks for the presence of account key and token file in the Ubibot
+   *   configuration.
+   * - JWT: Ensures that the JWT configuration contains a secret.
+   *
+   * @throws {Error} If any required configuration fields are missing.
+   */
 
   validateConfig() {
     // Validación de bases de datos
     for (const [dbName, dbConfig] of Object.entries(this.config.databases)) {
-      if (!dbConfig.host || !dbConfig.port || !dbConfig.database || !dbConfig.username) {
-        throw new Error(`Missing required database configuration fields for ${dbName}`);
+      if (
+        !dbConfig.host ||
+        !dbConfig.port ||
+        !dbConfig.database ||
+        !dbConfig.username
+      ) {
+        throw new Error(
+          `Missing required database configuration fields for ${dbName}`
+        );
       }
     }
 
@@ -197,6 +224,16 @@ class ConfigLoader extends BaseConfigLoader {
     // Validación de configuración JWT
     if (!this.jwtConfig.hasConfig("secret")) {
       throw new Error("Missing JWT secret configuration");
+    }
+
+    // Verificar configuración de email (no obligatoria, solo log informativo)
+    const { email } = this.config;
+    if (!email || !email.SENDGRID_API_KEY) {
+      console.warn(
+        "⚠️ No se encontró configuración de SendGrid o está incompleta"
+      );
+    } else {
+      console.log("✅ Configuración de SendGrid verificada");
     }
   }
 

@@ -5,14 +5,7 @@ const configLoader = require("../../config/js_files/config-loader");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const sgMail = require("@sendgrid/mail");
-
-// Cargar configuración de SendGrid si existe
-try {
-  const sgConfig = require("../../config/jsons/sgMailConfig.json");
-  sgMail.setApiKey(sgConfig.SENDGRID_API_KEY);
-} catch (error) {
-  console.error("Error cargando configuración de SendGrid:", error);
-}
+const loggingService = require("./loggingService");
 
 /**
  * Servicio de autenticación que maneja todas las operaciones relacionadas con usuarios
@@ -122,9 +115,9 @@ class AuthService {
   /**
    * Solicita un reseteo de contraseña enviando un email con un token
    * @param {string} email - El email del usuario
-   * @param {string} baseUrl - URL base para el enlace de reseteo
+   * @returns {Promise<void>}
    */
-  async solicitarResetPassword(email, baseUrl) {
+  async solicitarResetPassword(email) {
     // 1. Verificar que el usuario existe
     const [users] = await databaseService.pool.query(
       "SELECT id_Usuario FROM api_usuario WHERE email = ?",
@@ -146,69 +139,70 @@ class AuthService {
       .update(resetToken)
       .digest("hex");
 
-    // 3. Almacenar token en la base de datos (crear tabla si no existe)
-    await databaseService.pool.query(`
-      CREATE TABLE IF NOT EXISTS api_password_reset (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        id_usuario INT NOT NULL,
-        token VARCHAR(100) NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (id_usuario) REFERENCES api_usuario(id_Usuario)
-      )
-    `);
-
-    // 4. Eliminar tokens anteriores para este usuario
+    // 3. Eliminar tokens anteriores para este usuario
     await databaseService.pool.query(
       "DELETE FROM api_password_reset WHERE id_usuario = ?",
       [userId]
     );
 
-    // 5. Insertar nuevo token (válido por 1 hora)
+    // 4. Insertar nuevo token (válido por 1 hora)
     await databaseService.pool.query(
       `INSERT INTO api_password_reset (id_usuario, token, expires_at) 
        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))`,
       [userId, tokenHash]
     );
 
-    // 6. Enviar email con el link de reseteo
-    const resetUrl = `${baseUrl}/reset-password/${resetToken}`;
-
+    // 5. Enviar email con el token
     try {
-      // Obtener configuración de email
-      let fromEmail = "noreply@yourapp.com"; // Valor por defecto
-      try {
-        const sgConfig = configLoader.getValue("email") || {};
-        const apiKey = sgConfig.SENDGRID_API_KEY;
-        if (apiKey) {
-          sgMail.setApiKey(apiKey);
-          console.log("Configuración de SendGrid cargada correctamente");
-        } else {
-          console.warn(
-            "No se encontró API Key de SendGrid en la configuración"
-          );
-        }
-      } catch (error) {
-        console.error("Error cargando configuración de SendGrid:", error);
-      }
+      // Obtener configuración de email desde config-loader
+      const emailConfig = configLoader.getValue("email");
 
-      await sgMail.send({
-        to: email,
-        from: fromEmail,
-        subject: "Reseteo de contraseña",
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2>Reseteo de contraseña</h2>
-            <p>Has solicitado resetear tu contraseña. Haz clic en el siguiente enlace para continuar:</p>
-            <a href="${resetUrl}" style="display: inline-block; background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Resetear Contraseña</a>
-            <p>Este enlace es válido por 1 hora.</p>
-            <p>Si no solicitaste resetear tu contraseña, ignora este correo.</p>
-          </div>
-        `,
-      });
+      // Verificar si tenemos una configuración válida
+      if (emailConfig && emailConfig.SENDGRID_API_KEY) {
+        // Configurar SendGrid
+        sgMail.setApiKey(emailConfig.SENDGRID_API_KEY);
+
+        // Determinar el remitente
+        const fromEmail =
+          emailConfig.email_contacto?.from_verificado || "noreply@yourapp.com";
+
+        // Enviar el email
+        await sgMail.send({
+          to: email,
+          from: fromEmail,
+          subject: "Token para reseteo de contraseña",
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2>Token para Reseteo de Contraseña</h2>
+              <p>Has solicitado resetear tu contraseña. Utiliza el siguiente token para completar el proceso:</p>
+              <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 18px; text-align: center; margin: 20px 0; word-break: break-all;">
+                ${resetToken}
+              </div>
+              <p>Para completar el proceso, proporciona este token junto con tu nueva contraseña en el sistema.</p>
+              <p>Este token es válido por 1 hora.</p>
+              <p>Si no solicitaste resetear tu contraseña, ignora este correo o notifica a soporte.</p>
+            </div>
+          `,
+        });
+        console.log(`✅ Token de reseteo enviado a ${email}`);
+      } else {
+        console.error(
+          "❌ No se pudo enviar email: SendGrid no configurado correctamente"
+        );
+        await loggingService.registrarError(
+          "AuthService.solicitarResetPassword",
+          `Error enviando token de reseteo a ${email}: SendGrid no configurado`,
+          new Error("Email service not configured")
+        );
+      }
     } catch (error) {
-      console.error("Error al enviar email:", error);
-      // No devolvemos error para no revelar si el email existe
+      console.error("❌ Error al enviar email:", error);
+      // Registrar el error pero no revelar información al usuario
+      await loggingService.registrarError(
+        "AuthService.solicitarResetPassword",
+        `Error enviando token de reseteo a ${email}`,
+        error
+      );
     }
   }
 
@@ -219,43 +213,82 @@ class AuthService {
    * @returns {Object} Objeto con propiedad success y mensaje
    */
   async confirmarResetPassword(token, password) {
-    // 1. Calcular hash del token
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    try {
+      // 1. Calcular hash del token
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
-    // 2. Buscar el token en la base de datos
-    const [tokens] = await databaseService.pool.query(
-      `SELECT id_usuario, expires_at FROM api_password_reset 
-       WHERE token = ? AND expires_at > NOW()`,
-      [tokenHash]
-    );
+      // 2. Buscar el token en la base de datos
+      const [tokens] = await databaseService.pool.query(
+        `SELECT id_usuario, expires_at FROM api_password_reset 
+         WHERE token = ? AND expires_at > NOW()`,
+        [tokenHash]
+      );
 
-    if (tokens.length === 0) {
+      if (tokens.length === 0) {
+        return {
+          success: false,
+          message: "Token inválido o expirado",
+          code: "INVALID_TOKEN",
+        };
+      }
+
+      const userId = tokens[0].id_usuario;
+
+      // 3. Verificar que el usuario todavía existe
+      const [users] = await databaseService.pool.query(
+        "SELECT id_Usuario FROM api_usuario WHERE id_Usuario = ?",
+        [userId]
+      );
+
+      if (users.length === 0) {
+        return {
+          success: false,
+          message: "Usuario no encontrado",
+          code: "USER_NOT_FOUND",
+        };
+      }
+
+      // 4. Hashear la nueva contraseña
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // 5. Actualizar la contraseña del usuario
+      await databaseService.pool.query(
+        "UPDATE api_usuario SET password = ? WHERE id_Usuario = ?",
+        [hashedPassword, userId]
+      );
+
+      // 6. Eliminar el token usado
+      await databaseService.pool.query(
+        "DELETE FROM api_password_reset WHERE id_usuario = ?",
+        [userId]
+      );
+
+      // 7. Registrar el cambio exitoso
+      await loggingService.registrarError(
+        "AuthService.confirmarResetPassword",
+        `Contraseña actualizada para usuario ID: ${userId}`,
+        { type: "INFO", message: "Password reset successful" }
+      );
+
+      return {
+        success: true,
+        message: "Contraseña actualizada exitosamente",
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("Error al confirmar reseteo de contraseña:", error);
+      await loggingService.registrarError(
+        "AuthService.confirmarResetPassword",
+        "Error en reseteo de contraseña",
+        error
+      );
+
       return {
         success: false,
-        message: "Token inválido o expirado",
+        message: "Error procesando el reseteo de contraseña",
+        code: "SERVER_ERROR",
       };
     }
-
-    const userId = tokens[0].id_usuario;
-
-    // 3. Hashear la nueva contraseña
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // 4. Actualizar la contraseña del usuario
-    await databaseService.pool.query(
-      "UPDATE api_usuario SET password = ? WHERE id_Usuario = ?",
-      [hashedPassword, userId]
-    );
-
-    // 5. Eliminar el token usado
-    await databaseService.pool.query(
-      "DELETE FROM api_password_reset WHERE id_usuario = ?",
-      [userId]
-    );
-
-    return {
-      success: true,
-    };
   }
 }
 
