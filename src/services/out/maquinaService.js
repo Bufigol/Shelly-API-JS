@@ -428,25 +428,55 @@ class MaquinaService {
     fechaFin,
     idFaena
   ) {
-    // Verificar si la máquina existe
-    const [maquinas] = await databaseService.pool.query(
-      `
+    try {
+      // Verificar si la máquina existe
+      const [maquinas] = await databaseService.pool.query(
+        `
       SELECT m.id_Maquina, m.id_equipo
       FROM api_maquina m
       WHERE m.identificador_externo = ?
     `,
-      [identificadorExterno]
-    );
+        [identificadorExterno]
+      );
 
-    if (maquinas.length === 0) {
-      throw new NotFoundError("Máquina no encontrada");
-    }
+      if (maquinas.length === 0) {
+        throw new NotFoundError("Máquina no encontrada");
+      }
 
-    const idMaquina = maquinas[0].id_Maquina;
-    const idEquipo = maquinas[0].id_equipo;
+      const idMaquina = maquinas[0].id_Maquina;
+      const idEquipo = maquinas[0].id_equipo;
 
-    // Construir consulta base para faenas
-    let queryFaenas = `
+      // Implementar la lógica de fechas según los requisitos
+      let fechaInicioActual = fechaInicio;
+      let fechaFinActual = fechaFin;
+
+      const hoy = new Date();
+
+      // Caso 1: Solo hay fecha de inicio
+      if (fechaInicioActual && !fechaFinActual) {
+        const fechaInicioObj = new Date(fechaInicioActual);
+        const fechaTresMesesDespues = new Date(fechaInicioObj);
+        fechaTresMesesDespues.setMonth(fechaTresMesesDespues.getMonth() + 3);
+
+        // Si la fecha calculada es posterior a hoy, usar hoy
+        if (fechaTresMesesDespues > hoy) {
+          fechaFinActual = hoy.toISOString().split("T")[0];
+        } else {
+          fechaFinActual = fechaTresMesesDespues.toISOString().split("T")[0];
+        }
+      }
+
+      // Caso 2: Solo hay fecha de fin
+      if (!fechaInicioActual && fechaFinActual) {
+        const fechaFinObj = new Date(fechaFinActual);
+        const fechaTresMesesAntes = new Date(fechaFinObj);
+        fechaTresMesesAntes.setMonth(fechaTresMesesAntes.getMonth() - 3);
+
+        fechaInicioActual = fechaTresMesesAntes.toISOString().split("T")[0];
+      }
+
+      // Construir consulta base para faenas
+      let queryFaenas = `
       SELECT 
         f.id_Faena,
         f.id_Faena_externo,
@@ -458,48 +488,52 @@ class MaquinaService {
       WHERE f.id_maquina = ?
     `;
 
-    const queryParamsFaenas = [idMaquina];
+      const queryParamsFaenas = [idMaquina];
 
-    // Aplicar filtros para las faenas
-    if (idFaena) {
-      queryFaenas += " AND f.id_Faena = ?";
-      queryParamsFaenas.push(idFaena);
-    } else {
-      if (fechaInicio) {
-        queryFaenas += " AND (f.fecha_fin >= ? OR f.fecha_fin IS NULL)";
-        queryParamsFaenas.push(fechaInicio);
+      // Aplicar filtros para las faenas con las fechas actualizadas
+      if (idFaena) {
+        queryFaenas += " AND f.id_Faena = ?";
+        queryParamsFaenas.push(idFaena);
+      } else {
+        if (fechaInicioActual) {
+          queryFaenas += " AND (f.fecha_fin >= ? OR f.fecha_fin IS NULL)";
+          queryParamsFaenas.push(fechaInicioActual);
+        }
+
+        if (fechaFinActual) {
+          queryFaenas += " AND f.fecha_inico <= ?";
+          queryParamsFaenas.push(fechaFinActual);
+        }
       }
 
-      if (fechaFin) {
-        queryFaenas += " AND f.fecha_inico <= ?";
-        queryParamsFaenas.push(fechaFin);
+      queryFaenas += " ORDER BY f.fecha_inico";
+
+      const [faenas] = await databaseService.pool.query(
+        queryFaenas,
+        queryParamsFaenas
+      );
+
+      // Si no hay faenas que coincidan con los criterios
+      if (faenas.length === 0) {
+        return {
+          success: true,
+          identificador_externo: identificadorExterno,
+          id_maquina: idMaquina,
+          periodo: {
+            fecha_inicio: fechaInicioActual,
+            fecha_fin: fechaFinActual,
+          },
+          faenas: [],
+          datos: [],
+        };
       }
-    }
 
-    queryFaenas += " ORDER BY f.fecha_inico";
+      // Obtener datos para cada faena o para el rango específico
+      let datosPorFaena = [];
 
-    const [faenas] = await databaseService.pool.query(
-      queryFaenas,
-      queryParamsFaenas
-    );
-
-    // Si no hay faenas que coincidan con los criterios
-    if (faenas.length === 0) {
-      return {
-        success: true,
-        identificador_externo: identificadorExterno,
-        id_maquina: idMaquina,
-        faenas: [],
-        datos: [],
-      };
-    }
-
-    // Obtener datos para cada faena o para el rango específico
-    let datosPorFaena = [];
-
-    for (const faena of faenas) {
-      // Consulta para datos por faena
-      let queryDatos = `
+      for (const faena of faenas) {
+        // Consulta para datos por faena
+        let queryDatos = `
         SELECT 
           df.timestamp_dato,
           df.temperatura,
@@ -511,58 +545,202 @@ class MaquinaService {
         WHERE df.id_faena = ?
       `;
 
-      const queryParamsDatos = [faena.id_Faena, faena.id_Faena];
+        const queryParamsDatos = [faena.id_Faena, faena.id_Faena];
 
-      // Aplicar filtros adicionales de fecha si no es una faena específica
-      if (!idFaena) {
-        if (fechaInicio) {
-          queryDatos += " AND df.timestamp_dato >= ?";
-          queryParamsDatos.push(fechaInicio);
+        // Aplicar filtros adicionales de fecha si no es una faena específica
+        if (!idFaena) {
+          if (fechaInicioActual) {
+            queryDatos += " AND df.timestamp_dato >= ?";
+            queryParamsDatos.push(fechaInicioActual);
+          }
+
+          if (fechaFinActual) {
+            queryDatos += " AND df.timestamp_dato <= ?";
+            queryParamsDatos.push(fechaFinActual);
+          }
         }
 
-        if (fechaFin) {
-          queryDatos += " AND df.timestamp_dato <= ?";
-          queryParamsDatos.push(fechaFin);
-        }
+        queryDatos += " ORDER BY df.timestamp_dato";
+
+        const [datos] = await databaseService.pool.query(
+          queryDatos,
+          queryParamsDatos
+        );
+
+        // Agregar datos a la faena
+        faena.datos = datos;
+        datosPorFaena = datosPorFaena.concat(datos);
       }
 
-      queryDatos += " ORDER BY df.timestamp_dato";
-
-      const [datos] = await databaseService.pool.query(
-        queryDatos,
-        queryParamsDatos
-      );
-
-      // Agregar datos a la faena
-      faena.datos = datos;
-      datosPorFaena = datosPorFaena.concat(datos);
-    }
-
-    // Si se pidió una faena específica, obtener también su resumen
-    let resumen = null;
-    if (idFaena) {
-      const [datosResumen] = await databaseService.pool.query(
-        `
+      // Si se pidió una faena específica, obtener también su resumen
+      let resumen = null;
+      if (idFaena) {
+        const [datosResumen] = await databaseService.pool.query(
+          `
         SELECT *
         FROM api_resumen_Datos_por_faena
         WHERE id_faena = ?
         ORDER BY cuarto
       `,
-        [idFaena]
+          [idFaena]
+        );
+
+        resumen = datosResumen;
+      }
+
+      return {
+        success: true,
+        identificador_externo: identificadorExterno,
+        id_maquina: idMaquina,
+        id_equipo: idEquipo,
+        periodo: {
+          fecha_inicio: fechaInicioActual,
+          fecha_fin: fechaFinActual,
+        },
+        faenas: faenas,
+        datos_consolidados: datosPorFaena,
+        resumen: resumen,
+      };
+    } catch (error) {
+      await loggingService.registrarError(
+        "MaquinaService.obtenerHistoricoConsolidado",
+        `Error al obtener histórico consolidado para máquina ${identificadorExterno}`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Obtiene datos en tiempo real (últimos 5 minutos) de máquinas con faenas activas
+   * @param {string} [identificadorExterno] - Identificador externo de la máquina (opcional)
+   * @returns {Promise<Object>} Datos en tiempo real de las máquinas
+   */
+  async obtenerDatosRealtime(identificadorExterno) {
+    try {
+      // Base de la consulta para obtener máquinas con faenas activas
+      let queryMaquinas = `
+        SELECT 
+          m.id_Maquina,
+          m.identificador_externo,
+          f.id_Faena,
+          f.id_Faena_externo,
+          f.fecha_inico AS fecha_inicio,
+          c.nombre_cliente
+        FROM api_maquina m
+        JOIN api_faena f ON m.id_Maquina = f.id_maquina
+        JOIN api_clientes c ON f.id_cliente = c.idClientes
+        WHERE f.fecha_fin IS NULL
+      `;
+
+      const queryParamsMaquinas = [];
+
+      // Si se proporciona identificador externo, filtrar por él
+      if (identificadorExterno) {
+        queryMaquinas += " AND m.identificador_externo = ?";
+        queryParamsMaquinas.push(identificadorExterno);
+      }
+
+      // Ejecutar consulta para obtener máquinas con faenas activas
+      const [maquinas] = await databaseService.pool.query(
+        queryMaquinas,
+        queryParamsMaquinas
       );
 
-      resumen = datosResumen;
-    }
+      // Si no hay máquinas con faenas activas que coincidan con los criterios
+      if (maquinas.length === 0) {
+        return {
+          success: true,
+          message:
+            "No hay máquinas con faenas activas que coincidan con los criterios",
+          data: [],
+          timestamp: new Date(),
+        };
+      }
 
-    return {
-      success: true,
-      identificador_externo: identificadorExterno,
-      id_maquina: idMaquina,
-      id_equipo: idEquipo,
-      faenas: faenas,
-      datos_consolidados: datosPorFaena,
-      resumen: resumen,
-    };
+      // Obtener rangos de temperatura para calcular el semáforo
+      const rangos = await equipoService.obtenerRangosTemperatura();
+
+      // Obtener datos de los últimos 5 minutos para cada máquina con faena activa
+      const resultado = {
+        success: true,
+        data: [],
+        timestamp: new Date(),
+      };
+
+      for (const maquina of maquinas) {
+        // Consulta para obtener datos recientes (últimos 5 minutos) de la tabla api_datos_por_faena
+        const queryDatos = `
+          SELECT 
+            df.timestamp_dato AS timestamp,
+            df.temperatura,
+            df.latitud,
+            df.longitud,
+            df.calidad_temperatura
+          FROM api_datos_por_faena df
+          WHERE df.id_faena = ?
+          AND df.timestamp_dato >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+          ORDER BY df.timestamp_dato DESC
+        `;
+
+        const [datos] = await databaseService.pool.query(queryDatos, [
+          maquina.id_Faena,
+        ]);
+
+        // Calcular el semáforo para cada lectura basado en los rangos de temperatura
+        const datosConSemaforo = datos.map((dato) => {
+          let semaforo = "GRIS";
+
+          if (rangos && dato.temperatura !== null) {
+            const temperatura = dato.temperatura;
+
+            if (temperatura < rangos.rojo_bajo) {
+              semaforo = "ROJO_BAJO";
+            } else if (temperatura < rangos.amarillo_bajo) {
+              semaforo = "AMARILLO_BAJO";
+            } else if (temperatura < rangos.amarillo_alto) {
+              semaforo = "VERDE";
+            } else if (temperatura < rangos.rojo_alto) {
+              semaforo = "AMARILLO_ALTO";
+            } else {
+              semaforo = "ROJO_ALTO";
+            }
+          }
+
+          return {
+            ...dato,
+            semaforo,
+          };
+        });
+
+        // Añadir la información de la máquina y sus datos al resultado
+        resultado.data.push({
+          id_Maquina: maquina.id_Maquina,
+          identificador_externo: maquina.identificador_externo,
+          faena: {
+            id_Faena: maquina.id_Faena,
+            id_Faena_externo: maquina.id_Faena_externo,
+            fecha_inicio: maquina.fecha_inicio,
+            nombre_cliente: maquina.nombre_cliente,
+          },
+          lecturas: datosConSemaforo,
+          total_lecturas: datosConSemaforo.length,
+          ultima_lectura:
+            datosConSemaforo.length > 0 ? datosConSemaforo[0] : null,
+        });
+      }
+
+      return resultado;
+    } catch (error) {
+      await loggingService.registrarError(
+        "MaquinaService.obtenerDatosRealtime",
+        `Error al obtener datos en tiempo real ${
+          identificadorExterno ? "para " + identificadorExterno : ""
+        }`,
+        error
+      );
+      throw error;
+    }
   }
 }
 

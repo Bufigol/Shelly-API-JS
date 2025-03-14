@@ -88,6 +88,19 @@ router.use(apiAuthMiddleware.authenticate.bind(apiAuthMiddleware));
 router.get("/maquinas", outController.obtenerMaquinas);
 
 /**
+ * @route GET /api/out/maquinas/realtime
+ * @description Obtiene datos en tiempo real (últimos 5 minutos) de máquinas con faenas activas
+ * @access Privado
+ * @query {String} [identificador_externo] - Identificador externo de la máquina (opcional)
+ * @returns {Object} Datos en tiempo real para las máquinas solicitadas
+ */
+router.get(
+  "/maquinas/realtime",
+  apiValidationMiddleware.validateRealtimeQuery,
+  outController.obtenerDatosRealtime
+);
+
+/**
  * @route GET /api/out/maquinas/historico
  * @description Busca información histórica para una maquinaria con filtros opcionales
  * @access Privado

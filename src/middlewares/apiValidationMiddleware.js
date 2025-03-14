@@ -80,8 +80,6 @@ class ApiValidationMiddleware {
     this.checkValidationErrors,
   ];
 
-
-
   /**
    * Validación para actualización de faena
    */
@@ -199,9 +197,40 @@ class ApiValidationMiddleware {
       .optional()
       .isInt()
       .withMessage("ID de faena debe ser un número entero"),
-    this.checkValidationErrors,
+    this.chackErroresRestriccionesFecha,
   ];
+  // Función personalizada para validar la restricción de 3 meses entre fechas
+  chackErroresRestriccionesFecha = (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array(),
+      });
+    }
 
+    // Validar la restricción de fechas solo si ambas están presentes
+    const { fecha_inicio, fecha_fin } = req.query;
+    if (fecha_inicio && fecha_fin) {
+      const inicio = new Date(fecha_inicio);
+      const fin = new Date(fecha_fin);
+
+      // Calcular diferencia en meses (aproximadamente)
+      const diferenciaMeses = (fin - inicio) / (1000 * 60 * 60 * 24 * 30);
+
+      if (diferenciaMeses > 3 || diferenciaMeses < 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "El rango entre fecha_inicio y fecha_fin no puede superar los 3 meses y fecha_fin debe ser posterior a fecha_inicio",
+        });
+      }
+    }
+
+    next();
+  };
+
+  
   /**
    * Validación para búsqueda por faena externa
    */
@@ -209,6 +238,17 @@ class ApiValidationMiddleware {
     query("id_Faena_externo")
       .notEmpty()
       .withMessage("ID de faena externo es obligatorio"),
+    this.checkValidationErrors,
+  ];
+
+  /**
+   * Validación para consulta de datos en tiempo real
+   */
+  validateRealtimeQuery = [
+    query("identificador_externo")
+      .optional()
+      .isString()
+      .withMessage("El identificador externo debe ser una cadena de texto"),
     this.checkValidationErrors,
   ];
 }
