@@ -2,12 +2,52 @@
 const authService = require("../services/out/authService");
 const equipoService = require("../services/out/equipoService");
 const faenaService = require("../services/out/faenaService");
-const configService = require("../services/out/configService.js");
+const configService = require("../services/out/configService");
 const maquinaService = require("../services/out/maquinaService");
 const { ValidationError, NotFoundError } = require("../utils/errors");
 
+// Funciones de utilidad para respuestas estándar
+const sendSuccessResponse = (res, data, message = null, statusCode = 200) => {
+  const response = {
+    success: true,
+    timestamp: new Date(),
+  };
+
+  if (data) response.data = data;
+  if (message) response.message = message;
+
+  res.status(statusCode).json(response);
+};
+
+const sendErrorResponse = (
+  res,
+  error,
+  defaultMessage = "Error en el servidor"
+) => {
+  console.error(`Error en outController: ${error.message}`, error);
+
+  // Determinar código de error y mensaje apropiados
+  if (error instanceof ValidationError) {
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  } else if (error instanceof NotFoundError) {
+    return res.status(404).json({
+      success: false,
+      message: error.message,
+    });
+  }
+
+  res.status(500).json({
+    success: false,
+    message: defaultMessage,
+    error: error.message,
+  });
+};
+
 // ====================================================================
-// Funciones de autenticación
+// AUTENTICACIÓN
 // ====================================================================
 exports.login = async (req, res) => {
   try {
@@ -21,7 +61,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       token: result.token,
       userId: result.userId,
@@ -29,12 +69,7 @@ exports.login = async (req, res) => {
       permissions: result.permissions,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error durante la autenticación");
   }
 };
 
@@ -42,52 +77,36 @@ exports.crearUsuario = async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await authService.crearUsuario(email, password);
-
-    res.status(201).json({
-      success: true,
-      message: "Usuario creado exitosamente",
-      id_Usuario: result.userId,
-    });
+    sendSuccessResponse(
+      res,
+      { id_Usuario: result.userId },
+      "Usuario creado exitosamente",
+      201
+    );
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Error al crear usuario",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al crear usuario");
   }
 };
 
 exports.solicitarResetPassword = async (req, res) => {
   try {
     const { email } = req.body;
-
-    // Ya no necesitamos construir una URL base, solo pasamos el email
     await authService.solicitarResetPassword(email);
 
-    // Mensaje actualizado para enfoque basado en API
-    res.json({
-      success: true,
-      message:
-        "Si el correo existe, se ha enviado un token para resetear la contraseña",
-      details:
-        "Verifique su bandeja de entrada y use el token recibido junto a la nueva contraseña en el endpoint de reseteo",
-    });
+    sendSuccessResponse(
+      res,
+      null,
+      "Si el correo existe, se ha enviado un token para resetear la contraseña. " +
+        "Verifique su bandeja de entrada y use el token recibido junto a la nueva contraseña en el endpoint de reseteo."
+    );
   } catch (error) {
-    console.error("Error al solicitar reseteo de contraseña:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al solicitar reseteo de contraseña");
   }
 };
 
 exports.confirmarResetPassword = async (req, res) => {
   try {
-    // El token ahora viene en el cuerpo de la solicitud, no como parámetro de URL
     const { token, password } = req.body;
-
     const result = await authService.confirmarResetPassword(token, password);
 
     if (!result.success) {
@@ -98,41 +117,22 @@ exports.confirmarResetPassword = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      message: "Contraseña actualizada exitosamente",
-      timestamp: new Date().toISOString(),
-    });
+    sendSuccessResponse(res, null, "Contraseña actualizada exitosamente");
   } catch (error) {
-    console.error("Error al confirmar reseteo de contraseña:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al confirmar reseteo de contraseña");
   }
 };
 
 // ====================================================================
-// Funciones de equipos
+// EQUIPOS
 // ====================================================================
 exports.obtenerEquipos = async (req, res) => {
   try {
     const { id_cliente } = req.query;
     const equipos = await equipoService.obtenerEquipos(id_cliente);
-
-    res.json({
-      success: true,
-      data: equipos,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, equipos);
   } catch (error) {
-    console.error("Error al obtener equipos:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener equipos");
   }
 };
 
@@ -148,18 +148,9 @@ exports.obtenerEquipoDetalle = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: equipo,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, equipo);
   } catch (error) {
-    console.error("Error al obtener detalle del equipo:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener detalle del equipo");
   }
 };
 
@@ -175,89 +166,76 @@ exports.obtenerEquipoStatus = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: status,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, status);
   } catch (error) {
-    console.error("Error al obtener status del equipo:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener status del equipo");
   }
 };
 
-// ====================================================================
-// Funciones de máquinas
-// ====================================================================
-
-/**
- * Obtiene datos en tiempo real de las máquinas con faenas activas.
- * 
- * Este endpoint permite obtener información en tiempo real de una o más máquinas
- * que tienen faenas activas. Los datos pueden incluir información como el estado
- * actual, temperatura, semáforo, entre otros, de las máquinas.
- * 
- * @route GET /api/out/maquinas/realtime
- * @query {String} [identificador_externo] - Identificador externo de la máquina específica para filtrar (opcional).
- * 
- * @returns {Object} Un objeto JSON que contiene los datos en tiempo real de las máquinas.
- *                   Si se especifica un identificador externo, se devuelve la información
- *                   solo para la máquina correspondiente a ese identificador. En caso contrario,
- *                   se devuelven los datos para todas las máquinas con faenas activas.
- * 
- * @throws {NotFoundError} Si no se encuentra ninguna máquina con el identificador externo proporcionado.
- * @throws {Error} Error genérico del servidor si ocurre cualquier otro tipo de problema.
- */
-exports.obtenerDatosRealtime = async (req, res) => {
+exports.asociarEquipoMaquina = async (req, res) => {
   try {
-    const { identificador_externo } = req.query;
-
-    const datos = await maquinaService.obtenerDatosRealtime(
+    const { id_equipo, identificador_externo } = req.body;
+    const result = await equipoService.asociarEquipoMaquina(
+      id_equipo,
       identificador_externo
     );
 
-    res.json(datos);
-  } catch (error) {
-    console.error("Error al obtener datos en tiempo real:", error);
-
-    // Determinar el código de estado adecuado según el tipo de error
-    if (error instanceof NotFoundError) {
-      return res.status(404).json({
+    if (!result.success) {
+      return res.status(400).json({
         success: false,
-        message: error.message,
+        message: result.message,
       });
     }
 
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendSuccessResponse(
+      res,
+      { id_Maquina: result.id_Maquina },
+      result.message,
+      201
+    );
+  } catch (error) {
+    sendErrorResponse(res, error, "Error al asociar equipo");
   }
 };
 
-
+// ====================================================================
+// MÁQUINAS
+// ====================================================================
 exports.obtenerMaquinas = async (req, res) => {
   try {
     const { id_cliente } = req.query;
     const maquinas = await maquinaService.obtenerMaquinas(id_cliente);
-
-    res.json({
-      success: true,
-      data: maquinas,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, maquinas);
   } catch (error) {
-    console.error("Error al obtener máquinas:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener máquinas");
+  }
+};
+
+exports.obtenerDatosRealtime = async (req, res) => {
+  try {
+    const { identificador_externo } = req.query;
+    const datos = await maquinaService.obtenerDatosRealtime(
+      identificador_externo
+    );
+    res.json(datos);
+  } catch (error) {
+    sendErrorResponse(res, error, "Error al obtener datos en tiempo real");
+  }
+};
+
+exports.obtenerHistoricoConsolidado = async (req, res) => {
+  try {
+    const { identificador_externo, fecha_inicio, fecha_fin, id_faena } =
+      req.query;
+    const datos = await maquinaService.obtenerHistoricoConsolidado(
+      identificador_externo,
+      fecha_inicio,
+      fecha_fin,
+      id_faena
+    );
+    sendSuccessResponse(res, datos);
+  } catch (error) {
+    sendErrorResponse(res, error, "Error al obtener histórico consolidado");
   }
 };
 
@@ -273,18 +251,9 @@ exports.obtenerMaquinaDetalle = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: maquina,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, maquina);
   } catch (error) {
-    console.error("Error al obtener detalle de la máquina:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener detalle de la máquina");
   }
 };
 
@@ -300,18 +269,9 @@ exports.obtenerMaquinaStatus = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: status,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, status);
   } catch (error) {
-    console.error("Error al obtener estado de la máquina:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener estado de la máquina");
   }
 };
 
@@ -325,75 +285,18 @@ exports.actualizarMaquina = async (req, res) => {
       req.body,
       idUsuario
     );
-
-    res.json({
-      success: true,
-      message: resultado.message,
-      id_Maquina: resultado.id_Maquina,
-      timestamp: new Date(),
-    });
-  } catch (error) {
-    console.error("Error al actualizar máquina:", error);
-
-    // Determinar el código de estado adecuado según el tipo de error
-    if (error instanceof ValidationError) {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    } else if (error instanceof NotFoundError) {
-      return res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
-  }
-};
-
-exports.obtenerHistoricoConsolidado = async (req, res) => {
-  try {
-    const { identificador_externo, fecha_inicio, fecha_fin, id_faena } =
-      req.query;
-
-    const datos = await maquinaService.obtenerHistoricoConsolidado(
-      identificador_externo,
-      fecha_inicio,
-      fecha_fin,
-      id_faena
+    sendSuccessResponse(
+      res,
+      { id_Maquina: resultado.id_Maquina },
+      resultado.message
     );
-
-    res.json({
-      success: true,
-      data: datos,
-      timestamp: new Date(),
-    });
   } catch (error) {
-    console.error("Error al obtener histórico consolidado:", error);
-
-    // Determinar el código de estado adecuado según el tipo de error
-    if (error instanceof NotFoundError) {
-      return res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al actualizar máquina");
   }
 };
 
 // ====================================================================
-// Funciones de faenas
+// FAENAS
 // ====================================================================
 exports.obtenerFaenas = async (req, res) => {
   try {
@@ -404,19 +307,9 @@ exports.obtenerFaenas = async (req, res) => {
       fecha_inicio,
       fecha_fin,
     });
-
-    res.json({
-      success: true,
-      data: faenas,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, faenas);
   } catch (error) {
-    console.error("Error al obtener faenas:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener faenas");
   }
 };
 
@@ -424,219 +317,47 @@ exports.obtenerFaenaDetalle = async (req, res) => {
   try {
     const { id } = req.params;
     const faena = await faenaService.obtenerFaenaDetalle(id);
-
-    res.json({
-      success: true,
-      data: faena,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, faena);
   } catch (error) {
-    console.error("Error al obtener detalle de faena:", error);
-
-    if (error instanceof NotFoundError) {
-      return res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener detalle de faena");
   }
 };
 
 exports.actualizarFaena = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await faenaService.actualizarFaena(id, req.body);
-
-    res.json({
-      success: true,
-      message: "Faena actualizada exitosamente",
-      id_Faena: id,
-    });
+    await faenaService.actualizarFaena(id, req.body);
+    sendSuccessResponse(
+      res,
+      { id_Faena: id },
+      "Faena actualizada exitosamente"
+    );
   } catch (error) {
-    console.error("Error al actualizar faena:", error);
-
-    if (error instanceof ValidationError) {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    } else if (error instanceof NotFoundError) {
-      return res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al actualizar faena");
   }
 };
 
 exports.obtenerDatosPorFaenaExterna = async (req, res) => {
   try {
     const { id_Faena_externo } = req.query;
-
     const datos = await faenaService.obtenerDatosPorFaenaExterna(
       id_Faena_externo
     );
-
-    res.json({
-      success: true,
-      data: datos,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, datos);
   } catch (error) {
-    console.error("Error al obtener datos por faena externa:", error);
-
-    if (error instanceof NotFoundError) {
-      return res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener datos por faena externa");
   }
 };
 
 exports.obtenerResumenPorFaenaExterna = async (req, res) => {
   try {
     const { id_Faena_externo } = req.query;
-
     const resumen = await faenaService.obtenerResumenPorFaenaExterna(
       id_Faena_externo
     );
-
-    res.json({
-      success: true,
-      data: resumen,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, resumen);
   } catch (error) {
-    console.error("Error al obtener resumen por faena externa:", error);
-
-    if (error instanceof NotFoundError) {
-      return res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
-  }
-};
-
-// ====================================================================
-// Funciones de datos históricos
-// ====================================================================
-exports.obtenerHistoricoEquipo = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { fecha_inicio, fecha_fin, id_faena } = req.query;
-
-    const datos = await equipoService.obtenerHistoricoEquipo(
-      id,
-      fecha_inicio,
-      fecha_fin,
-      id_faena
-    );
-
-    res.json({
-      success: true,
-      data: datos,
-      timestamp: new Date(),
-    });
-  } catch (error) {
-    console.error("Error al obtener histórico:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
-  }
-};
-
-exports.obtenerFaenasPorEquipo = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const faenas = await faenaService.obtenerFaenasPorEquipo(id);
-
-    res.json({
-      success: true,
-      data: faenas,
-      timestamp: new Date(),
-    });
-  } catch (error) {
-    console.error("Error al obtener faenas por equipo:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
-  }
-};
-
-exports.obtenerDatosFaena = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const datos = await faenaService.obtenerDatosFaena(id);
-
-    res.json({
-      success: true,
-      data: datos,
-      timestamp: new Date(),
-    });
-  } catch (error) {
-    console.error("Error al obtener datos de faena:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
-  }
-};
-
-exports.obtenerResumenFaena = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const resumen = await faenaService.obtenerResumenFaena(id);
-
-    if (!resumen || resumen.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Faena no encontrada o sin resumen",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: resumen,
-      timestamp: new Date(),
-    });
-  } catch (error) {
-    console.error("Error al obtener resumen de faena:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener resumen por faena externa");
   }
 };
 
@@ -662,34 +383,19 @@ exports.exportarDatosFaena = async (req, res) => {
     // Enviar los datos CSV
     res.send(datos);
   } catch (error) {
-    console.error("Error al exportar datos de faena:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al exportar datos de faena");
   }
 };
 
 // ====================================================================
-// Funciones de configuración
+// CONFIGURACIÓN
 // ====================================================================
 exports.obtenerConfiguracion = async (req, res) => {
   try {
     const config = await configService.obtenerConfiguracion();
-
-    res.json({
-      success: true,
-      data: config,
-      timestamp: new Date(),
-    });
+    sendSuccessResponse(res, config);
   } catch (error) {
-    console.error("Error al obtener configuración:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al obtener configuración");
   }
 };
 
@@ -705,47 +411,12 @@ exports.actualizarConfiguracion = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      message: "Configuración actualizada correctamente",
-      actualizados: result.actualizados,
-    });
-  } catch (error) {
-    console.error("Error al actualizar configuración:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
-  }
-};
-
-exports.asociarEquipoMaquina = async (req, res) => {
-  try {
-    const { id_equipo, identificador_externo } = req.body;
-    const result = await equipoService.asociarEquipoMaquina(
-      id_equipo,
-      identificador_externo
+    sendSuccessResponse(
+      res,
+      { actualizados: result.actualizados },
+      "Configuración actualizada correctamente"
     );
-
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.message,
-      });
-    }
-
-    res.status(201).json({
-      success: true,
-      message: result.message,
-      data: { id_Maquina: result.id_Maquina },
-    });
   } catch (error) {
-    console.error("Error al asociar equipo:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      error: error.message,
-    });
+    sendErrorResponse(res, error, "Error al actualizar configuración");
   }
 };

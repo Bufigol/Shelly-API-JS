@@ -238,11 +238,10 @@ router.put(
  * @returns {File} Archivo CSV con los datos de la faena
  */
 router.get(
-  "/faenas/export/:id",
+  "/faenas/:id/export",
   apiValidationMiddleware.validateFaenaId,
   outController.exportarDatosFaena
 );
-
 // ====================================================================
 // Módulo de administración (solo para usuarios con permiso de editor)
 // ====================================================================
