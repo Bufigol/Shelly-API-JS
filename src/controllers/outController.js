@@ -193,6 +193,54 @@ exports.obtenerEquipoStatus = async (req, res) => {
 // ====================================================================
 // Funciones de máquinas
 // ====================================================================
+
+/**
+ * Obtiene datos en tiempo real de las máquinas con faenas activas.
+ * 
+ * Este endpoint permite obtener información en tiempo real de una o más máquinas
+ * que tienen faenas activas. Los datos pueden incluir información como el estado
+ * actual, temperatura, semáforo, entre otros, de las máquinas.
+ * 
+ * @route GET /api/out/maquinas/realtime
+ * @query {String} [identificador_externo] - Identificador externo de la máquina específica para filtrar (opcional).
+ * 
+ * @returns {Object} Un objeto JSON que contiene los datos en tiempo real de las máquinas.
+ *                   Si se especifica un identificador externo, se devuelve la información
+ *                   solo para la máquina correspondiente a ese identificador. En caso contrario,
+ *                   se devuelven los datos para todas las máquinas con faenas activas.
+ * 
+ * @throws {NotFoundError} Si no se encuentra ninguna máquina con el identificador externo proporcionado.
+ * @throws {Error} Error genérico del servidor si ocurre cualquier otro tipo de problema.
+ */
+exports.obtenerDatosRealtime = async (req, res) => {
+  try {
+    const { identificador_externo } = req.query;
+
+    const datos = await maquinaService.obtenerDatosRealtime(
+      identificador_externo
+    );
+
+    res.json(datos);
+  } catch (error) {
+    console.error("Error al obtener datos en tiempo real:", error);
+
+    // Determinar el código de estado adecuado según el tipo de error
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Error en el servidor",
+      error: error.message,
+    });
+  }
+};
+
+
 exports.obtenerMaquinas = async (req, res) => {
   try {
     const { id_cliente } = req.query;
@@ -399,8 +447,6 @@ exports.obtenerFaenaDetalle = async (req, res) => {
     });
   }
 };
-
-
 
 exports.actualizarFaena = async (req, res) => {
   try {
