@@ -1,8 +1,13 @@
-DELIMITER //
+USE `teltonika`;
+DROP procedure IF EXISTS `generar_resumen_faena_mejorado`;
 
-DROP PROCEDURE IF EXISTS generar_resumen_faena_mejorado //
+USE `teltonika`;
+DROP procedure IF EXISTS `teltonika`.`generar_resumen_faena_mejorado`;
+;
+DELIMITER $$
+USE `teltonika`$$
 
-CREATE PROCEDURE generar_resumen_faena_mejorado(IN p_id_faena INT)
+CREATE DEFINER=`root`@`%` PROCEDURE `generar_resumen_faena_mejorado`(IN p_id_faena INT)
 main_proc: BEGIN
     DECLARE v_total_distancia DOUBLE DEFAULT 0;
     DECLARE v_longitud_tramo DOUBLE DEFAULT 0;
@@ -35,26 +40,26 @@ main_proc: BEGIN
     -- Obtener los umbrales de temperatura para verificar cumplimiento
     SELECT CAST(valor AS DOUBLE) INTO v_temperatura_umbral_min
     FROM api_configuracion
-    WHERE id_api_configuracion = 13;  -- Asumo que existe este ID para umbral mínimo
+    WHERE id_api_configuracion = 2;  -- Valor mínimo semáforo rojo por debajo (90°C)
     
-    -- Podemos obtener temperatura máxima de otro parámetro si existe
+    -- Obtener temperatura máxima de otro parámetro 
     SELECT CAST(valor AS DOUBLE) INTO v_temperatura_umbral_max
     FROM api_configuracion
-    WHERE id_api_configuracion = 16;  -- Asumo que existe este ID para umbral máximo
+    WHERE id_api_configuracion = 16;  -- Máximo semáforo rojo por alto (160°C)
     
-    -- Obtener los límites del rango verde
+    -- Obtener los límites del rango verde (entre amarillo bajo y amarillo alto)
     SELECT CAST(valor AS DOUBLE) INTO v_verde_min
     FROM api_configuracion
-    WHERE id_api_configuracion = 6;  -- Valor mínimo del rango verde
+    WHERE id_api_configuracion = 4;  -- Valor mínimo semáforo amarillo por debajo (100°C)
     
     SELECT CAST(valor AS DOUBLE) INTO v_verde_max
     FROM api_configuracion
-    WHERE id_api_configuracion = 8;  -- Valor máximo del rango verde (inicio de amarillo alto)
+    WHERE id_api_configuracion = 8;  -- Valor mínimo semáforo amarillo por alto (150°C)
     
     -- Obtener el porcentaje verde requerido
     SELECT CAST(valor AS DOUBLE) INTO v_porcentaje_verde_requerido
     FROM api_configuracion
-    WHERE id_api_configuracion = 17;  -- Porcentaje verde en faena
+    WHERE id_api_configuracion = 17;  -- Porcentaje verde en faena (90%)
     
     -- Prevenir procesamiento recursivo si ya está en progreso
     IF @GENERATING_SUMMARY IS TRUE THEN
@@ -229,6 +234,8 @@ main_proc: BEGIN
                     SET v_total_puntos = v_total_puntos + 1;
                     
                     -- Verificar si la temperatura está en el rango verde
+                    -- El rango verde es: desde valor mínimo semáforo amarillo por debajo (100°C)
+                    -- hasta valor mínimo semáforo amarillo por alto (150°C)
                     IF v_temp >= v_verde_min AND v_temp < v_verde_max THEN
                         SET v_puntos_verdes = v_puntos_verdes + 1;
                     END IF;
@@ -259,6 +266,8 @@ main_proc: BEGIN
                     SET v_porcentaje_verde = (v_puntos_verdes * 100.0) / v_total_puntos;
                     
                     -- Determinar cumplimiento según el porcentaje verde
+                    -- Se cumple si el porcentaje de lecturas en rango verde (100-150°C)
+                    -- es igual o mayor que el porcentaje requerido (90%)
                     IF v_porcentaje_verde >= v_porcentaje_verde_requerido THEN
                         SET v_cumple_rango = 1;
                     ELSE
@@ -317,6 +326,4 @@ main_proc: BEGIN
     
     -- Limpiar
     DROP TEMPORARY TABLE IF EXISTS temp_puntos_ordenados;
-END //
-
-DELIMITER ;
+END
