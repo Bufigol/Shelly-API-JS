@@ -1,8 +1,13 @@
-DELIMITER //
+USE `teltonika`;
+DROP procedure IF EXISTS `generar_resumen_faena_mejorado`;
 
-DROP PROCEDURE IF EXISTS generar_resumen_faena_mejorado //
+USE `teltonika`;
+DROP procedure IF EXISTS `teltonika`.`generar_resumen_faena_mejorado`;
+;
+DELIMITER $$
+USE `teltonika`$$
 
-CREATE PROCEDURE generar_resumen_faena_mejorado(IN p_id_faena INT)
+CREATE DEFINER=`root`@`%` PROCEDURE `generar_resumen_faena_mejorado`(IN p_id_faena INT)
 main_proc: BEGIN
     DECLARE v_total_distancia DOUBLE DEFAULT 0;
     DECLARE v_longitud_tramo DOUBLE DEFAULT 0;
@@ -24,17 +29,37 @@ main_proc: BEGIN
     DECLARE v_punto_inicio_tramo INT DEFAULT 1;
     DECLARE v_temperatura_umbral_min DOUBLE;
     DECLARE v_temperatura_umbral_max DOUBLE;
+    DECLARE v_verde_min DOUBLE;
+    DECLARE v_verde_max DOUBLE;
+    DECLARE v_porcentaje_verde_requerido DOUBLE;
+    DECLARE v_puntos_verdes INT DEFAULT 0;
+    DECLARE v_total_puntos INT DEFAULT 0;
+    DECLARE v_porcentaje_verde DOUBLE DEFAULT 0;
     DECLARE i INT DEFAULT 1;
     
     -- Obtener los umbrales de temperatura para verificar cumplimiento
     SELECT CAST(valor AS DOUBLE) INTO v_temperatura_umbral_min
     FROM api_configuracion
-    WHERE id_api_configuracion = 13;  -- Asumo que existe este ID para umbral mínimo
+    WHERE id_api_configuracion = 2;  -- Valor mínimo semáforo rojo por debajo (90°C)
     
-    -- Podemos obtener temperatura máxima de otro parámetro si existe
+    -- Obtener temperatura máxima de otro parámetro 
     SELECT CAST(valor AS DOUBLE) INTO v_temperatura_umbral_max
     FROM api_configuracion
-    WHERE id_api_configuracion = 16;  -- Asumo que existe este ID para umbral máximo
+    WHERE id_api_configuracion = 16;  -- Máximo semáforo rojo por alto (160°C)
+    
+    -- Obtener los límites del rango verde (entre amarillo bajo y amarillo alto)
+    SELECT CAST(valor AS DOUBLE) INTO v_verde_min
+    FROM api_configuracion
+    WHERE id_api_configuracion = 4;  -- Valor mínimo semáforo amarillo por debajo (100°C)
+    
+    SELECT CAST(valor AS DOUBLE) INTO v_verde_max
+    FROM api_configuracion
+    WHERE id_api_configuracion = 8;  -- Valor mínimo semáforo amarillo por alto (150°C)
+    
+    -- Obtener el porcentaje verde requerido
+    SELECT CAST(valor AS DOUBLE) INTO v_porcentaje_verde_requerido
+    FROM api_configuracion
+    WHERE id_api_configuracion = 17;  -- Porcentaje verde en faena (90%)
     
     -- Prevenir procesamiento recursivo si ya está en progreso
     IF @GENERATING_SUMMARY IS TRUE THEN
@@ -126,12 +151,6 @@ main_proc: BEGIN
                 LEAVE read_loop;
             END IF;
             
-            -- Verificar si temperatura está fuera de rango
-            IF v_temperatura_max < v_temperatura_umbral_min OR 
-               v_temperatura_max > v_temperatura_umbral_max THEN
-                SET v_cumple_rango = 0;
-            END IF;
-            
             -- Calcular distancia incremental si tenemos un punto anterior
             IF v_punto_anterior_lat IS NOT NULL AND v_punto_anterior_lon IS NOT NULL THEN
                 SET v_distancia_entre_puntos = calcular_distancia_en_metros(
@@ -165,12 +184,15 @@ main_proc: BEGIN
         SET v_temperatura_min = 999;
         SET v_temperatura_promedio = 0;
         SET v_numero_pasadas = 0;
+        SET v_puntos_verdes = 0;
+        SET v_total_puntos = 0;
         
         -- Recorrer los puntos nuevamente para este tramo
         BEGIN
             DECLARE done INT DEFAULT FALSE;
             DECLARE temp_suma DOUBLE DEFAULT 0;
             DECLARE temp_count INT DEFAULT 0;
+            DECLARE v_temp DOUBLE;
             DECLARE cur CURSOR FOR 
                 SELECT latitud, longitud, temperatura 
                 FROM temp_puntos_ordenados
@@ -180,7 +202,7 @@ main_proc: BEGIN
             OPEN cur;
             
             tramo_loop: LOOP
-                FETCH cur INTO v_punto_actual_lat, v_punto_actual_lon, v_temperatura_promedio;
+                FETCH cur INTO v_punto_actual_lat, v_punto_actual_lon, v_temp;
                 
                 IF done THEN
                     LEAVE tramo_loop;
@@ -205,13 +227,24 @@ main_proc: BEGIN
                 IF v_distancia_acumulada <= (i * v_longitud_tramo) AND 
                    v_distancia_acumulada > ((i-1) * v_longitud_tramo) THEN
                     -- Actualizar estadísticas para este tramo
-                    SET temp_suma = temp_suma + v_temperatura_promedio;
+                    SET temp_suma = temp_suma + v_temp;
                     SET temp_count = temp_count + 1;
-                    IF v_temperatura_promedio > v_temperatura_max THEN
-                        SET v_temperatura_max = v_temperatura_promedio;
+                    
+                    -- Incrementar contador total de puntos para este tramo
+                    SET v_total_puntos = v_total_puntos + 1;
+                    
+                    -- Verificar si la temperatura está en el rango verde
+                    -- El rango verde es: desde valor mínimo semáforo amarillo por debajo (100°C)
+                    -- hasta valor mínimo semáforo amarillo por alto (150°C)
+                    IF v_temp >= v_verde_min AND v_temp < v_verde_max THEN
+                        SET v_puntos_verdes = v_puntos_verdes + 1;
                     END IF;
-                    IF v_temperatura_promedio < v_temperatura_min THEN
-                        SET v_temperatura_min = v_temperatura_promedio;
+                    
+                    IF v_temp > v_temperatura_max THEN
+                        SET v_temperatura_max = v_temp;
+                    END IF;
+                    IF v_temp < v_temperatura_min THEN
+                        SET v_temperatura_min = v_temp;
                     END IF;
                 END IF;
                 
@@ -227,10 +260,27 @@ main_proc: BEGIN
             IF temp_count > 0 THEN
                 SET v_temperatura_promedio = temp_suma / temp_count;
                 SET v_numero_pasadas = temp_count;
+                
+                -- Calcular el porcentaje de puntos verdes
+                IF v_total_puntos > 0 THEN
+                    SET v_porcentaje_verde = (v_puntos_verdes * 100.0) / v_total_puntos;
+                    
+                    -- Determinar cumplimiento según el porcentaje verde
+                    -- Se cumple si el porcentaje de lecturas en rango verde (100-150°C)
+                    -- es igual o mayor que el porcentaje requerido (90%)
+                    IF v_porcentaje_verde >= v_porcentaje_verde_requerido THEN
+                        SET v_cumple_rango = 1;
+                    ELSE
+                        SET v_cumple_rango = 0;
+                    END IF;
+                ELSE
+                    SET v_cumple_rango = 0;
+                END IF;
             ELSE
                 SET v_temperatura_promedio = 0;
                 SET v_temperatura_max = 0;
                 SET v_temperatura_min = 0;
+                SET v_cumple_rango = 0;
             END IF;
         END;
         
@@ -276,6 +326,4 @@ main_proc: BEGIN
     
     -- Limpiar
     DROP TEMPORARY TABLE IF EXISTS temp_puntos_ordenados;
-END //
-
-DELIMITER ;
+END
