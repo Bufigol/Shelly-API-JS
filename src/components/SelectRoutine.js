@@ -28,6 +28,7 @@ import consumototaldiario_electricImage from "../assets/images/consumototaldiari
 import consumoelectrico_electricImage from "../assets/images/consumoelectrico.png";
 import consumototalmes_electricImage from "../assets/images/consumototalmes.png";
 import consumototalano_electricImage from "../assets/images/consumototalano.png";
+
 const routines = [
   { title: "Dashboard", image: dashboardImage, route: "/dashboard", permission: "view_dashboard" },
   { title: "Intrusiones Blind Spot", image: detectionImage, route: "/blind-spot-intrusions", permission: "view_blind_spot_intrusions" },
@@ -149,6 +150,8 @@ const routines = [
 const SelectRoutine = () => {
   const navigate = useNavigate();
   const [userPermissions, setUserPermissions] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -156,6 +159,22 @@ const SelectRoutine = () => {
       const decodedToken = jwt.decode(token);
       setUserPermissions(decodedToken.permissions.split(","));
     }
+
+    // Detectar si es un dispositivo móvil
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    // Verificar inicialmente
+    checkMobile();
+
+    // Agregar listener para cambios de tamaño
+    window.addEventListener('resize', checkMobile);
+
+    // Limpiar el listener cuando el componente se desmonte
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
   }, []);
 
   const handleCardClick = (routine) => {
@@ -169,6 +188,34 @@ const SelectRoutine = () => {
   };
 
   const formatTitle = (title) => {
+    // Versiones abreviadas para móviles
+    if (isMobile) {
+      const shortTitles = {
+        "Intrusiones Blind Spot": "Intrusiones",
+        "Sectores Presencia Personal": "Presencia",
+        "Mensajes SOS Visualización por Ubicación": "SOS",
+        "Dashboard de Temperatura": "Dash Temp",
+        "Temperaturas Cámaras de Frío": "Cámaras Frío",
+        "Inteligencia de Datos Temperatura": "Intel. Datos",
+        "Puertas Status Cierre / Apertura": "Puertas",
+        "Datos Análisis Forense": "Análisis",
+        "Interior Ubicación en Tiempo Real": "Ubicación Int.",
+        "Interior Búsqueda Histórica Ubicación": "Búsqueda Int.",
+        "Exterior Ubicación Tiempo Real": "Ubicación Ext.",
+        "Exterior Búsqueda Histórica Ubicación": "Búsqueda Ext.",
+        "Análisis de Temperatura y Potencia": "Temp/Potencia",
+        "Consumo Total por Dia": "Consumo Día",
+        "Consumo Total por Mes": "Consumo Mes",
+        "Consumo Total por Año": "Consumo Año",
+        "Parámetros Temperatura Cámaras": "Param. Temp",
+        "Dashboard Electrico": "Dash Eléctrico",
+        "Consumo Electrico": "Consumo Eléc."
+      };
+      
+      return <span className="routine-title-part">{shortTitles[title] || title}</span>;
+    }
+
+    // Versión para escritorio (manteniendo el comportamiento original)
     const parts = title.split(":");
     if (parts.length > 1) {
       return (
@@ -181,11 +228,29 @@ const SelectRoutine = () => {
     return <span className="routine-title-part">{title}</span>;
   };
 
+  // Filtrar las rutinas según el término de búsqueda
+  const filteredRoutines = routines.filter(routine => 
+    routine.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
+    userPermissions.includes(routine.permission)
+  );
+
   return (
     <div className="select-routine">
       <Header title="Dashboard TNS Track" className="header-title" />
+      
+      {/* Barra de búsqueda */}
+      <div className="search-container">
+        <input
+          type="text"
+          placeholder="Buscar aplicación..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="search-input"
+        />
+      </div>
+      
       <div className="routine-cards">
-        {routines.map((routine, index) => (
+        {filteredRoutines.map((routine, index) => (
           <div
             className="routine-card"
             key={index}
@@ -211,4 +276,5 @@ const SelectRoutine = () => {
     </div>
   );
 };
+
 export default SelectRoutine;

@@ -52,7 +52,7 @@ class ConfigLoader {
           accountKey: ubibotConfig.ACCOUNT_KEY,
           tokenFile: ubibotConfig.TOKEN_FILE,
           excludedChannels: ubibotConfig.EXCLUDED_CHANNELS,
-          collectionInterval: 600000, // Valor por defecto para el intervalo
+          collectionInterval: 300000, // Valor por defecto para el intervalo
         },
         database: {
           host: dbDetails.host,
