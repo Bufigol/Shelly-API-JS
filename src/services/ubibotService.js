@@ -26,15 +26,6 @@ const pool = mysql.createPool({
 });
 
 class UbibotService {
-  /**
-   * Procesa los datos de un canal de Ubibot.
-   * Si el canal no existe en la base de datos, lo crea.
-   * Si el canal ya existe, verifica si ha habido cambios en la información
-   * básica del canal (como la latitud o la fecha de creación), y en caso
-   * de que sí, actualiza la información del canal en la base de datos.
-   * @param {Object} channelData Información del canal de Ubibot
-   * @returns {Promise<void>}
-   */
   async processChannelData(channelData) {
     const connection = await pool.getConnection();
     try {
@@ -80,27 +71,11 @@ class UbibotService {
       connection.release();
     }
   }
-  /**
-   * Convierte una fecha/hora UTC a una fecha/hora en la zona horaria de
-   * Santiago de Chile.
-   * @param {Date|String|Number} utcTime Fecha/hora en formato UTC
-   * @returns {moment} Fecha/hora en la zona horaria de Santiago de Chile
-   */
+
   getSantiagoTime(utcTime) {
     return moment.utc(utcTime).tz("America/Santiago");
   }
 
-  /**
- * Processes the sensor readings from a Ubibot channel and inserts them into the database.
- * Converts the timestamp from UTC to the Santiago timezone and logs the timestamp information.
- * If sensor readings are not present or the timestamp is missing, logs an error and returns.
- * After data insertion, checks parameters and sends notifications if necessary.
- *
- * @param {number} channelId - The ID of the Ubibot channel.
- * @param {Object} lastValues - The latest sensor readings, including fields for temperature, humidity, light, etc.
- * @param {Object} channelData - The complete channel data, including the net status.
- * @returns {Promise<void>}
- */
   async processSensorReadings(channelId, lastValues, channelData) {
     const connection = await pool.getConnection();
     try {
@@ -117,7 +92,6 @@ class UbibotService {
       console.log("UTC Timestamp:", utcTimestamp.format());
       console.log("Santiago Time:", santiagoTime.format());
 
-      // Obtener el estado online del canal
       const channelNetStatus = channelData.net || "1";
 
       await connection.query(
@@ -135,7 +109,7 @@ class UbibotService {
             ? convertToMySQLDateTime(lastValues.field8.created_at)
             : null,
           santiagoTime.format("YYYY-MM-DD HH:mm:ss"),
-          channelNetStatus
+          channelNetStatus,
         ]
       );
 
@@ -143,103 +117,110 @@ class UbibotService {
         channel_id: channelId,
         timestamp: utcTimestamp.toDate(),
         insercion: santiagoTime.format("YYYY-MM-DD HH:mm:ss"),
-        channel_online_status: channelNetStatus
+        channel_online_status: channelNetStatus,
       });
 
-      // Verificar parámetros después de la inserción
       await this.checkParametersAndNotify(channelId, lastValues);
     } finally {
       connection.release();
     }
   }
 
-  /**
-   * Verifica los parámetros del canal especificado y envía notificaciones
-   * si la temperatura se encuentra fuera del rango permitido.
-   *
-   * @param {number} channelId - El ID del canal Ubibot.
-   * @param {Object} lastValues - Los valores más recientes del sensor, incluyendo la temperatura, humedad, luz, etc.
-   * @returns {Promise<void>}
-   */
   async checkParametersAndNotify(channelId, lastValues) {
-    let connection;
+    const connection = await pool.getConnection();
     try {
-      connection = await pool.getConnection();
-
-      // Obtener la información del canal, incluyendo si está operativo y su grupo
+      // 1. Obtener información del canal y parámetros
       const [channelInfo] = await connection.query(
-        "SELECT c.name, c.esOperativa, p.minimo AS minima_temp_camara, p.maximo AS maxima_temp_camara " +
-        "FROM channels_ubibot c " +
-        "JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id " +
-        "WHERE c.channel_id = ?",
+        `SELECT c.name, c.esOperativa, c.out_of_range_since, c.last_alert_sent, c.is_currently_out_of_range,
+                        p.minimo AS minima_temp_camara, p.maximo AS maxima_temp_camara
+                 FROM channels_ubibot c
+                 JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id
+                 WHERE c.channel_id = ?`,
         [channelId]
       );
 
       if (channelInfo.length === 0 || !channelInfo[0].esOperativa) {
-        console.log(
-          `Ubibot: Canal ${channelId} no encontrado o no operativo. Abortando la verificación.`
-        );
+        console.log(`Ubibot: Canal ${channelId} no operativo.  Verificación abortada.`);
         return;
       }
 
       const {
-        name: channelName,
-        minima_temp_camara,
-        maxima_temp_camara,
+        name: channelName, minima_temp_camara, maxima_temp_camara,
+        out_of_range_since, last_alert_sent, is_currently_out_of_range
       } = channelInfo[0];
-      const temperature = lastValues.field8
-        ? parseFloat(lastValues.field8.value)
-        : null;
 
+      const temperature = lastValues.field8 ? parseFloat(lastValues.field8.value) : null;
       if (temperature === null) {
-        console.log(
-          `Ubibot: No se pudo obtener la temperatura para el canal ${channelId}. Abortando la verificación.`
-        );
+        console.log(`Ubibot: Temperatura no disponible para ${channelId}.`);
         return;
       }
 
-      console.log(
-        `Ubibot: Verificando temperatura para el canal ${channelId} (${channelName}): ${temperature.toFixed(
-          2
-        )}°C`
-      );
-      console.log(
-        `Ubibot: Rango permitido: ${minima_temp_camara}°C a ${maxima_temp_camara}°C`
-      );
+      const currentTime = moment().tz("America/Santiago");
+      console.log(`Ubibot: Verificando temperatura: ${temperature}, Mínima: ${minima_temp_camara}, Máxima: ${maxima_temp_camara}`); // Añade esta línea
+      const isOutOfRange = temperature < minima_temp_camara || temperature > maxima_temp_camara;
+      console.log(`Ubibot: isOutOfRange: ${isOutOfRange}`); // Y esta
 
-      if (
-        temperature < minima_temp_camara ||
-        temperature > maxima_temp_camara
-      ) {
-        console.log(`Ubibot: Temperatura fuera de rango. Enviando alerta.`);
+      let shouldUpdate = false;
+      const updateData = {};
 
-        const timestamp = moment(lastValues.field1.created_at).format(
-          "YYYY-MM-DD HH:mm:ss"
-        );
+      // 2. Lógica de estado y alertas
+      if (isOutOfRange) {
+        console.log(`Ubibot: is_currently_out_of_range antes del if: ${is_currently_out_of_range}`); // Añade esto
+        if (!is_currently_out_of_range) { //Comienzo a contar
+          updateData.out_of_range_since = currentTime.format("YYYY-MM-DD HH:mm:ss");
+          updateData.is_currently_out_of_range = 1;
+          shouldUpdate = true;
+          console.log(`Ubibot: ${channelName} fuera de rango.  Iniciando seguimiento.`);
+        }
 
-        // Enviar notificaciones
-        await this.sendEmail(
-          channelName,
-          temperature,
-          timestamp,
-          minima_temp_camara,
-          maxima_temp_camara
-        );
-        await this.sendSMS(
-          channelName,
-          temperature,
-          timestamp,
-          minima_temp_camara,
-          maxima_temp_camara
-        );
+        const outOfRangeMinutes = out_of_range_since ? currentTime.diff(moment(out_of_range_since), 'minutes') : 0;
+        const timeSinceLastAlertMinutes = last_alert_sent ? currentTime.diff(moment(last_alert_sent), 'minutes') : Infinity;
 
-        console.log(`Ubibot: Alertas enviadas para el canal ${channelName}`);
-      } else {
-        console.log(
-          `Ubibot: Temperatura dentro del rango permitido. No se requiere alerta.`
-        );
+        const MIN_TIME_OUT_OF_RANGE = 60;
+        const MIN_TIME_BETWEEN_ALERTS = 60;
+
+        // 3.  Verificar si se debe enviar una alerta
+        if (outOfRangeMinutes >= MIN_TIME_OUT_OF_RANGE &&
+          this.isNonWorkingHours(currentTime) &&
+          timeSinceLastAlertMinutes >= MIN_TIME_BETWEEN_ALERTS) {
+          const oneHourAgo = moment().subtract(1, "hour").format("YYYY-MM-DD HH:mm:ss");
+          const [registrosNormales] = await connection.query(
+            `SELECT COUNT(*) as count
+                        FROM sensor_readings_ubibot
+                        WHERE channel_id = ?
+                        AND external_temperature >= ? AND external_temperature <= ?
+                        AND timestamp >= ?`,
+            [channelId, minima_temp_camara, maxima_temp_camara, oneHourAgo]
+          );
+
+          if (registrosNormales[0].count === 0) { //Si no hay registros, enviar alertas
+            // 4.  Enviar Alertas (SI TODO ESTÁ BIEN)
+            const timestamp = moment(lastValues.field1.created_at).format("YYYY-MM-DD HH:mm:ss");
+            await this.sendEmail(channelName, temperature, timestamp, minima_temp_camara, maxima_temp_camara);
+            //await this.sendSMS(channelName, temperature, timestamp, minima_temp_camara, maxima_temp_camara); //Comentado
+
+            // 5.  Actualizar la Base de Datos (DESPUÉS de enviar las alertas)
+            updateData.last_alert_sent = currentTime.format("YYYY-MM-DD HH:mm:ss");
+            shouldUpdate = true;  // Aseguramos que se actualice.
+            console.log(`Ubibot: Alertas enviadas para ${channelName}.`);
+          } else {
+            console.log(`Ubibot: No se envían alertas para ${channelName} porque hay registros dentro del rango.`);
+          }
+        }
+      } else { // Temperatura dentro de rango
+        if (is_currently_out_of_range) {
+          updateData.is_currently_out_of_range = 0;
+          updateData.out_of_range_since = null;
+          shouldUpdate = true;
+          console.log(`Ubibot: ${channelName} volvió al rango normal.`);
+        }
       }
 
+      // 6. Actualizar Base de Datos (si es necesario)
+      if (shouldUpdate) {
+        await this.updateChannelStatus(connection, channelId, updateData);
+      }
+      // Verificar si el sensor está sin conexión
       const lastReading = await this.getLastSensorReading(channelId);
       const utcTimestamp = moment.utc(lastValues.field1.created_at);
       if (
@@ -263,17 +244,49 @@ class UbibotService {
     }
   }
 
-  /**
-   * Envía un correo electrónico a los destinatarios configurados cuando un sensor
-   * de temperatura externa está desconectado por más de un intervalo determinado.
-   * @param {string} channelName - Nombre del canal
-   * @param {string} hora - Hora en que se detectó la desconexión
-   */
+  async updateChannelStatus(connection, channelId, updateData) {
+    try {
+      const setClauses = [];
+      const values = [];
+
+      for (const key in updateData) {
+        setClauses.push(`${key} = ?`);
+        values.push(updateData[key]);
+      }
+
+      values.push(channelId);
+      const query = `UPDATE channels_ubibot SET ${setClauses.join(', ')} WHERE channel_id = ?`;
+      console.log(`Ubibot: Consulta SQL: ${query}`); // LOG CLAVE
+      console.log(`Ubibot: Valores: ${JSON.stringify(values)}`); // LOG CLAVE
+
+      const result = await connection.query(query, values);
+      console.log(`Ubibot: Resultado de la actualización:`, result[0]); // Cambiado para mostrar el objeto completo
+
+    } catch (error) {
+      console.error(`Ubibot: Error al actualizar el estado del canal ${channelId}:`, error);
+      throw error; //  Re-lanza el error para que sea manejado por el llamador.
+    }
+  }
+
+  isNonWorkingHours(dateTime) {
+    const dayOfWeek = dateTime.day();
+    const hour = dateTime.hour();
+    const minute = dateTime.minute();
+
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Lunes a Viernes
+      return (hour > 18 || (hour === 18 && minute >= 30)) || (hour < 8);
+    } else if (dayOfWeek === 6) { // Sábado
+      return hour > 14 || hour < 8;
+    } else { // Domingo
+      return true;
+    }
+  }
+
   async sendEmaillSensorSinConexion(channelName, hora) {
     const FROM_EMAIL = sgMailConfig.email_contacto.from_verificado;
 
     const data = {
-      personalizations: [{ to: [{ email: FROM_EMAIL }] }], // Cambiado a un array de objetos
+      personalizations: [{ to: [{ email: FROM_EMAIL }] }],
       from: { email: FROM_EMAIL },
       subject: `Alerta de Sensor Desconectado para ${channelName}`,
       content: [
@@ -310,7 +323,7 @@ class UbibotService {
       console.log("Email enviado exitosamente");
       return true;
     } catch (error) {
-      console.error("Error al enviar el email:");
+      console.error("Error al enviar el email:", error);
       if (error.response) {
         console.error("Datos de respuesta:", error.response.data);
         console.error("Estado de respuesta:", error.response.status);
@@ -328,16 +341,6 @@ class UbibotService {
     }
   }
 
-  /**
-   * Envía un correo electrónico a los destinatarios configurados cuando un sensor
-   * de temperatura externa está fuera de los límites establecidos.
-   * @param {string} channelName - Nombre del canal
-   * @param {number} temperature - Temperatura medida en el sensor
-   * @param {string} timestamp - Marca de tiempo en que se detectó la temperatura
-   * @param {number} minima_temp_camara - Límite mínimo de temperatura permitido
-   * @param {number} maxima_temp_camara - Límite máximo de temperatura permitido
-   * @returns {Promise<boolean>} Verdadero si el email se envió exitosamente, falso en caso contrario
-   */
   async sendEmail(
     channelName,
     temperature,
@@ -358,7 +361,8 @@ class UbibotService {
           value: `La temperatura en ${channelName} está fuera de los límites establecidos en los parámetros.
                     Temperatura: ${temperature}°C
                     Timestamp: ${timestamp}
-                    Límites permitidos: ${minima_temp_camara}°C / ${maxima_temp_camara}°C`,
+                    Límites permitidos: ${minima_temp_camara}°C / ${maxima_temp_camara}°C
+                    Esta alerta se envía porque la temperatura ha estado fuera de rango por más de 1 hora y estamos en horario no laboral.`,
         },
       ],
     };
@@ -388,7 +392,7 @@ class UbibotService {
       console.log("Email enviado exitosamente");
       return true;
     } catch (error) {
-      console.error("Error al enviar el email:");
+      console.error("Error al enviar el email:", error);
       if (error.response) {
         console.error("Datos de respuesta:", error.response.data);
         console.error("Estado de respuesta:", error.response.status);
@@ -405,15 +409,7 @@ class UbibotService {
       return false;
     }
   }
-  /**
-   * Envía un SMS de alerta a los destinatarios configurados cuando la temperatura en un canal
-   * supera los límites establecidos.
-   * @param {string} channelName - Nombre del canal
-   * @param {number} temperature - Temperatura actual
-   * @param {string} timestamp - Timestamp de la lectura
-   * @param {number} minima_temp_camara - Límite inferior de temperatura permitido
-   * @param {number} maxima_temp_camara - Límite superior de temperatura permitido
-   */
+
   async sendSMS(
     channelName,
     temperature,
@@ -421,7 +417,7 @@ class UbibotService {
     minima_temp_camara,
     maxima_temp_camara
   ) {
-    const message = `Alerta ${channelName}: Temp ${temperature}°C (${minima_temp_camara}-${maxima_temp_camara}°C) ${timestamp}`;
+    const message = `Alerta ${channelName}: Temp ${temperature}°C (${minima_temp_camara}-${maxima_temp_camara}°C) ${timestamp} [Fuera de horario laboral]`;
     const destinatarios = smsConfig.sms_destinatarios;
     console.log("Destinatarios SMS:", destinatarios);
 
@@ -439,7 +435,6 @@ class UbibotService {
       const retrySMS = async (destinatario, retries = 2) => {
         for (let i = 0; i <= retries; i++) {
           try {
-            // Verificar y refrescar token en cada intento
             const { headers } = await this.verifyAndRefreshToken();
             const formattedPhone = formatPhoneNumber(destinatario);
 
@@ -505,11 +500,9 @@ class UbibotService {
         }
       };
 
-      // Enviar SMS a cada destinatario
       for (const destinatario of destinatarios) {
         try {
           await retrySMS(destinatario);
-          // Esperar entre envíos a diferentes destinatarios
           await new Promise((resolve) => setTimeout(resolve, 8000));
         } catch (error) {
           console.error(
@@ -524,6 +517,7 @@ class UbibotService {
       throw error;
     }
   }
+
   async getToken() {
     try {
       const response = await axios.get(
@@ -582,7 +576,7 @@ class UbibotService {
 
   async getLastSensorReading(channelId) {
     try {
-      const [rows] = await pool.query(
+      const [rows] = await connection.query(
         "SELECT external_temperature_timestamp FROM sensor_readings_ubibot WHERE channel_id = ? ORDER BY external_temperature_timestamp DESC LIMIT 1",
         [channelId]
       );
