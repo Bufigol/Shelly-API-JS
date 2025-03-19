@@ -415,198 +415,140 @@ class MaquinaService {
   }
 
   /**
-   * Obtiene datos históricos consolidados para una máquina por su identificador externo
-   * @param {string} identificadorExterno - Identificador externo de la máquina
-   * @param {string} fechaInicio - Fecha de inicio del rango (opcional)
-   * @param {string} fechaFin - Fecha de fin del rango (opcional)
-   * @param {number} idFaena - ID de faena específica (opcional)
-   * @returns {Promise<Object>} Datos históricos organizados para visualización
+   * Obtiene datos históricos consolidados para una máquina
+   * @param {string} identificador_externo - Identificador externo de la máquina
+   * @param {string} fecha_inicio - Fecha de inicio en formato ISO8601
+   * @param {string} fecha_fin - Fecha de fin en formato ISO8601
+   * @param {number} id_faena - ID de faena opcional
+   * @returns {Promise<Object>} Datos históricos consolidados
    */
   async obtenerHistoricoConsolidado(
-    identificadorExterno,
-    fechaInicio,
-    fechaFin,
-    idFaena
+    identificador_externo,
+    fecha_inicio,
+    fecha_fin,
+    id_faena
   ) {
     try {
-      // Verificar si la máquina existe
-      const [maquinas] = await databaseService.pool.query(
-        `
-      SELECT m.id_Maquina, m.id_equipo
-      FROM api_maquina m
-      WHERE m.identificador_externo = ?
-    `,
-        [identificadorExterno]
-      );
+      // Validar que el identificador_externo existe
+      const maquinaQuery = `
+        SELECT id_Maquina 
+        FROM api_maquina 
+        WHERE identificador_externo = ?
+      `;
 
-      if (maquinas.length === 0) {
-        throw new NotFoundError("Máquina no encontrada");
+      const [maquinaRows] = await databaseService.pool.query(maquinaQuery, [
+        identificador_externo,
+      ]);
+
+      if (maquinaRows.length === 0) {
+        throw new NotFoundError(
+          `No se encontró máquina con identificador: ${identificador_externo}`
+        );
       }
 
-      const idMaquina = maquinas[0].id_Maquina;
-      const idEquipo = maquinas[0].id_equipo;
+      const idMaquina = maquinaRows[0].id_Maquina;
 
-      // Implementar la lógica de fechas según los requisitos
-      let fechaInicioActual = fechaInicio;
-      let fechaFinActual = fechaFin;
-
-      const hoy = new Date();
-
-      // Caso 1: Solo hay fecha de inicio
-      if (fechaInicioActual && !fechaFinActual) {
-        const fechaInicioObj = new Date(fechaInicioActual);
-        const fechaTresMesesDespues = new Date(fechaInicioObj);
-        fechaTresMesesDespues.setMonth(fechaTresMesesDespues.getMonth() + 3);
-
-        // Si la fecha calculada es posterior a hoy, usar hoy
-        if (fechaTresMesesDespues > hoy) {
-          fechaFinActual = hoy.toISOString().split("T")[0];
-        } else {
-          fechaFinActual = fechaTresMesesDespues.toISOString().split("T")[0];
-        }
-      }
-
-      // Caso 2: Solo hay fecha de fin
-      if (!fechaInicioActual && fechaFinActual) {
-        const fechaFinObj = new Date(fechaFinActual);
-        const fechaTresMesesAntes = new Date(fechaFinObj);
-        fechaTresMesesAntes.setMonth(fechaTresMesesAntes.getMonth() - 3);
-
-        fechaInicioActual = fechaTresMesesAntes.toISOString().split("T")[0];
-      }
-
-      // Construir consulta base para faenas
-      let queryFaenas = `
-      SELECT 
-        f.id_Faena,
-        f.id_Faena_externo,
-        f.fecha_inico AS fecha_inicio,
-        f.fecha_fin,
-        c.nombre_cliente
-      FROM api_faena f
-      JOIN api_clientes c ON f.id_cliente = c.idClientes
-      WHERE f.id_maquina = ?
-    `;
-
-      const queryParamsFaenas = [idMaquina];
-
-      // Aplicar filtros para las faenas con las fechas actualizadas
-      if (idFaena) {
-        queryFaenas += " AND f.id_Faena = ?";
-        queryParamsFaenas.push(idFaena);
-      } else {
-        if (fechaInicioActual) {
-          queryFaenas += " AND (f.fecha_fin >= ? OR f.fecha_fin IS NULL)";
-          queryParamsFaenas.push(fechaInicioActual);
-        }
-
-        if (fechaFinActual) {
-          queryFaenas += " AND f.fecha_inico <= ?";
-          queryParamsFaenas.push(fechaFinActual);
-        }
-      }
-
-      queryFaenas += " ORDER BY f.fecha_inico";
-
-      const [faenas] = await databaseService.pool.query(
-        queryFaenas,
-        queryParamsFaenas
-      );
-
-      // Si no hay faenas que coincidan con los criterios
-      if (faenas.length === 0) {
-        return {
-          success: true,
-          identificador_externo: identificadorExterno,
-          id_maquina: idMaquina,
-          periodo: {
-            fecha_inicio: fechaInicioActual,
-            fecha_fin: fechaFinActual,
-          },
-          faenas: [],
-          datos: [],
-        };
-      }
-
-      // Obtener datos para cada faena o para el rango específico
-      let datosPorFaena = [];
-
-      for (const faena of faenas) {
-        // Consulta para datos por faena
-        let queryDatos = `
+      // Construir consulta base
+      let query = `
         SELECT 
+          f.id_Faena,
+          f.id_Faena_externo,
+          f.fecha_inico as fecha_inicio,
+          f.fecha_fin,
           df.timestamp_dato,
           df.temperatura,
           df.latitud,
           df.longitud,
-          df.calidad_temperatura,
-          ? AS id_faena
-        FROM api_datos_por_faena df
-        WHERE df.id_faena = ?
+          df.calidad_temperatura
+        FROM api_faena f
+        INNER JOIN api_datos_por_faena df ON f.id_Faena = df.id_faena
+        WHERE f.id_maquina = ?
       `;
 
-        const queryParamsDatos = [faena.id_Faena, faena.id_Faena];
+      const queryParams = [idMaquina];
 
-        // Aplicar filtros adicionales de fecha si no es una faena específica
-        if (!idFaena) {
-          if (fechaInicioActual) {
-            queryDatos += " AND df.timestamp_dato >= ?";
-            queryParamsDatos.push(fechaInicioActual);
-          }
+      // Añadir filtros de fecha
+      if (fecha_inicio) {
+        query += " AND df.timestamp_dato >= ?";
+        queryParams.push(fecha_inicio);
+      }
 
-          if (fechaFinActual) {
-            queryDatos += " AND df.timestamp_dato <= ?";
-            queryParamsDatos.push(fechaFinActual);
-          }
+      if (fecha_fin) {
+        query += " AND df.timestamp_dato <= ?";
+        queryParams.push(fecha_fin);
+      }
+
+      // Añadir filtro de faena si se proporciona
+      if (id_faena) {
+        query += " AND f.id_Faena = ?";
+        queryParams.push(id_faena);
+      }
+
+      // Ordenar por fecha
+      query += " ORDER BY df.timestamp_dato";
+
+      // Ejecutar consulta
+      const [rows] = await databaseService.pool.query(query, queryParams);
+
+      // Procesar resultados para agruparlos por faena
+      const resultadosPorFaena = {};
+
+      rows.forEach((row) => {
+        const idFaena = row.id_Faena;
+
+        if (!resultadosPorFaena[idFaena]) {
+          resultadosPorFaena[idFaena] = {
+            id_Faena: idFaena,
+            id_Faena_externo: row.id_Faena_externo,
+            fecha_inicio: row.fecha_inicio,
+            fecha_fin: row.fecha_fin,
+            datos: [],
+          };
         }
 
-        queryDatos += " ORDER BY df.timestamp_dato";
+        resultadosPorFaena[idFaena].datos.push({
+          timestamp: row.timestamp_dato,
+          temperatura: row.temperatura,
+          latitud: row.latitud,
+          longitud: row.longitud,
+          calidad_temperatura: row.calidad_temperatura,
+        });
+      });
 
-        const [datos] = await databaseService.pool.query(
-          queryDatos,
-          queryParamsDatos
-        );
+      // Convertir a array final
+      const resultado = Object.values(resultadosPorFaena);
 
-        // Agregar datos a la faena
-        faena.datos = datos;
-        datosPorFaena = datosPorFaena.concat(datos);
-      }
+      // Calcular estadísticas para cada faena
+      resultado.forEach((faena) => {
+        // Asegurarse de que hay datos
+        if (faena.datos.length > 0) {
+          // Extraer solo las temperaturas
+          const temperaturas = faena.datos
+            .map((d) => d.temperatura)
+            .filter((t) => t !== null);
 
-      // Si se pidió una faena específica, obtener también su resumen
-      let resumen = null;
-      if (idFaena) {
-        const [datosResumen] = await databaseService.pool.query(
-          `
-        SELECT *
-        FROM api_resumen_Datos_por_faena
-        WHERE id_faena = ?
-        ORDER BY cuarto
-      `,
-          [idFaena]
-        );
+          if (temperaturas.length > 0) {
+            faena.estadisticas = {
+              temperatura_min: Math.min(...temperaturas),
+              temperatura_max: Math.max(...temperaturas),
+              temperatura_promedio:
+                temperaturas.reduce((a, b) => a + b, 0) / temperaturas.length,
+              total_lecturas: temperaturas.length,
+            };
+          } else {
+            faena.estadisticas = {
+              temperatura_min: null,
+              temperatura_max: null,
+              temperatura_promedio: null,
+              total_lecturas: 0,
+            };
+          }
+        }
+      });
 
-        resumen = datosResumen;
-      }
-
-      return {
-        success: true,
-        identificador_externo: identificadorExterno,
-        id_maquina: idMaquina,
-        id_equipo: idEquipo,
-        periodo: {
-          fecha_inicio: fechaInicioActual,
-          fecha_fin: fechaFinActual,
-        },
-        faenas: faenas,
-        datos_consolidados: datosPorFaena,
-        resumen: resumen,
-      };
+      return resultado;
     } catch (error) {
-      await loggingService.registrarError(
-        "MaquinaService.obtenerHistoricoConsolidado",
-        `Error al obtener histórico consolidado para máquina ${identificadorExterno}`,
-        error
-      );
+      console.error("Error al obtener histórico consolidado:", error);
       throw error;
     }
   }
