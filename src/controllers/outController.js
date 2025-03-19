@@ -232,17 +232,66 @@ exports.obtenerDatosRealtime = async (req, res) => {
   }
 };
 
+// Modificación en outController.js - Reemplazar la función obtenerHistoricoConsolidado
+
 exports.obtenerHistoricoConsolidado = async (req, res) => {
   try {
-    const { identificador_externo, fecha_inicio, fecha_fin, id_faena } =
-      req.query;
+    const { identificador_externo, fecha_inicio, fecha_fin, id_faena } = req.query;
+    
+    // Si no se proporcionan ambas fechas, calcular fechas según las reglas especificadas
+    let inicioEfectivo = null;
+    let finEfectivo = null;
+    const TRES_MESES_MS = 3 * 30 * 24 * 60 * 60 * 1000; // Aproximadamente 3 meses en milisegundos
+    const ahora = Date.now();
+    
+    if (fecha_inicio && fecha_fin) {
+      // Ambas fechas proporcionadas - usar directamente después de convertir a Number
+      inicioEfectivo = parseInt(fecha_inicio, 10);
+      finEfectivo = parseInt(fecha_fin, 10);
+    } 
+    else if (fecha_inicio && !fecha_fin) {
+      // Solo fecha de inicio - obtener desde esa fecha hasta 3 meses después o fecha actual
+      inicioEfectivo = parseInt(fecha_inicio, 10);
+      const posibleFin = inicioEfectivo + TRES_MESES_MS;
+      finEfectivo = Math.min(posibleFin, ahora); // El menor entre posibleFin y ahora
+    } 
+    else if (!fecha_inicio && fecha_fin) {
+      // Solo fecha de fin - obtener 3 meses antes de esa fecha
+      finEfectivo = parseInt(fecha_fin, 10);
+      inicioEfectivo = finEfectivo - TRES_MESES_MS;
+    } 
+    else {
+      // Ninguna fecha proporcionada - obtener últimos 3 meses
+      finEfectivo = ahora;
+      inicioEfectivo = finEfectivo - TRES_MESES_MS;
+    }
+    
+    // Convertir timestamps a objetos Date para el servicio (si es necesario)
+    const fechaInicioDate = new Date(inicioEfectivo);
+    const fechaFinDate = new Date(finEfectivo);
+    
+    // Llamar al servicio con las fechas calculadas
     const datos = await maquinaService.obtenerHistoricoConsolidado(
       identificador_externo,
-      fecha_inicio,
-      fecha_fin,
+      fechaInicioDate.toISOString(), // Convertir a ISO para compatibilidad con el servicio
+      fechaFinDate.toISOString(),
       id_faena
     );
-    sendSuccessResponse(res, datos);
+    
+    // Añadir información sobre el rango de fechas utilizado en la respuesta
+    const respuesta = {
+      datos,
+      metadatos: {
+        rango_fechas: {
+          inicio: inicioEfectivo,
+          inicio_iso: fechaInicioDate.toISOString(),
+          fin: finEfectivo,
+          fin_iso: fechaFinDate.toISOString(),
+        }
+      }
+    };
+    
+    sendSuccessResponse(res, respuesta);
   } catch (error) {
     sendErrorResponse(res, error, "Error al obtener histórico consolidado");
   }

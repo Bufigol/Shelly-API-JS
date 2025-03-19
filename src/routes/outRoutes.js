@@ -28,17 +28,16 @@ router.post(
   outController.login
 );
 
-
 /**
- * 
+ *
  * * Proceso:
  * 1. Se autentica al usuario que realiza la petición con el middleware de autenticación
  * 2. Se verifica que el usuario autenticado tenga el permiso de editor
  * 3. Se valida que los datos del nuevo usuario sean correctos (email, nombre, contraseña, roles)
  * 4. Se crea el nuevo usuario en la base de datos
  * 5. Se devuelve el token JWT y los datos del nuevo usuario
- * 
- * 
+ *
+ *
  * @route POST /api/out/crear_usuarios
  * @description Crea un nuevo usuario en el sistema
  * @access Privado (solo editor)
@@ -119,10 +118,14 @@ router.get(
  * @description Busca información histórica para una maquinaria con filtros opcionales
  * @access Privado
  * @query {String} identificador_externo - Identificador externo de la maquinaria (obligatorio)
- * @query {String} [fecha_inicio] - Fecha de inicio del período (ISO8601, opcional)
- * @query {String} [fecha_fin] - Fecha de fin del período (ISO8601, opcional)
+ * @query {Number} [fecha_inicio] - Timestamp UNIX en milisegundos para inicio del período (opcional)
+ * @query {Number} [fecha_fin] - Timestamp UNIX en milisegundos para fin del período (opcional)
  * @query {Number} [id_faena] - ID de faena específica (opcional)
  * @returns {Object} Datos históricos de la maquinaria con información para gráficos
+ * @notes Si no se proporcionan fechas, devuelve datos de los últimos 3 meses.
+ *        Si solo se proporciona fecha_inicio, devuelve datos desde esa fecha hasta 3 meses después o la fecha actual.
+ *        Si solo se proporciona fecha_fin, devuelve datos de los 3 meses anteriores a esa fecha.
+ *        La diferencia entre fecha_inicio y fecha_fin no puede ser mayor a 3 meses.
  */
 router.get(
   "/maquinas/historico",
