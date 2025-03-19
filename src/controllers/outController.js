@@ -75,11 +75,20 @@ exports.login = async (req, res) => {
 
 exports.crearUsuario = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const result = await authService.crearUsuario(email, password);
+    const { email, password, asignarEditor } = req.body;
+    const idUsuarioCreador = req.user.id_Usuario; // Obtenemos el ID del usuario que está creando
+
+    // Llamamos al servicio para crear el usuario con los parámetros adicionales
+    const result = await authService.crearUsuario(
+      email,
+      password,
+      asignarEditor,
+      idUsuarioCreador
+    );
+
     sendSuccessResponse(
       res,
-      { id_Usuario: result.userId },
+      { id_Usuario: result.userId, permisos: result.permisos },
       "Usuario creado exitosamente",
       201
     );
