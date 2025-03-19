@@ -72,44 +72,94 @@ class AuthService {
    * Crea un nuevo usuario en el sistema
    * @param {string} email - El email del nuevo usuario
    * @param {string} password - La contraseña del nuevo usuario
-   * @returns {Object} Objeto con el ID del usuario creado
+   * @param {boolean} asignarEditor - Si se debe asignar también el permiso de editor
+   * @param {number} idUsuarioCreador - ID del usuario que está creando el nuevo usuario
+   * @returns {Object} Objeto con el ID del usuario creado y sus permisos
    */
-  async crearUsuario(email, password) {
-    // 1. Verificar si el usuario ya existe
-    const [existingUsers] = await databaseService.pool.query(
-      "SELECT id_Usuario FROM api_usuario WHERE email = ?",
-      [email]
-    );
+  async crearUsuario(
+    email,
+    password,
+    asignarEditor = false,
+    idUsuarioCreador = null
+  ) {
+    const connection = await databaseService.pool.getConnection();
 
-    if (existingUsers.length > 0) {
-      throw new Error("El correo ya está registrado");
-    }
+    try {
+      await connection.beginTransaction();
 
-    // 2. Hashear la contraseña
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // 3. Insertar el nuevo usuario en la base de datos
-    const [result] = await databaseService.pool.query(
-      "INSERT INTO api_usuario (email, password) VALUES (?, ?)",
-      [email, hashedPassword]
-    );
-
-    const userId = result.insertId;
-
-    // 4. Asignar el permiso "visualizador" por defecto
-    const [visualizadorPermission] = await databaseService.pool.query(
-      "SELECT id_Permisos FROM api_permisos WHERE nombre_pemiso = ?",
-      ["visualizador"]
-    );
-
-    if (visualizadorPermission.length > 0) {
-      await databaseService.pool.query(
-        "INSERT INTO api_usuarios_permisos (id_usuario, id_permiso) VALUES (?, ?)",
-        [userId, visualizadorPermission[0].id_Permisos]
+      // 1. Verificar si el usuario ya existe
+      const [existingUsers] = await connection.query(
+        "SELECT id_Usuario FROM api_usuario WHERE email = ?",
+        [email]
       );
-    }
 
-    return { userId };
+      if (existingUsers.length > 0) {
+        await connection.rollback();
+        throw new ValidationError("El correo ya está registrado");
+      }
+
+      // 2. Hashear la contraseña
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // 3. Insertar el nuevo usuario en la base de datos
+      const [result] = await connection.query(
+        "INSERT INTO api_usuario (email, password) VALUES (?, ?)",
+        [email, hashedPassword]
+      );
+
+      const userId = result.insertId;
+
+      // 4. Asignar el permiso "visualizador" por defecto
+      const [visualizadorPermission] = await connection.query(
+        "SELECT id_Permisos FROM api_permisos WHERE nombre_pemiso = ?",
+        ["visualizador"]
+      );
+
+      const permisos = ["visualizador"];
+
+      if (visualizadorPermission.length > 0) {
+        await connection.query(
+          "INSERT INTO api_usuarios_permisos (id_usuario, id_permiso) VALUES (?, ?)",
+          [userId, visualizadorPermission[0].id_Permisos]
+        );
+      }
+
+      // 5. Asignar permiso de editor si se solicitó
+      if (asignarEditor) {
+        const [editorPermission] = await connection.query(
+          "SELECT id_Permisos FROM api_permisos WHERE nombre_pemiso = ?",
+          ["editor"]
+        );
+
+        if (editorPermission.length > 0) {
+          await connection.query(
+            "INSERT INTO api_usuarios_permisos (id_usuario, id_permiso) VALUES (?, ?)",
+            [userId, editorPermission[0].id_Permisos]
+          );
+          permisos.push("editor");
+        }
+      }
+
+      // 6. Registrar la acción en el log si hay un usuario creador
+      if (idUsuarioCreador) {
+        await loggingService.registrarModificacionUsuario(
+          idUsuarioCreador,
+          "USUARIO",
+          userId,
+          "creacion",
+          null,
+          JSON.stringify({ email, permisos })
+        );
+      }
+
+      await connection.commit();
+      return { userId, permisos };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   }
 
   /**

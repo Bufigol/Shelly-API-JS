@@ -28,16 +28,30 @@ router.post(
   outController.login
 );
 
+
 /**
- * @route POST /api/out/usuarios
+ * 
+ * * Proceso:
+ * 1. Se autentica al usuario que realiza la petición con el middleware de autenticación
+ * 2. Se verifica que el usuario autenticado tenga el permiso de editor
+ * 3. Se valida que los datos del nuevo usuario sean correctos (email, nombre, contraseña, roles)
+ * 4. Se crea el nuevo usuario en la base de datos
+ * 5. Se devuelve el token JWT y los datos del nuevo usuario
+ * 
+ * 
+ * @route POST /api/out/crear_usuarios
  * @description Crea un nuevo usuario en el sistema
- * @access Público
- * @body {String} email - Correo electrónico del usuario
- * @body {String} password - Contraseña del usuario
- * @returns {Object} Datos del usuario creado
+ * @access Privado (solo editor)
+ * @body {String} email - Correo electrónico del nuevo usuario
+ * @body {String} name - Nombre y apellido del nuevo usuario
+ * @body {String} password - Contraseña para el nuevo usuario
+ * @body {String} roles - Roles del nuevo usuario (separados por comas, e.g. "editor,admin")
+ * @returns {Object} Token JWT y datos del nuevo usuario
  */
 router.post(
-  "/usuarios",
+  "/crear_usuarios",
+  apiAuthMiddleware.authenticate.bind(apiAuthMiddleware),
+  apiAuthMiddleware.checkPermissions(["editor"]),
   apiValidationMiddleware.validateUsuario,
   outController.crearUsuario
 );
