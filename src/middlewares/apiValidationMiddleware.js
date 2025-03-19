@@ -71,7 +71,15 @@ module.exports = {
   /**
    * Validación para la creación de usuarios
    */
-  validateUsuario: [emailValidator, passwordValidator, checkValidationErrors],
+  validateUsuario: [
+    emailValidator,
+    passwordValidator,
+    body("asignarEditor")
+      .optional()
+      .isBoolean()
+      .withMessage("asignarEditor debe ser un valor booleano"),
+    checkValidationErrors,
+  ],
 
   /**
    * Validación para la solicitud de reseteo de contraseña
