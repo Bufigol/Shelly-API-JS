@@ -27,20 +27,72 @@ const checkFechasRestricciones = (req, res, next) => {
     });
   }
 
-  // Validar la restricción de fechas solo si ambas están presentes
+  // Validar la restricción de fechas
   const { fecha_inicio, fecha_fin } = req.query;
-  if (fecha_inicio && fecha_fin) {
-    const inicio = new Date(fecha_inicio);
-    const fin = new Date(fecha_fin);
 
-    // Calcular diferencia en meses (aproximadamente)
-    const diferenciaMeses = (fin - inicio) / (1000 * 60 * 60 * 24 * 30);
+  // Si no hay fechas, se obtienen los datos de los últimos tres meses
+  if (!fecha_inicio && !fecha_fin) {
+    // No necesitamos hacer nada aquí, la lógica se manejará en el controlador
+    return next();
+  }
 
-    if (diferenciaMeses > 3 || diferenciaMeses < 0) {
+  const TRES_MESES_MS = 3 * 30 * 24 * 60 * 60 * 1000; // Aproximadamente 3 meses en milisegundos
+  const ahora = Date.now();
+
+  // Convertir strings a números si es necesario
+  const inicioTimestamp = fecha_inicio ? parseInt(fecha_inicio, 10) : null;
+  const finTimestamp = fecha_fin ? parseInt(fecha_fin, 10) : null;
+
+  // Validaciones específicas según los casos
+
+  // Caso: Solo fecha inicio
+  if (inicioTimestamp && !finTimestamp) {
+    if (inicioTimestamp > ahora) {
+      return res.status(400).json({
+        success: false,
+        message: "La fecha de inicio no puede ser mayor a la fecha actual",
+      });
+    }
+    // La fecha de fin se calculará en el controlador como inicio + 3 meses o fecha actual
+    return next();
+  }
+
+  // Caso: Solo fecha fin
+  if (!inicioTimestamp && finTimestamp) {
+    if (finTimestamp > ahora) {
+      return res.status(400).json({
+        success: false,
+        message: "La fecha de fin no puede ser mayor a la fecha actual",
+      });
+    }
+    // La fecha de inicio se calculará en el controlador como fin - 3 meses
+    return next();
+  }
+
+  // Caso: Ambas fechas
+  if (inicioTimestamp && finTimestamp) {
+    // Validar que inicio sea anterior a fin
+    if (inicioTimestamp >= finTimestamp) {
+      return res.status(400).json({
+        success: false,
+        message: "La fecha de inicio debe ser anterior a la fecha de fin",
+      });
+    }
+
+    // Validar que no superen los 3 meses de diferencia
+    if (finTimestamp - inicioTimestamp > TRES_MESES_MS) {
       return res.status(400).json({
         success: false,
         message:
-          "El rango entre fecha_inicio y fecha_fin no puede superar los 3 meses y fecha_fin debe ser posterior a fecha_inicio",
+          "El rango entre fecha_inicio y fecha_fin no puede superar los 3 meses",
+      });
+    }
+
+    // Validar que fin no sea mayor a la fecha actual
+    if (finTimestamp > ahora) {
+      return res.status(400).json({
+        success: false,
+        message: "La fecha de fin no puede ser mayor a la fecha actual",
       });
     }
   }
@@ -71,7 +123,15 @@ module.exports = {
   /**
    * Validación para la creación de usuarios
    */
-  validateUsuario: [emailValidator, passwordValidator, checkValidationErrors],
+  validateUsuario: [
+    emailValidator,
+    passwordValidator,
+    body("asignarEditor")
+      .optional()
+      .isBoolean()
+      .withMessage("asignarEditor debe ser un valor booleano"),
+    checkValidationErrors,
+  ],
 
   /**
    * Validación para la solicitud de reseteo de contraseña
@@ -226,12 +286,14 @@ module.exports = {
       .withMessage("Identificador externo es obligatorio"),
     query("fecha_inicio")
       .optional()
-      .isISO8601()
-      .withMessage("Formato de fecha de inicio inválido"),
+      .isInt({ min: 0 })
+      .withMessage(
+        "Fecha de inicio debe ser un timestamp válido (número entero)"
+      ),
     query("fecha_fin")
       .optional()
-      .isISO8601()
-      .withMessage("Formato de fecha de fin inválido"),
+      .isInt({ min: 0 })
+      .withMessage("Fecha de fin debe ser un timestamp válido (número entero)"),
     query("id_faena")
       .optional()
       .isInt()
@@ -258,5 +320,111 @@ module.exports = {
       .notEmpty()
       .withMessage("ID de faena externo es obligatorio"),
     checkValidationErrors,
+  ],
+
+  validateFaenaExternoUpdate: [
+    param("id_externo")
+      .notEmpty()
+      .withMessage("Identificador externo de faena es requerido"),
+
+    body().custom((body) => {
+      // Modificar los campos permitidos
+      const allowedFields = ["id_Faena_externo", "id_cliente_externo"];
+      const receivedFields = Object.keys(body);
+
+      const invalidFields = receivedFields.filter(
+        (field) => !allowedFields.includes(field)
+      );
+
+      if (invalidFields.length > 0) {
+        throw new Error(
+          `Campos no permitidos: ${invalidFields.join(
+            ", "
+          )}. Solo se permiten: ${allowedFields.join(", ")}`
+        );
+      }
+
+      return true;
+    }),
+
+    body("id_Faena_externo")
+      .optional()
+      .isString()
+      .withMessage("ID de faena externo debe ser texto")
+      .isLength({ min: 1, max: 45 })
+      .withMessage("ID de faena externo debe tener entre 1 y 45 caracteres"),
+
+    // Modificar este validador para id_cliente_externo
+    body("id_cliente_externo")
+      .optional()
+      .isString()
+      .withMessage("ID cliente externo debe ser texto")
+      .isLength({ min: 1, max: 45 })
+      .withMessage("ID cliente externo debe tener entre 1 y 45 caracteres"),
+
+    checkValidationErrors,
+  ],
+  /**
+   * Validación para obtener faenas con timestamps obligatorios y restricción de 3 meses
+   */
+  validateFaenasTimestamp: [
+    query("fecha_inicio")
+      .notEmpty()
+      .withMessage("La fecha de inicio es obligatoria")
+      .isInt({ min: 0 })
+      .withMessage(
+        "La fecha de inicio debe ser un timestamp válido (número entero)"
+      ),
+
+    query("fecha_fin")
+      .notEmpty()
+      .withMessage("La fecha de fin es obligatoria")
+      .isInt({ min: 0 })
+      .withMessage(
+        "La fecha de fin debe ser un timestamp válido (número entero)"
+      ),
+
+    (req, res, next) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errors: errors.array(),
+        });
+      }
+
+      // Verificar restricción de 3 meses
+      const fecha_inicio = parseInt(req.query.fecha_inicio, 10);
+      const fecha_fin = parseInt(req.query.fecha_fin, 10);
+      const TRES_MESES_MS = 3 * 30 * 24 * 60 * 60 * 1000; // Aproximadamente 3 meses en milisegundos
+      const ahora = Date.now();
+
+      // Verificar que inicio sea anterior a fin
+      if (fecha_inicio >= fecha_fin) {
+        return res.status(400).json({
+          success: false,
+          message: "La fecha de inicio debe ser anterior a la fecha de fin",
+        });
+      }
+
+      // Verificar que no superen los 3 meses de diferencia
+      if (fecha_fin - fecha_inicio > TRES_MESES_MS) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "El rango entre fecha_inicio y fecha_fin no puede superar los 3 meses",
+        });
+      }
+
+      // Verificar que fin no sea mayor a la fecha actual
+      if (fecha_fin > ahora) {
+        return res.status(400).json({
+          success: false,
+          message: "La fecha de fin no puede ser mayor a la fecha actual",
+        });
+      }
+
+      next();
+    },
   ],
 };

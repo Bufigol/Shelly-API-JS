@@ -29,15 +29,28 @@ router.post(
 );
 
 /**
- * @route POST /api/out/usuarios
+ *
+ * * Proceso:
+ * 1. Se autentica al usuario que realiza la petición con el middleware de autenticación
+ * 2. Se verifica que el usuario autenticado tenga el permiso de editor
+ * 3. Se valida que los datos del nuevo usuario sean correctos (email, nombre, contraseña, roles)
+ * 4. Se crea el nuevo usuario en la base de datos
+ * 5. Se devuelve el token JWT y los datos del nuevo usuario
+ *
+ *
+ * @route POST /api/out/crear_usuarios
  * @description Crea un nuevo usuario en el sistema
- * @access Público
- * @body {String} email - Correo electrónico del usuario
- * @body {String} password - Contraseña del usuario
- * @returns {Object} Datos del usuario creado
+ * @access Privado (solo editor)
+ * @body {String} email - Correo electrónico del nuevo usuario
+ * @body {String} name - Nombre y apellido del nuevo usuario
+ * @body {String} password - Contraseña para el nuevo usuario
+ * @body {String} roles - Roles del nuevo usuario (separados por comas, e.g. "editor,admin")
+ * @returns {Object} Token JWT y datos del nuevo usuario
  */
 router.post(
-  "/usuarios",
+  "/crear_usuarios",
+  apiAuthMiddleware.authenticate.bind(apiAuthMiddleware),
+  apiAuthMiddleware.checkPermissions(["editor"]),
   apiValidationMiddleware.validateUsuario,
   outController.crearUsuario
 );
@@ -105,10 +118,14 @@ router.get(
  * @description Busca información histórica para una maquinaria con filtros opcionales
  * @access Privado
  * @query {String} identificador_externo - Identificador externo de la maquinaria (obligatorio)
- * @query {String} [fecha_inicio] - Fecha de inicio del período (ISO8601, opcional)
- * @query {String} [fecha_fin] - Fecha de fin del período (ISO8601, opcional)
+ * @query {Number} [fecha_inicio] - Timestamp UNIX en milisegundos para inicio del período (opcional)
+ * @query {Number} [fecha_fin] - Timestamp UNIX en milisegundos para fin del período (opcional)
  * @query {Number} [id_faena] - ID de faena específica (opcional)
  * @returns {Object} Datos históricos de la maquinaria con información para gráficos
+ * @notes Si no se proporcionan fechas, devuelve datos de los últimos 3 meses.
+ *        Si solo se proporciona fecha_inicio, devuelve datos desde esa fecha hasta 3 meses después o la fecha actual.
+ *        Si solo se proporciona fecha_fin, devuelve datos de los 3 meses anteriores a esa fecha.
+ *        La diferencia entre fecha_inicio y fecha_fin no puede ser mayor a 3 meses.
  */
 router.get(
   "/maquinas/historico",
@@ -164,15 +181,20 @@ router.put(
 
 /**
  * @route GET /api/out/faenas
- * @description Obtiene el listado de faenas con filtros opcionales
+ * @description Obtiene el listado de faenas dentro de un rango de fechas específico
  * @access Privado
+ * @query {Number} fecha_inicio - Timestamp en milisegundos para inicio del período (obligatorio)
+ * @query {Number} fecha_fin - Timestamp en milisegundos para fin del período (obligatorio)
  * @query {Number} [id_cliente] - Filtra por cliente (opcional)
  * @query {String} [estado] - Filtra por estado ("ACTIVA" o "FINALIZADA", opcional)
- * @query {String} [fecha_inicio] - Filtra por fecha de inicio mínima (ISO8601, opcional)
- * @query {String} [fecha_fin] - Filtra por fecha de inicio máxima (ISO8601, opcional)
  * @returns {Object} Lista de faenas que cumplen con los filtros
+ * @notes La diferencia entre fecha_inicio y fecha_fin no puede ser mayor a 3 meses.
  */
-router.get("/faenas", outController.obtenerFaenas);
+router.get(
+  "/faenas",
+  apiValidationMiddleware.validateFaenasTimestamp,
+  outController.obtenerFaenas
+);
 
 /**
  * @route GET /api/out/faenas/datos
@@ -214,22 +236,20 @@ router.get(
 );
 
 /**
- * @route PUT /api/out/faenas/:id
- * @description Actualiza información de una faena (id_Faena_externo, fecha_fin, etc.)
+ * @route PUT /api/out/faenas/:id_externo
+ * @description Actualiza información de una faena usando su identificador externo
  * @access Privado (solo editor)
- * @param {Number} id - ID de la faena
+ * @param {String} id_externo - Identificador externo de la faena
  * @body {String} [id_Faena_externo] - Nuevo identificador externo de la faena
- * @body {String} [fecha_fin] - Fecha de finalización de la faena (ISO8601, opcional)
  * @body {Number} [id_cliente] - Nuevo ID de cliente (opcional)
  * @returns {Object} Confirmación de actualización y datos modificados
  */
 router.put(
-  "/faenas/:id",
+  "/faenas/:id_externo",
   apiAuthMiddleware.checkPermissions(["editor"]),
-  apiValidationMiddleware.validateFaenaUpdate,
-  outController.actualizarFaena
+  apiValidationMiddleware.validateFaenaExternoUpdate, // Necesitaremos crear este validador
+  outController.actualizarFaenaByExterno
 );
-
 /**
  * @route GET /api/out/faenas/:id/export
  * @description Exporta los datos de una faena en formato CSV
@@ -266,21 +286,6 @@ router.put(
   apiAuthMiddleware.checkPermissions(["editor"]),
   apiValidationMiddleware.validateConfiguracion,
   outController.actualizarConfiguracion
-);
-
-/**
- * @route POST /api/out/equipos/asociar
- * @description Asocia un equipo con una maquinaria (compatibilidad con versión anterior)
- * @access Privado (solo editor)
- * @body {Number} id_equipo - ID del equipo a asociar
- * @body {String} identificador_externo - Identificador externo para la maquinaria
- * @returns {Object} Confirmación de asociación
- */
-router.post(
-  "/equipos/asociar",
-  apiAuthMiddleware.checkPermissions(["editor"]),
-  apiValidationMiddleware.validateAsociarEquipo,
-  outController.asociarEquipoMaquina
 );
 
 module.exports = router;
