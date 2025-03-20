@@ -283,19 +283,5 @@ router.put(
   outController.actualizarConfiguracion
 );
 
-/**
- * @route POST /api/out/equipos/asociar
- * @description Asocia un equipo con una maquinaria (compatibilidad con versión anterior)
- * @access Privado (solo editor)
- * @body {Number} id_equipo - ID del equipo a asociar
- * @body {String} identificador_externo - Identificador externo para la maquinaria
- * @returns {Object} Confirmación de asociación
- */
-router.post(
-  "/equipos/asociar",
-  apiAuthMiddleware.checkPermissions(["editor"]),
-  apiValidationMiddleware.validateAsociarEquipo,
-  outController.asociarEquipoMaquina
-);
 
 module.exports = router;
