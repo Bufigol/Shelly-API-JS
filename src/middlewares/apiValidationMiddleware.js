@@ -322,24 +322,16 @@ module.exports = {
     checkValidationErrors,
   ],
 
-  // Añadir este nuevo validador en el objeto module.exports
-
-  /**
-   * Validación para actualización de faena usando identificador externo
-   */
   validateFaenaExternoUpdate: [
-    // Validar que el id_externo de la ruta sea una cadena no vacía
     param("id_externo")
       .notEmpty()
       .withMessage("Identificador externo de faena es requerido"),
 
-    // Restringir a solo los campos permitidos y validar sus formatos
     body().custom((body) => {
-      // Obtener todas las llaves del cuerpo de la solicitud
-      const allowedFields = ["id_Faena_externo", "id_cliente"];
+      // Modificar los campos permitidos
+      const allowedFields = ["id_Faena_externo", "id_cliente_externo"];
       const receivedFields = Object.keys(body);
 
-      // Verificar si hay campos no permitidos
       const invalidFields = receivedFields.filter(
         (field) => !allowedFields.includes(field)
       );
@@ -355,7 +347,6 @@ module.exports = {
       return true;
     }),
 
-    // Validar formato de id_Faena_externo si está presente
     body("id_Faena_externo")
       .optional()
       .isString()
@@ -363,11 +354,13 @@ module.exports = {
       .isLength({ min: 1, max: 45 })
       .withMessage("ID de faena externo debe tener entre 1 y 45 caracteres"),
 
-    // Validar formato de id_cliente si está presente
-    body("id_cliente")
+    // Modificar este validador para id_cliente_externo
+    body("id_cliente_externo")
       .optional()
-      .isInt()
-      .withMessage("ID de cliente debe ser un número entero"),
+      .isString()
+      .withMessage("ID cliente externo debe ser texto")
+      .isLength({ min: 1, max: 45 })
+      .withMessage("ID cliente externo debe tener entre 1 y 45 caracteres"),
 
     checkValidationErrors,
   ],

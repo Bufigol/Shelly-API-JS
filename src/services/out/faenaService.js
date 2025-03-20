@@ -519,10 +519,10 @@ class FaenaService {
       // 1. Verificar que la faena existe
       const [faenas] = await connection.query(
         `SELECT 
-        id_Faena, 
-        id_Faena_externo 
-      FROM api_faena 
-      WHERE id_Faena_externo = ?`,
+          id_Faena, 
+          id_Faena_externo 
+        FROM api_faena 
+        WHERE id_Faena_externo = ?`,
         [idFaenaExterno]
       );
 
@@ -558,22 +558,24 @@ class FaenaService {
         queryParams.push(datosFaena.id_Faena_externo);
       }
 
-      if (datosFaena.id_cliente !== undefined) {
-        // Verificar que el cliente existe
+      // Modificar esta parte para usar id_cliente_externo
+      if (datosFaena.id_cliente_externo !== undefined) {
+        // Verificar que el cliente existe usando su ID externo
         const [clientes] = await connection.query(
-          `SELECT idClientes FROM api_clientes WHERE idClientes = ?`,
-          [datosFaena.id_cliente]
+          `SELECT idClientes FROM api_clientes WHERE id_cliente_externo = ?`,
+          [datosFaena.id_cliente_externo]
         );
 
         if (clientes.length === 0) {
           await connection.rollback();
           throw new ValidationError(
-            `Cliente con ID ${datosFaena.id_cliente} no encontrado`
+            `Cliente con ID externo ${datosFaena.id_cliente_externo} no encontrado`
           );
         }
 
+        // Usar el idClientes interno correspondiente al id_cliente_externo
         updateFields.push("id_cliente = ?");
-        queryParams.push(datosFaena.id_cliente);
+        queryParams.push(clientes[0].idClientes);
       }
 
       // Si no hay campos para actualizar, terminar
@@ -586,21 +588,23 @@ class FaenaService {
       queryParams.push(idFaena);
 
       const query = `
-      UPDATE api_faena 
-      SET ${updateFields.join(", ")}
-      WHERE id_Faena = ?
-    `;
+        UPDATE api_faena 
+        SET ${updateFields.join(", ")}
+        WHERE id_Faena = ?
+      `;
 
       await connection.query(query, queryParams);
 
       // 4. Obtener datos actualizados
       const [faenaActualizada] = await connection.query(
         `SELECT 
-        id_Faena,
-        id_Faena_externo,
-        id_cliente
-      FROM api_faena
-      WHERE id_Faena = ?`,
+          f.id_Faena,
+          f.id_Faena_externo,
+          f.id_cliente,
+          c.id_cliente_externo
+        FROM api_faena f
+        JOIN api_clientes c ON f.id_cliente = c.idClientes
+        WHERE f.id_Faena = ?`,
         [idFaena]
       );
 
@@ -610,7 +614,7 @@ class FaenaService {
         success: true,
         id_Faena: idFaena,
         id_Faena_externo: faenaActualizada[0].id_Faena_externo,
-        id_cliente: faenaActualizada[0].id_cliente,
+        id_cliente_externo: faenaActualizada[0].id_cliente_externo,
       };
     } catch (error) {
       await connection.rollback();
