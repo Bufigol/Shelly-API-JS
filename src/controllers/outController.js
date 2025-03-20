@@ -181,31 +181,7 @@ exports.obtenerEquipoStatus = async (req, res) => {
   }
 };
 
-exports.asociarEquipoMaquina = async (req, res) => {
-  try {
-    const { id_equipo, identificador_externo } = req.body;
-    const result = await equipoService.asociarEquipoMaquina(
-      id_equipo,
-      identificador_externo
-    );
 
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.message,
-      });
-    }
-
-    sendSuccessResponse(
-      res,
-      { id_Maquina: result.id_Maquina },
-      result.message,
-      201
-    );
-  } catch (error) {
-    sendErrorResponse(res, error, "Error al asociar equipo");
-  }
-};
 
 // ====================================================================
 // MÁQUINAS
