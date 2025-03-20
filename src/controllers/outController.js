@@ -236,40 +236,38 @@ exports.obtenerDatosRealtime = async (req, res) => {
 
 exports.obtenerHistoricoConsolidado = async (req, res) => {
   try {
-    const { identificador_externo, fecha_inicio, fecha_fin, id_faena } = req.query;
-    
+    const { identificador_externo, fecha_inicio, fecha_fin, id_faena } =
+      req.query;
+
     // Si no se proporcionan ambas fechas, calcular fechas según las reglas especificadas
     let inicioEfectivo = null;
     let finEfectivo = null;
     const TRES_MESES_MS = 3 * 30 * 24 * 60 * 60 * 1000; // Aproximadamente 3 meses en milisegundos
     const ahora = Date.now();
-    
+
     if (fecha_inicio && fecha_fin) {
       // Ambas fechas proporcionadas - usar directamente después de convertir a Number
       inicioEfectivo = parseInt(fecha_inicio, 10);
       finEfectivo = parseInt(fecha_fin, 10);
-    } 
-    else if (fecha_inicio && !fecha_fin) {
+    } else if (fecha_inicio && !fecha_fin) {
       // Solo fecha de inicio - obtener desde esa fecha hasta 3 meses después o fecha actual
       inicioEfectivo = parseInt(fecha_inicio, 10);
       const posibleFin = inicioEfectivo + TRES_MESES_MS;
       finEfectivo = Math.min(posibleFin, ahora); // El menor entre posibleFin y ahora
-    } 
-    else if (!fecha_inicio && fecha_fin) {
+    } else if (!fecha_inicio && fecha_fin) {
       // Solo fecha de fin - obtener 3 meses antes de esa fecha
       finEfectivo = parseInt(fecha_fin, 10);
       inicioEfectivo = finEfectivo - TRES_MESES_MS;
-    } 
-    else {
+    } else {
       // Ninguna fecha proporcionada - obtener últimos 3 meses
       finEfectivo = ahora;
       inicioEfectivo = finEfectivo - TRES_MESES_MS;
     }
-    
+
     // Convertir timestamps a objetos Date para el servicio (si es necesario)
     const fechaInicioDate = new Date(inicioEfectivo);
     const fechaFinDate = new Date(finEfectivo);
-    
+
     // Llamar al servicio con las fechas calculadas
     const datos = await maquinaService.obtenerHistoricoConsolidado(
       identificador_externo,
@@ -277,7 +275,7 @@ exports.obtenerHistoricoConsolidado = async (req, res) => {
       fechaFinDate.toISOString(),
       id_faena
     );
-    
+
     // Añadir información sobre el rango de fechas utilizado en la respuesta
     const respuesta = {
       datos,
@@ -287,10 +285,10 @@ exports.obtenerHistoricoConsolidado = async (req, res) => {
           inicio_iso: fechaInicioDate.toISOString(),
           fin: finEfectivo,
           fin_iso: fechaFinDate.toISOString(),
-        }
-      }
+        },
+      },
     };
-    
+
     sendSuccessResponse(res, respuesta);
   } catch (error) {
     sendErrorResponse(res, error, "Error al obtener histórico consolidado");
@@ -476,5 +474,65 @@ exports.actualizarConfiguracion = async (req, res) => {
     );
   } catch (error) {
     sendErrorResponse(res, error, "Error al actualizar configuración");
+  }
+};
+/**
+ * Actualiza una faena identificada por su ID externo
+ *
+ * Este endpoint permite actualizar una faena existente en la base de datos
+ * identificada por su ID externo. Los campos que se pueden actualizar son:
+ * - id_Faena_externo: Identificador externo de la faena
+ * - id_cliente_externo: Identificador externo del cliente asociado a la faena
+ *
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ * @param {String} req.params.id_externo - ID externo de la faena a actualizar
+ * @param {Object} req.body - Contiene los campos a actualizar, solo se env?an los campos que se desean actualizar
+ * @returns {Object} - Un objeto con el resultado de la actualizaci?n, incluye el ID de la faena actualizada y los campos actualizados
+ */
+exports.actualizarFaenaByExterno = async (req, res) => {
+  try {
+    const { id_externo } = req.params;
+    const { id_Faena_externo, id_cliente_externo } = req.body;
+
+    // Solo enviamos los campos que están presentes en el cuerpo
+    const datosFaena = {};
+    if (id_Faena_externo !== undefined)
+      datosFaena.id_Faena_externo = id_Faena_externo;
+    if (id_cliente_externo !== undefined)
+      datosFaena.id_cliente_externo = id_cliente_externo;
+
+    // Verificar que hay datos para actualizar
+    if (Object.keys(datosFaena).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No hay datos válidos para actualizar",
+      });
+    }
+
+    // Llamar al servicio para actualizar la faena por ID externo
+    const resultado = await faenaService.actualizarFaenaPorIdExterno(
+      id_externo,
+      datosFaena
+    );
+
+    sendSuccessResponse(
+      res,
+      {
+        id_Faena: resultado.id_Faena,
+        id_Faena_externo: resultado.id_Faena_externo || id_externo,
+        id_cliente_externo: resultado.id_cliente_externo,
+      },
+      "Faena actualizada exitosamente"
+    );
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    sendErrorResponse(res, error, "Error al actualizar faena");
   }
 };

@@ -231,22 +231,20 @@ router.get(
 );
 
 /**
- * @route PUT /api/out/faenas/:id
- * @description Actualiza información de una faena (id_Faena_externo, fecha_fin, etc.)
+ * @route PUT /api/out/faenas/:id_externo
+ * @description Actualiza información de una faena usando su identificador externo
  * @access Privado (solo editor)
- * @param {Number} id - ID de la faena
+ * @param {String} id_externo - Identificador externo de la faena
  * @body {String} [id_Faena_externo] - Nuevo identificador externo de la faena
- * @body {String} [fecha_fin] - Fecha de finalización de la faena (ISO8601, opcional)
  * @body {Number} [id_cliente] - Nuevo ID de cliente (opcional)
  * @returns {Object} Confirmación de actualización y datos modificados
  */
 router.put(
-  "/faenas/:id",
+  "/faenas/:id_externo",
   apiAuthMiddleware.checkPermissions(["editor"]),
-  apiValidationMiddleware.validateFaenaUpdate,
-  outController.actualizarFaena
+  apiValidationMiddleware.validateFaenaExternoUpdate, // Necesitaremos crear este validador
+  outController.actualizarFaenaByExterno
 );
-
 /**
  * @route GET /api/out/faenas/:id/export
  * @description Exporta los datos de una faena en formato CSV
