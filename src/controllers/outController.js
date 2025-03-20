@@ -181,8 +181,6 @@ exports.obtenerEquipoStatus = async (req, res) => {
   }
 };
 
-
-
 // ====================================================================
 // MÁQUINAS
 // ====================================================================
@@ -333,12 +331,18 @@ exports.actualizarMaquina = async (req, res) => {
 exports.obtenerFaenas = async (req, res) => {
   try {
     const { id_cliente, estado, fecha_inicio, fecha_fin } = req.query;
+
+    // Convertir timestamps a objetos Date para el servicio
+    const fechaInicioDate = new Date(parseInt(fecha_inicio, 10));
+    const fechaFinDate = new Date(parseInt(fecha_fin, 10));
+
     const faenas = await faenaService.obtenerFaenas({
       id_cliente,
       estado,
-      fecha_inicio,
-      fecha_fin,
+      fecha_inicio: fechaInicioDate.toISOString(),
+      fecha_fin: fechaFinDate.toISOString(),
     });
+
     sendSuccessResponse(res, faenas);
   } catch (error) {
     sendErrorResponse(res, error, "Error al obtener faenas");

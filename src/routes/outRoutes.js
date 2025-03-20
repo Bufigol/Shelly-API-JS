@@ -181,15 +181,20 @@ router.put(
 
 /**
  * @route GET /api/out/faenas
- * @description Obtiene el listado de faenas con filtros opcionales
+ * @description Obtiene el listado de faenas dentro de un rango de fechas específico
  * @access Privado
+ * @query {Number} fecha_inicio - Timestamp en milisegundos para inicio del período (obligatorio)
+ * @query {Number} fecha_fin - Timestamp en milisegundos para fin del período (obligatorio)
  * @query {Number} [id_cliente] - Filtra por cliente (opcional)
  * @query {String} [estado] - Filtra por estado ("ACTIVA" o "FINALIZADA", opcional)
- * @query {String} [fecha_inicio] - Filtra por fecha de inicio mínima (ISO8601, opcional)
- * @query {String} [fecha_fin] - Filtra por fecha de inicio máxima (ISO8601, opcional)
  * @returns {Object} Lista de faenas que cumplen con los filtros
+ * @notes La diferencia entre fecha_inicio y fecha_fin no puede ser mayor a 3 meses.
  */
-router.get("/faenas", outController.obtenerFaenas);
+router.get(
+  "/faenas",
+  apiValidationMiddleware.validateFaenasTimestamp,
+  outController.obtenerFaenas
+);
 
 /**
  * @route GET /api/out/faenas/datos
@@ -282,6 +287,5 @@ router.put(
   apiValidationMiddleware.validateConfiguracion,
   outController.actualizarConfiguracion
 );
-
 
 module.exports = router;

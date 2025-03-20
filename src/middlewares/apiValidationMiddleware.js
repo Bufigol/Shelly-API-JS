@@ -364,4 +364,67 @@ module.exports = {
 
     checkValidationErrors,
   ],
+  /**
+   * Validación para obtener faenas con timestamps obligatorios y restricción de 3 meses
+   */
+  validateFaenasTimestamp: [
+    query("fecha_inicio")
+      .notEmpty()
+      .withMessage("La fecha de inicio es obligatoria")
+      .isInt({ min: 0 })
+      .withMessage(
+        "La fecha de inicio debe ser un timestamp válido (número entero)"
+      ),
+
+    query("fecha_fin")
+      .notEmpty()
+      .withMessage("La fecha de fin es obligatoria")
+      .isInt({ min: 0 })
+      .withMessage(
+        "La fecha de fin debe ser un timestamp válido (número entero)"
+      ),
+
+    (req, res, next) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errors: errors.array(),
+        });
+      }
+
+      // Verificar restricción de 3 meses
+      const fecha_inicio = parseInt(req.query.fecha_inicio, 10);
+      const fecha_fin = parseInt(req.query.fecha_fin, 10);
+      const TRES_MESES_MS = 3 * 30 * 24 * 60 * 60 * 1000; // Aproximadamente 3 meses en milisegundos
+      const ahora = Date.now();
+
+      // Verificar que inicio sea anterior a fin
+      if (fecha_inicio >= fecha_fin) {
+        return res.status(400).json({
+          success: false,
+          message: "La fecha de inicio debe ser anterior a la fecha de fin",
+        });
+      }
+
+      // Verificar que no superen los 3 meses de diferencia
+      if (fecha_fin - fecha_inicio > TRES_MESES_MS) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "El rango entre fecha_inicio y fecha_fin no puede superar los 3 meses",
+        });
+      }
+
+      // Verificar que fin no sea mayor a la fecha actual
+      if (fecha_fin > ahora) {
+        return res.status(400).json({
+          success: false,
+          message: "La fecha de fin no puede ser mayor a la fecha actual",
+        });
+      }
+
+      next();
+    },
+  ],
 };
