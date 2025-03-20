@@ -122,7 +122,6 @@ class FaenaService {
     }
   }
 
-
   /**
    * Actualiza una faena existente
    * @param {number} idFaena - ID de la faena
@@ -373,26 +372,26 @@ class FaenaService {
 
   /**
    * Obtiene resumen de una faena por su ID externo.
-   * 
+   *
    * Este método busca en la base de datos la faena asociada al ID externo
    * proporcionado y devuelve un resumen de la misma. Si no encuentra la faena,
    * lanza un error de tipo NotFoundError con un mensaje que indica que la
    * faena no se encontró.
-   * 
+   *
    * @param {string} idFaenaExterno - ID externo de la faena. Este es el
    * identificador único asignado a la faena por el sistema externo que
    * la creó. Debe ser una cadena de caracteres alfanumérica única.
-   * 
+   *
    * @returns {Promise<Array>} Un arreglo de objetos que representan el
    * resumen de la faena. Cada objeto en el arreglo tiene las siguientes
    * propiedades:
-   * 
+   *
    * - cuarto: El número de cuarto asociado a la medición.
    * - temperatura_maxima: La temperatura máxima registrada en el cuarto.
    * - temperatura_minima: La temperatura mínima registrada en el cuarto.
    * - promedio_temperatura: El promedio de las temperaturas registradas en
    * el cuarto.
-   * 
+   *
    * Si se produce un error durante la ejecución del método, se lanza un
    * error que incluye un mensaje descriptivo del error.
    */
@@ -423,25 +422,25 @@ class FaenaService {
 
   /**
    * Actualiza el identificador externo de una faena en el sistema.
-   * Este método permite cambiar el ID externo asociado a una faena específica. 
-   * Esto es útil cuando se necesita actualizar el identificador de referencia externa 
+   * Este método permite cambiar el ID externo asociado a una faena específica.
+   * Esto es útil cuando se necesita actualizar el identificador de referencia externa
    * de la faena, por ejemplo, para mantener la consistencia con un sistema externo.
-   * 
+   *
    * Verifica que la faena exista antes de proceder con la actualización. Si no existe,
    * se lanzará un error de tipo NotFoundError. También comprueba si el nuevo ID externo
    * ya está en uso por otra faena, y en caso afirmativo, lanzará un ValidationError.
-   * 
+   *
    * Si la actualización se realiza con éxito, se registrará el cambio en la base de datos
    * y se devolverá un objeto que representa el resultado de la operación.
-   * 
+   *
    * @param {number} idFaena - ID interno de la faena que se desea actualizar.
    * @param {string} nuevoIdExterno - Nuevo ID externo que se desea asociar a la faena.
    *                                  Debe ser único en el contexto de todas las faenas.
    * @param {number} idUsuario - ID del usuario que realiza la modificación. Este usuario
    *                             será registrado como responsable del cambio.
-   * @returns {Promise<Object>} Resultado de la operación, incluyendo información sobre 
+   * @returns {Promise<Object>} Resultado de la operación, incluyendo información sobre
    *                            el éxito o fracaso de la actualización.
-   * 
+   *
    * @throws {NotFoundError} Si la faena con el ID proporcionado no existe en el sistema.
    * @throws {ValidationError} Si el nuevo ID externo ya está asociado a otra faena.
    */
@@ -495,6 +494,138 @@ class FaenaService {
         `Error al actualizar ID externo de faena ${idFaena}`,
         error
       );
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  /**
+   * Actualiza una faena identificada por su ID externo
+   *
+   * @param {string} idFaenaExterno - ID externo de la faena a actualizar
+   * @param {Object} datosFaena - Datos a actualizar
+   * @param {string} [datosFaena.id_Faena_externo] - Nuevo ID externo
+   * @param {number} [datosFaena.id_cliente] - Nuevo ID de cliente
+   * @returns {Promise<Object>} Información de la faena actualizada
+   * @throws {NotFoundError} Si la faena no existe
+   * @throws {ValidationError} Si los datos no son válidos
+   */
+  async actualizarFaenaPorIdExterno(idFaenaExterno, datosFaena) {
+    const connection = await databaseService.pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      // 1. Verificar que la faena existe
+      const [faenas] = await connection.query(
+        `SELECT 
+          id_Faena, 
+          id_Faena_externo 
+        FROM api_faena 
+        WHERE id_Faena_externo = ?`,
+        [idFaenaExterno]
+      );
+
+      if (faenas.length === 0) {
+        await connection.rollback();
+        throw new NotFoundError(
+          `Faena con ID externo ${idFaenaExterno} no encontrada`
+        );
+      }
+
+      const idFaena = faenas[0].id_Faena;
+      const updateFields = [];
+      const queryParams = [];
+
+      // 2. Construir la consulta de actualización solo con los campos proporcionados
+      if (datosFaena.id_Faena_externo !== undefined) {
+        // Verificar que el nuevo ID externo no esté duplicado (si es diferente al actual)
+        if (datosFaena.id_Faena_externo !== idFaenaExterno) {
+          const [existentes] = await connection.query(
+            `SELECT id_Faena FROM api_faena WHERE id_Faena_externo = ? AND id_Faena != ?`,
+            [datosFaena.id_Faena_externo, idFaena]
+          );
+
+          if (existentes.length > 0) {
+            await connection.rollback();
+            throw new ValidationError(
+              `Ya existe otra faena con el ID externo '${datosFaena.id_Faena_externo}'`
+            );
+          }
+        }
+
+        updateFields.push("id_Faena_externo = ?");
+        queryParams.push(datosFaena.id_Faena_externo);
+      }
+
+      // Modificar esta parte para usar id_cliente_externo
+      if (datosFaena.id_cliente_externo !== undefined) {
+        // Verificar que el cliente existe usando su ID externo
+        const [clientes] = await connection.query(
+          `SELECT idClientes FROM api_clientes WHERE id_cliente_externo = ?`,
+          [datosFaena.id_cliente_externo]
+        );
+
+        if (clientes.length === 0) {
+          await connection.rollback();
+          throw new ValidationError(
+            `Cliente con ID externo ${datosFaena.id_cliente_externo} no encontrado`
+          );
+        }
+
+        // Usar el idClientes interno correspondiente al id_cliente_externo
+        updateFields.push("id_cliente = ?");
+        queryParams.push(clientes[0].idClientes);
+      }
+
+      // Si no hay campos para actualizar, terminar
+      if (updateFields.length === 0) {
+        await connection.rollback();
+        throw new ValidationError("No hay campos válidos para actualizar");
+      }
+
+      // 3. Ejecutar la actualización
+      queryParams.push(idFaena);
+
+      const query = `
+        UPDATE api_faena 
+        SET ${updateFields.join(", ")}
+        WHERE id_Faena = ?
+      `;
+
+      await connection.query(query, queryParams);
+
+      // 4. Obtener datos actualizados
+      const [faenaActualizada] = await connection.query(
+        `SELECT 
+          f.id_Faena,
+          f.id_Faena_externo,
+          f.id_cliente,
+          c.id_cliente_externo
+        FROM api_faena f
+        JOIN api_clientes c ON f.id_cliente = c.idClientes
+        WHERE f.id_Faena = ?`,
+        [idFaena]
+      );
+
+      await connection.commit();
+
+      return {
+        success: true,
+        id_Faena: idFaena,
+        id_Faena_externo: faenaActualizada[0].id_Faena_externo,
+        id_cliente_externo: faenaActualizada[0].id_cliente_externo,
+      };
+    } catch (error) {
+      await connection.rollback();
+
+      // Registrar el error
+      await loggingService.registrarError(
+        "FaenaService.actualizarFaenaPorIdExterno",
+        `Error al actualizar faena con ID externo ${idFaenaExterno}`,
+        error
+      );
+
       throw error;
     } finally {
       connection.release();

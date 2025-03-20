@@ -321,4 +321,47 @@ module.exports = {
       .withMessage("ID de faena externo es obligatorio"),
     checkValidationErrors,
   ],
+
+  validateFaenaExternoUpdate: [
+    param("id_externo")
+      .notEmpty()
+      .withMessage("Identificador externo de faena es requerido"),
+
+    body().custom((body) => {
+      // Modificar los campos permitidos
+      const allowedFields = ["id_Faena_externo", "id_cliente_externo"];
+      const receivedFields = Object.keys(body);
+
+      const invalidFields = receivedFields.filter(
+        (field) => !allowedFields.includes(field)
+      );
+
+      if (invalidFields.length > 0) {
+        throw new Error(
+          `Campos no permitidos: ${invalidFields.join(
+            ", "
+          )}. Solo se permiten: ${allowedFields.join(", ")}`
+        );
+      }
+
+      return true;
+    }),
+
+    body("id_Faena_externo")
+      .optional()
+      .isString()
+      .withMessage("ID de faena externo debe ser texto")
+      .isLength({ min: 1, max: 45 })
+      .withMessage("ID de faena externo debe tener entre 1 y 45 caracteres"),
+
+    // Modificar este validador para id_cliente_externo
+    body("id_cliente_externo")
+      .optional()
+      .isString()
+      .withMessage("ID cliente externo debe ser texto")
+      .isLength({ min: 1, max: 45 })
+      .withMessage("ID cliente externo debe tener entre 1 y 45 caracteres"),
+
+    checkValidationErrors,
+  ],
 };
