@@ -484,14 +484,13 @@ exports.actualizarConfiguracion = async (req, res) => {
   exports.actualizarFaenaByExterno = async (req, res) => {
     try {
       const { id_externo } = req.params;
-      const { id_Faena_externo, id_cliente } = req.body;
-
+      const { id_Faena_externo, id_cliente_externo } = req.body;
+      
       // Solo enviamos los campos que están presentes en el cuerpo
       const datosFaena = {};
-      if (id_Faena_externo !== undefined)
-        datosFaena.id_Faena_externo = id_Faena_externo;
-      if (id_cliente !== undefined) datosFaena.id_cliente = id_cliente;
-
+      if (id_Faena_externo !== undefined) datosFaena.id_Faena_externo = id_Faena_externo;
+      if (id_cliente_externo !== undefined) datosFaena.id_cliente_externo = id_cliente_externo;
+      
       // Verificar que hay datos para actualizar
       if (Object.keys(datosFaena).length === 0) {
         return res.status(400).json({
@@ -499,18 +498,19 @@ exports.actualizarConfiguracion = async (req, res) => {
           message: "No hay datos válidos para actualizar",
         });
       }
-
+      
       // Llamar al servicio para actualizar la faena por ID externo
       const resultado = await faenaService.actualizarFaenaPorIdExterno(
         id_externo,
         datosFaena
       );
-
+      
       sendSuccessResponse(
         res,
-        {
+        { 
           id_Faena: resultado.id_Faena,
           id_Faena_externo: resultado.id_Faena_externo || id_externo,
+          id_cliente_externo: resultado.id_cliente_externo
         },
         "Faena actualizada exitosamente"
       );
@@ -521,7 +521,7 @@ exports.actualizarConfiguracion = async (req, res) => {
           message: error.message,
         });
       }
-
+      
       sendErrorResponse(res, error, "Error al actualizar faena");
     }
   };
