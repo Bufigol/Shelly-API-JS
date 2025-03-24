@@ -286,14 +286,14 @@ class Server {
       await this.services.totalEnergy.initialize();
       console.log("✅ Total energy service initialized");
 
-      /*await this.shellyCollector.start();
+      await this.shellyCollector.start();
       console.log("✅ Shelly Data collector started");
 
       await this.ubibotCollector.start();
       console.log("✅ Ubibot data collector started");
 
       await this.onPremiseCollector.start();
-      console.log("✅ OnPremise collector started");*/
+      console.log("✅ OnPremise collector started");
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
