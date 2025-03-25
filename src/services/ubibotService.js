@@ -264,63 +264,19 @@ class UbibotService {
    * @param {string} channelName - Nombre del canal
    * @param {string} hora - Hora en que se detectó la desconexión
    */
+  // Reemplazar el método sendEmaillSensorSinConexion en ubibotService.js (líneas 375-407)
   async sendEmaillSensorSinConexion(channelName, hora) {
-    const FROM_EMAIL = sgMailConfig.email_contacto.from_verificado;
+    const emailService = require("../services/emailService");
 
-    const data = {
-      personalizations: [{ to: [{ email: FROM_EMAIL }] }], // Cambiado a un array de objetos
-      from: { email: FROM_EMAIL },
-      subject: `Alerta de Sensor Desconectado para ${channelName}`,
-      content: [
-        {
-          type: "text/plain",
-          value: `El sensor de temperatura externa de ${channelName} está desconectado desde ${hora}.
-                    Límites de desconexion configurado: ${INTERVALO_SIN_CONEXION_SENSOR} minutos`,
-        },
-      ],
-    };
+    const disconnectedChannel = [
+      {
+        name: channelName,
+        lastConnectionTime: hora,
+        disconnectionInterval: INTERVALO_SIN_CONEXION_SENSOR,
+      },
+    ];
 
-    try {
-      console.log("Intentando enviar email con la siguiente configuración:");
-      console.log("API Key:", SENDGRID_API_KEY.substring(0, 10) + "...");
-      console.log("Destinatario:", FROM_EMAIL);
-      console.log("Remitente:", FROM_EMAIL);
-
-      const response = await axios.post(
-        "https://api.sendgrid.com/v3/mail/send",
-        data,
-        {
-          headers: {
-            Authorization: `Bearer ${SENDGRID_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      console.log(
-        "Respuesta de SendGrid:",
-        response.status,
-        response.statusText
-      );
-      console.log("Email enviado exitosamente");
-      return true;
-    } catch (error) {
-      console.error("Error al enviar el email:");
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.data);
-        console.error("Estado de respuesta:", error.response.status);
-        console.error("Cabeceras de respuesta:", error.response.headers);
-      } else if (error.request) {
-        console.error(
-          "No se recibió respuesta. Detalles de la solicitud:",
-          error.request
-        );
-      } else {
-        console.error("Error al configurar la solicitud:", error.message);
-      }
-      console.error("Configuración completa del error:", error.config);
-      return false;
-    }
+    return await emailService.sendDisconnectedSensorsEmail(disconnectedChannel);
   }
 
   /**
@@ -333,6 +289,7 @@ class UbibotService {
    * @param {number} maxima_temp_camara - Límite máximo de temperatura permitido
    * @returns {Promise<boolean>} Verdadero si el email se envió exitosamente, falso en caso contrario
    */
+  // Reemplazar el método sendEmail en ubibotService.js (líneas 409-458)
   async sendEmail(
     channelName,
     temperature,
@@ -340,66 +297,23 @@ class UbibotService {
     minima_temp_camara,
     maxima_temp_camara
   ) {
-    const FROM_EMAIL = sgMailConfig.email_contacto.from_verificado;
-    const TO_EMAILS = sgMailConfig.email_contacto.destinatarios;
+    const emailService = require("../services/emailService");
 
-    const data = {
-      personalizations: [{ to: TO_EMAILS.map((email) => ({ email })) }],
-      from: { email: FROM_EMAIL },
-      subject: `Alerta de temperatura para ${channelName}`,
-      content: [
-        {
-          type: "text/plain",
-          value: `La temperatura en ${channelName} está fuera de los límites establecidos en los parámetros.
-                    Temperatura: ${temperature}°C
-                    Timestamp: ${timestamp}
-                    Límites permitidos: ${minima_temp_camara}°C / ${maxima_temp_camara}°C`,
-        },
-      ],
-    };
+    const outOfRangeChannel = [
+      {
+        name: channelName,
+        temperature: temperature,
+        timestamp: timestamp,
+        minThreshold: minima_temp_camara,
+        maxThreshold: maxima_temp_camara,
+      },
+    ];
 
-    try {
-      console.log("Intentando enviar email con la siguiente configuración:");
-      console.log("API Key:", SENDGRID_API_KEY.substring(0, 10) + "...");
-      console.log("Destinatarios:", TO_EMAILS);
-      console.log("Remitente:", FROM_EMAIL);
-
-      const response = await axios.post(
-        "https://api.sendgrid.com/v3/mail/send",
-        data,
-        {
-          headers: {
-            Authorization: `Bearer ${SENDGRID_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      console.log(
-        "Respuesta de SendGrid:",
-        response.status,
-        response.statusText
-      );
-      console.log("Email enviado exitosamente");
-      return true;
-    } catch (error) {
-      console.error("Error al enviar el email:");
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.data);
-        console.error("Estado de respuesta:", error.response.status);
-        console.error("Cabeceras de respuesta:", error.response.headers);
-      } else if (error.request) {
-        console.error(
-          "No se recibió respuesta. Detalles de la solicitud:",
-          error.request
-        );
-      } else {
-        console.error("Error al configurar la solicitud:", error.message);
-      }
-      console.error("Configuración completa del error:", error.config);
-      return false;
-    }
+    return await emailService.sendTemperatureRangeAlertsEmail(
+      outOfRangeChannel
+    );
   }
+
   /**
    * Envía un SMS de alerta a los destinatarios configurados cuando la temperatura en un canal
    * supera los límites establecidos.
@@ -600,13 +514,13 @@ class UbibotService {
   async checkModemConnection() {
     try {
       await axios.get(`${MODEM_URL}/api/monitoring/status`, {
-        timeout: 5000  // Añadir timeout para conexión remota
+        timeout: 5000, // Añadir timeout para conexión remota
       });
-      console.log('Conexión con el módem remoto establecida');
+      console.log("Conexión con el módem remoto establecida");
       return true;
     } catch (error) {
-      console.error('Error conectando con el módem remoto:', error.message);
-      throw new Error('No se pudo establecer conexión con el módem remoto');
+      console.error("Error conectando con el módem remoto:", error.message);
+      throw new Error("No se pudo establecer conexión con el módem remoto");
     }
   }
 }

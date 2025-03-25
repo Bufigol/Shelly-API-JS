@@ -143,7 +143,32 @@ class UbibotCollector {
           this.handleCollectionError(error);
         }
       }
+      const disconnectedChannels = [];
+      for (const channel of channels) {
+        const lastReading = await ubibotService.getLastSensorReading(
+          channel.channel_id
+        );
+        if (
+          lastReading &&
+          ubibotService.isDifferenceGreaterThan(
+            new Date(),
+            lastReading.external_temperature_timestamp,
+            ubibotService.INTERVALO_SIN_CONEXION_SENSOR * 60 // convertir a segundos
+          )
+        ) {
+          disconnectedChannels.push({
+            name: channel.name,
+            lastConnectionTime: lastReading.external_temperature_timestamp,
+            disconnectionInterval: ubibotService.INTERVALO_SIN_CONEXION_SENSOR,
+          });
+        }
+      }
 
+      // Enviar alerta si hay sensores desconectados
+      if (disconnectedChannels.length > 0) {
+        const emailService = require("../services/emailService");
+        await emailService.sendDisconnectedSensorsEmail(disconnectedChannels);
+      }
       this.updateMetrics(true, Date.now());
       console.log("✅ Ubibot collection cycle completed successfully\n");
     } catch (error) {
@@ -243,7 +268,7 @@ class UbibotCollector {
       console.log(`Last error: ${this.metrics.lastError}`);
     }
   }
-  
+
   /**
    * Returns the collector statistics as an object.
    *
@@ -268,4 +293,4 @@ class UbibotCollector {
   }
 }
 
-module.exports = UbibotCollector; 
+module.exports = UbibotCollector;
