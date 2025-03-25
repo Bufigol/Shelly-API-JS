@@ -264,7 +264,6 @@ class UbibotService {
    * @param {string} channelName - Nombre del canal
    * @param {string} hora - Hora en que se detectó la desconexión
    */
-  // Reemplazar el método sendEmaillSensorSinConexion en ubibotService.js (líneas 375-407)
   async sendEmaillSensorSinConexion(channelName, hora) {
     const emailService = require("../services/emailService");
 
@@ -276,7 +275,15 @@ class UbibotService {
       },
     ];
 
-    return await emailService.sendDisconnectedSensorsEmail(disconnectedChannel);
+    try {
+      return await emailService.sendDisconnectedSensorsEmail(
+        disconnectedChannel
+      );
+    } catch (error) {
+      console.error("Error enviando alerta de sensor desconectado:", error);
+      // Fallback al método original si falla
+      return await this.sendEmaillSensorSinConexion_original(channelName, hora);
+    }
   }
 
   /**
