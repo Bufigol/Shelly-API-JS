@@ -16,15 +16,25 @@ class EmailService {
     this.fromEmail = config.email?.email_contacto?.from_verificado;
     this.defaultRecipients = config.email?.email_contacto?.destinatarios || [];
     
+    // Horarios laborales específicos
+    this.workingHours = {
+      weekdays: { // Lunes a Viernes
+        start: 8.5,  // 8:30
+        end: 18.5    // 18:30
+      },
+      saturday: {    // Sábado
+        start: 8.5,  // 8:30
+        end: 14.5    // 14:30
+      }
+    };
+    
     // Parámetros de configuración para el envío de correos
     this.initialized = false;
-    this.workingHoursStart = config.email?.working_hours?.start || 8; // 8:00 AM por defecto
-    this.workingHoursEnd = config.email?.working_hours?.end || 20;    // 8:00 PM por defecto
     this.timeZone = config.measurement?.zona_horaria || 'America/Santiago';
     
     // Imprimir información de diagnóstico
     console.log(`Email Service - TimeZone: ${this.timeZone}`);
-    console.log(`Email Service - Working Hours: ${this.workingHoursStart}:00 to ${this.workingHoursEnd}:00`);
+    console.log(`Email Service - Working Hours: Mon-Fri ${this.workingHours.weekdays.start}-${this.workingHours.weekdays.end}, Sat ${this.workingHours.saturday.start}-${this.workingHours.saturday.end}`);
   }
 
   /**
@@ -67,11 +77,23 @@ class EmailService {
     const timeToCheck = checkTime ? moment(checkTime) : moment();
     const localTime = timeToCheck.tz(this.timeZone);
     
-    const currentHour = localTime.hour();
-    const isWorkday = localTime.day() > 0 && localTime.day() < 6; // 0 es domingo, 6 es sábado
+    const dayOfWeek = localTime.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
+    const hourDecimal = localTime.hour() + localTime.minute() / 60; // Hora como decimal (ej: 8:30 = 8.5)
     
-    // Solo se considera dentro de horario laboral si es día de semana y está dentro del rango horario
-    return isWorkday && currentHour >= this.workingHoursStart && currentHour < this.workingHoursEnd;
+    // Domingo siempre está fuera de horario laboral
+    if (dayOfWeek === 0) {
+      return false;
+    }
+    
+    // Sábado tiene horario especial
+    if (dayOfWeek === 6) {
+      return hourDecimal >= this.workingHours.saturday.start && 
+             hourDecimal < this.workingHours.saturday.end;
+    }
+    
+    // Lunes a viernes (días 1-5)
+    return hourDecimal >= this.workingHours.weekdays.start && 
+           hourDecimal < this.workingHours.weekdays.end;
   }
   
   /**
@@ -91,6 +113,31 @@ class EmailService {
     }
     
     return hasApiKey && hasFromEmail;
+  }
+  
+  /**
+   * Convierte una hora en formato decimal a texto (8.5 -> "8:30")
+   * @param {number} hourDecimal - Hora en formato decimal
+   * @returns {string} Hora en formato texto (HH:MM)
+   * @private
+   */
+  _formatHourToText(hourDecimal) {
+    const hours = Math.floor(hourDecimal);
+    const minutes = Math.round((hourDecimal - hours) * 60);
+    return `${hours}:${minutes.toString().padStart(2, '0')}`;
+  }
+  
+  /**
+   * Devuelve una descripción de texto del horario laboral
+   * @returns {string} Descripción del horario laboral
+   */
+  getWorkingHoursDescription() {
+    const weekdayStart = this._formatHourToText(this.workingHours.weekdays.start);
+    const weekdayEnd = this._formatHourToText(this.workingHours.weekdays.end);
+    const saturdayStart = this._formatHourToText(this.workingHours.saturday.start);
+    const saturdayEnd = this._formatHourToText(this.workingHours.saturday.end);
+    
+    return `Lunes a Viernes de ${weekdayStart} a ${weekdayEnd}, Sábados de ${saturdayStart} a ${saturdayEnd}`;
   }
 
   /**
@@ -204,7 +251,8 @@ class EmailService {
     
     // Verificar si estamos en horario laboral (a menos que se fuerce el envío)
     if (!forceOutsideWorkingHours && !this.isWithinWorkingHours(currentTime)) {
-      console.log(`Email Service - Fuera de horario laboral (${this.workingHoursStart}:00-${this.workingHoursEnd}:00). No se envían alertas de temperatura.`);
+      const workingHoursDesc = this.getWorkingHoursDescription();
+      console.log(`Email Service - Fuera de horario laboral (${workingHoursDesc}). No se envían alertas de temperatura.`);
       return false;
     }
 
