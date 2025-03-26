@@ -4,11 +4,7 @@ const mysql = require("mysql2/promise");
 const config = require("../config/js_files/config-loader");
 const { convertToMySQLDateTime } = require("../utils/transformUtils");
 const { isDifferenceGreaterThan } = require("../utils/math_utils");
-const sgMailConfig = require("../config/jsons/sgMailConfig.json");
-const smsConfig = require("../config/jsons/destinatariosSmsUbibot.json");
 const moment = require("moment-timezone");
-const axios = require("axios");
-const MODEM_URL = "http://192.168.1.140";
 
 const INTERVALO_SIN_CONEXION_SENSOR = 95;
 
@@ -42,6 +38,9 @@ class UbibotService {
 
     // Inicializar sistema de buffer horario de alertas
     this.setupHourlyAlertProcessing();
+
+    // Programar procesamiento de cola de SMS
+    this.setupSMSQueueProcessing();
   }
 
   /**
@@ -78,6 +77,61 @@ class UbibotService {
         timeToNextHour / 1000 / 60
       )} minutos`
     );
+  }
+
+  /**
+   * Configura el procesamiento periódico de la cola de SMS
+   */
+  setupSMSQueueProcessing() {
+    // Calcular tiempo hasta el próximo procesamiento (cada 30 minutos)
+    const now = new Date();
+    const nextProcessTime = new Date(now);
+    nextProcessTime.setMinutes(
+      nextProcessTime.getMinutes() >= 30 ? 60 : 30,
+      0,
+      0
+    );
+    const timeToNextProcess = nextProcessTime - now;
+
+    // Programar primer procesamiento
+    setTimeout(() => {
+      this.processSMSQueue();
+
+      // Establecer intervalo para procesar cada 30 minutos
+      setInterval(() => this.processSMSQueue(), 30 * 60 * 1000);
+    }, timeToNextProcess);
+
+    console.log(
+      `Procesamiento de cola de SMS programado para iniciar en ${Math.round(
+        timeToNextProcess / 1000 / 60
+      )} minutos`
+    );
+  }
+
+  /**
+   * Procesa la cola de SMS
+   */
+  async processSMSQueue() {
+    try {
+      const smsService = require("./smsService");
+
+      // Procesar cola de SMS
+      const result = await smsService.processTemperatureAlertQueue();
+
+      if (result.success) {
+        console.log(
+          `Cola de SMS procesada: ${result.processed} alertas enviadas`
+        );
+      } else if (result.reason === "working_hours") {
+        console.log(
+          "Procesamiento de cola de SMS pospuesto por horario laboral"
+        );
+      } else {
+        console.warn("Error al procesar cola de SMS:", result);
+      }
+    } catch (error) {
+      console.error("Error al procesar cola de SMS:", error);
+    }
   }
 
   /**
@@ -369,7 +423,7 @@ class UbibotService {
           "YYYY-MM-DD HH:mm:ss"
         );
 
-        // Agregar a buffer horario
+        // Agregar a buffer horario para emails
         this.addAlertToHourlyBuffer(
           channelName,
           temperature,
@@ -378,7 +432,7 @@ class UbibotService {
           maxima_temp_camara
         );
 
-        // Enviar SMS inmediato
+        // Agregar a la cola de SMS o enviar inmediatamente
         await this.sendSMS(
           channelName,
           temperature,
@@ -442,7 +496,8 @@ class UbibotService {
   }
 
   /**
-   * Envía un SMS de alerta
+   * Envía un SMS de alerta cuando la temperatura está fuera de rango.
+   * El SMS se envía inmediatamente (sin agrupación) pero respetando el horario laboral.
    */
   async sendSMS(
     channelName,
@@ -451,164 +506,32 @@ class UbibotService {
     minima_temp_camara,
     maxima_temp_camara
   ) {
-    const message = `Alerta ${channelName}: Temp ${temperature}°C (${minima_temp_camara}-${maxima_temp_camara}°C) ${timestamp}`;
-    const destinatarios = smsConfig.sms_destinatarios;
-    console.log("Destinatarios SMS:", destinatarios);
-
     try {
-      await this.checkModemConnection();
+      const smsService = require("./smsService");
 
-      const formatPhoneNumber = (phone) => {
-        let formatted = phone.replace(/\s+/g, "");
-        if (!formatted.startsWith("+")) {
-          formatted = "+" + formatted;
-        }
-        return formatted;
-      };
-
-      const retrySMS = async (destinatario, retries = 2) => {
-        for (let i = 0; i <= retries; i++) {
-          try {
-            // Verificar y refrescar token en cada intento
-            const { headers } = await this.verifyAndRefreshToken();
-            const formattedPhone = formatPhoneNumber(destinatario);
-
-            if (i > 0) {
-              console.log(`Reintento ${i} para ${formattedPhone}`);
-              const waitTime = i === 1 ? 10000 : 7000;
-              await new Promise((resolve) => setTimeout(resolve, waitTime));
-            }
-
-            const smsData = `<?xml version="1.0" encoding="UTF-8"?>
-                        <request>
-                            <Index>-1</Index>
-                            <Phones>
-                                <Phone>${formattedPhone}</Phone>
-                            </Phones>
-                            <Sca></Sca>
-                            <Content>${message}</Content>
-                            <Length>${message.length}</Length>
-                            <Reserved>1</Reserved>
-                            <Date>${
-                              new Date()
-                                .toISOString()
-                                .replace("T", " ")
-                                .split(".")[0]
-                            }</Date>
-                        </request>`;
-
-            const response = await axios({
-              method: "post",
-              url: `${MODEM_URL}/api/sms/send-sms`,
-              data: smsData,
-              headers: headers,
-              transformRequest: [(data) => data],
-              validateStatus: null,
-              timeout: 10000,
-            });
-
-            console.log(
-              `Respuesta del módem para ${formattedPhone}:`,
-              response.data
-            );
-
-            if (response.data.includes("<response>OK</response>")) {
-              console.log(`SMS enviado exitosamente a ${formattedPhone}`);
-              return true;
-            }
-
-            if (response.data.includes("<code>113018</code>")) {
-              console.log(
-                `Error de autenticación detectado, renovando sesión...`
-              );
-              await new Promise((resolve) => setTimeout(resolve, 3000));
-              continue;
-            }
-
-            if (i === retries) {
-              throw new Error(
-                `Error en respuesta del módem después de ${retries} intentos: ${response.data}`
-              );
-            }
-          } catch (error) {
-            if (i === retries) throw error;
-          }
-        }
-      };
-
-      // Enviar SMS a cada destinatario
-      for (const destinatario of destinatarios) {
-        try {
-          await retrySMS(destinatario);
-          // Esperar entre envíos a diferentes destinatarios
-          await new Promise((resolve) => setTimeout(resolve, 8000));
-        } catch (error) {
-          console.error(
-            `Error al enviar SMS a ${destinatario}:`,
-            error.message
-          );
-          continue;
-        }
-      }
-    } catch (error) {
-      console.error("Error general en sendSMS:", error.message);
-      throw error;
-    }
-  }
-
-  async getToken() {
-    try {
-      const response = await axios.get(
-        `${MODEM_URL}/api/webserver/SesTokInfo`,
-        {
-          headers: {
-            Accept: "*/*",
-            "X-Requested-With": "XMLHttpRequest",
-          },
-        }
+      // Agregar a la cola de SMS para procesamiento agrupado
+      const result = await smsService.sendTemperatureAlert(
+        channelName,
+        temperature,
+        timestamp,
+        minima_temp_camara,
+        maxima_temp_camara,
+        true, // Agregar a cola para envío agrupado
+        null // Usar destinatarios predeterminados
       );
 
-      const responseText = response.data;
-      const sessionIdMatch = responseText.match(/<SesInfo>(.*?)<\/SesInfo>/);
-      const tokenMatch = responseText.match(/<TokInfo>(.*?)<\/TokInfo>/);
-
-      if (!sessionIdMatch || !tokenMatch) {
-        throw new Error("No se pudo obtener el token y la sesión");
+      if (result.success && result.queued) {
+        console.log(`SMS de alerta agregado a la cola para ${channelName}`);
+      } else if (!result.success) {
+        console.warn(
+          `Error al agregar SMS de alerta a la cola para ${channelName}`
+        );
       }
 
-      return {
-        sessionId: sessionIdMatch[1].replace("SessionID=", ""),
-        token: tokenMatch[1],
-      };
+      return result.success;
     } catch (error) {
-      console.error("Error obteniendo token:", error.message);
-      throw error;
-    }
-  }
-
-  async verifyAndRefreshToken() {
-    try {
-      const { sessionId, token } = await this.getToken();
-      return {
-        headers: {
-          Accept: "*/*",
-          "Accept-Encoding": "gzip, deflate",
-          "Accept-Language": "es-ES,es;q=0.9",
-          Connection: "keep-alive",
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          Cookie: `SessionID=${sessionId}`,
-          Host: "192.168.8.1",
-          Origin: MODEM_URL,
-          Referer: `${MODEM_URL}/html/smsinbox.html`,
-          "X-Requested-With": "XMLHttpRequest",
-          __RequestVerificationToken: token,
-        },
-        sessionId,
-        token,
-      };
-    } catch (error) {
-      console.error("Error al verificar/refrescar token:", error.message);
-      throw error;
+      console.error("Error al invocar servicio SMS:", error.message);
+      return false;
     }
   }
 
@@ -630,19 +553,6 @@ class UbibotService {
         error.message
       );
       return null;
-    }
-  }
-
-  async checkModemConnection() {
-    try {
-      await axios.get(`${MODEM_URL}/api/monitoring/status`, {
-        timeout: 5000,
-      });
-      console.log("Conexión con el módem remoto establecida");
-      return true;
-    } catch (error) {
-      console.error("Error conectando con el módem remoto:", error.message);
-      throw new Error("No se pudo establecer conexión con el módem remoto");
     }
   }
 }
