@@ -8,3 +8,4 @@ src/config/token_id.txt
 dist/images
 public/
 src/test-sendgrid.js
+src/config/token_id.txt
