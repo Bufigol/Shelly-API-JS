@@ -3,6 +3,7 @@
 const axios = require("axios");
 const config = require("../config/js_files/config-loader");
 const smsConfig = require("../config/jsons/destinatariosSmsUbibot.json");
+const moment = require("moment-timezone");
 
 class SMSService {
   constructor() {
@@ -16,12 +17,23 @@ class SMSService {
       timeBetweenRecipients: 8000, // 8 seg entre envíos a distintos destinatarios
     };
 
+    // Cargar configuración de horario laboral desde emailService para mantener consistencia
+    const emailService = require("./emailService");
+    this.workingHours = emailService.workingHours;
+    this.timeZone = emailService.timeZone || "America/Santiago";
+
     // Métricas
     this.metrics = {
       sentMessages: 0,
       failedMessages: 0,
       lastError: null,
       lastSuccessTime: null,
+    };
+
+    // Cola de mensajes a enviar
+    this.messageQueue = {
+      temperatureAlerts: [],
+      lastProcessed: null,
     };
   }
 
@@ -57,6 +69,57 @@ class SMSService {
       console.error("Error al inicializar el servicio SMS:", error);
       return false;
     }
+  }
+
+  /**
+   * Verifica si estamos dentro del horario laboral
+   * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar
+   * @returns {boolean} true si estamos en horario laboral
+   */
+  isWithinWorkingHours(checkTime = null) {
+    // Usar el servicio de email si está disponible para asegurar coherencia
+    try {
+      const emailService = require("./emailService");
+      if (
+        emailService &&
+        typeof emailService.isWithinWorkingHours === "function"
+      ) {
+        return emailService.isWithinWorkingHours(checkTime);
+      }
+    } catch (e) {
+      // Continuar con la implementación propia si no podemos usar emailService
+    }
+
+    // Implementación local por si no podemos acceder a emailService
+    let timeToCheck;
+    if (checkTime) {
+      timeToCheck = moment.isMoment(checkTime)
+        ? checkTime.clone()
+        : moment(checkTime);
+    } else {
+      timeToCheck = moment();
+    }
+
+    const localTime = timeToCheck.tz(this.timeZone);
+    const dayOfWeek = localTime.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
+    const hourDecimal = localTime.hour() + localTime.minute() / 60;
+
+    // Domingo siempre está fuera de horario laboral
+    if (dayOfWeek === 0) return false;
+
+    // Sábado tiene horario especial
+    if (dayOfWeek === 6) {
+      return (
+        hourDecimal >= this.workingHours.saturday.start &&
+        hourDecimal <= this.workingHours.saturday.end
+      );
+    }
+
+    // Lunes a viernes (días 1-5)
+    return (
+      hourDecimal >= this.workingHours.weekdays.start &&
+      hourDecimal <= this.workingHours.weekdays.end
+    );
   }
 
   /**
@@ -254,16 +317,35 @@ class SMSService {
    * Envía un SMS a múltiples destinatarios
    * @param {string} message - Mensaje a enviar
    * @param {Array<string>} [recipients=null] - Lista de destinatarios (opcional, usa la lista por defecto)
+   * @param {boolean} [forceOutsideWorkingHours=false] - Forzar envío incluso en horario laboral
    * @returns {Promise<{success: boolean, sentCount: number, failedCount: number}>} Resultado del envío
    */
-  async sendSMS(message, recipients = null) {
+  async sendSMS(message, recipients = null, forceOutsideWorkingHours = false) {
     if (!this.initialized) {
       this.initialize();
     }
 
+    // Verificar si estamos fuera del horario laboral (a menos que se fuerce el envío)
+    if (!forceOutsideWorkingHours && this.isWithinWorkingHours()) {
+      console.log(
+        "SMS Service - Dentro de horario laboral. Posponiendo envío de SMS para fuera de horario."
+      );
+      return {
+        success: false,
+        sentCount: 0,
+        failedCount: 0,
+        reason: "working_hours",
+      };
+    }
+
     if (!message) {
       console.error("Error: No se proporcionó mensaje para enviar");
-      return { success: false, sentCount: 0, failedCount: 0 };
+      return {
+        success: false,
+        sentCount: 0,
+        failedCount: 0,
+        reason: "no_message",
+      };
     }
 
     // Usar destinatarios proporcionados o predeterminados
@@ -271,7 +353,12 @@ class SMSService {
 
     if (!smsRecipients || smsRecipients.length === 0) {
       console.error("Error: No hay destinatarios configurados para SMS");
-      return { success: false, sentCount: 0, failedCount: 0 };
+      return {
+        success: false,
+        sentCount: 0,
+        failedCount: 0,
+        reason: "no_recipients",
+      };
     }
 
     console.log(`Enviando SMS a ${smsRecipients.length} destinatarios`);
@@ -323,14 +410,109 @@ class SMSService {
   }
 
   /**
-   * Envía un SMS de alerta de temperatura
+   * Agrega una alerta de temperatura a la cola
    * @param {string} channelName - Nombre del canal
    * @param {number} temperature - Temperatura detectada
    * @param {string} timestamp - Timestamp de la medición
    * @param {number} minThreshold - Umbral mínimo
    * @param {number} maxThreshold - Umbral máximo
+   * @returns {boolean} True si se agregó correctamente
+   */
+  addTemperatureAlertToQueue(
+    channelName,
+    temperature,
+    timestamp,
+    minThreshold,
+    maxThreshold
+  ) {
+    // Agregar a la cola
+    this.messageQueue.temperatureAlerts.push({
+      channelName,
+      temperature,
+      timestamp,
+      minThreshold,
+      maxThreshold,
+      queuedAt: new Date(),
+    });
+
+    console.log(
+      `SMS Service - Alerta de temperatura para ${channelName} agregada a la cola (${this.messageQueue.temperatureAlerts.length} alertas en cola)`
+    );
+    return true;
+  }
+
+  /**
+   * Envía las alertas de temperatura acumuladas
+   * @param {boolean} [forceOutsideWorkingHours=false] - Forzar envío incluso en horario laboral
+   * @returns {Promise<{success: boolean, processed: number}>} Resultado del procesamiento
+   */
+  async processTemperatureAlertQueue(forceOutsideWorkingHours = false) {
+    // Verificar si hay alertas para procesar
+    if (this.messageQueue.temperatureAlerts.length === 0) {
+      return { success: true, processed: 0 };
+    }
+
+    // Verificar si estamos fuera del horario laboral
+    if (!forceOutsideWorkingHours && this.isWithinWorkingHours()) {
+      console.log(
+        "SMS Service - Dentro de horario laboral. Posponiendo procesamiento de alertas SMS."
+      );
+      return { success: false, processed: 0, reason: "working_hours" };
+    }
+
+    // Crear un resumen de las alertas para enviar un único SMS
+    const alertCount = this.messageQueue.temperatureAlerts.length;
+    let message = `ALERTA: ${alertCount} sensor${
+      alertCount > 1 ? "es" : ""
+    } fuera de rango. `;
+
+    // Incluir solo los primeros 3 canales con detalle para no exceder límite de SMS
+    const detailLimit = Math.min(3, alertCount);
+    for (let i = 0; i < detailLimit; i++) {
+      const alert = this.messageQueue.temperatureAlerts[i];
+      message += `${alert.channelName}: ${alert.temperature}°C. `;
+    }
+
+    // Agregar resumen si hay más alertas
+    if (alertCount > detailLimit) {
+      message += `Y ${alertCount - detailLimit} más. `;
+    }
+
+    // Añadir timestamp
+    message += `${moment().format("DD/MM HH:mm")}`;
+
+    // Enviar el SMS consolidado
+    const result = await this.sendSMS(message, null, forceOutsideWorkingHours);
+
+    if (result.success) {
+      // Limpiar la cola
+      const processedCount = this.messageQueue.temperatureAlerts.length;
+      this.messageQueue.temperatureAlerts = [];
+      this.messageQueue.lastProcessed = new Date();
+
+      console.log(
+        `SMS Service - Cola de alertas procesada: ${processedCount} alertas enviadas en un SMS consolidado`
+      );
+      return { success: true, processed: processedCount };
+    } else {
+      console.error(
+        "SMS Service - Error al enviar alertas consolidadas:",
+        result
+      );
+      return { success: false, processed: 0, error: result };
+    }
+  }
+
+  /**
+   * Envía un SMS de alerta de temperatura inmediatamente o lo agrega a la cola
+   * @param {string} channelName - Nombre del canal
+   * @param {number} temperature - Temperatura detectada
+   * @param {string} timestamp - Timestamp de la medición
+   * @param {number} minThreshold - Umbral mínimo
+   * @param {number} maxThreshold - Umbral máximo
+   * @param {boolean} [queueForBatch=true] - Si es true, agrega a la cola; si es false, envía inmediatamente
    * @param {Array<string>} [recipients=null] - Destinatarios personalizados
-   * @returns {Promise<{success: boolean, sentCount: number}>} Resultado del envío
+   * @returns {Promise<{success: boolean}>} Resultado de la operación
    */
   async sendTemperatureAlert(
     channelName,
@@ -338,10 +520,31 @@ class SMSService {
     timestamp,
     minThreshold,
     maxThreshold,
+    queueForBatch = true,
     recipients = null
   ) {
+    // Si se debe encolar para envío posterior agrupado
+    if (queueForBatch) {
+      this.addTemperatureAlertToQueue(
+        channelName,
+        temperature,
+        timestamp,
+        minThreshold,
+        maxThreshold
+      );
+      return { success: true, queued: true };
+    }
+
+    // Si se debe enviar inmediatamente
     const message = `Alerta ${channelName}: Temp ${temperature}°C (${minThreshold}-${maxThreshold}°C) ${timestamp}`;
-    return await this.sendSMS(message, recipients);
+    const result = await this.sendSMS(message, recipients, true); // Forzar envío incluso en horario laboral
+
+    return {
+      success: result.success,
+      queued: false,
+      sentCount: result.sentCount,
+      failedCount: result.failedCount,
+    };
   }
 
   /**
@@ -351,6 +554,8 @@ class SMSService {
   getMetrics() {
     return {
       ...this.metrics,
+      queuedAlerts: this.messageQueue.temperatureAlerts.length,
+      lastProcessed: this.messageQueue.lastProcessed,
       successRate:
         this.metrics.sentMessages + this.metrics.failedMessages > 0
           ? (
