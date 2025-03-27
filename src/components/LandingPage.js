@@ -23,7 +23,7 @@ const LandingPage = () => {
     const handleLogin = async (e) => {
         e.preventDefault();
         try {
-            const response = await fetch('/api/auth/login', { // Utilizar la ruta correcta
+            const response = await fetch('/api/usuarios/login', { // Utilizar la ruta correcta
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
