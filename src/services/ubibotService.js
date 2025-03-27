@@ -3,19 +3,17 @@
 const mysql = require("mysql2/promise");
 const config = require("../config/js_files/config-loader");
 const { convertToMySQLDateTime } = require("../utils/transformUtils");
-const { isDifferenceGreaterThan } = require("../utils/math_utils");
 const moment = require("moment-timezone");
 
-const INTERVALO_SIN_CONEXION_SENSOR = 95;
+// Configuración para alertas de desconexión (minutos)
+const INTERVALO_SIN_CONEXION_SENSOR = 30;
 
-// Sistema de buffer de alertas por hora
+// Sistema de buffer de alertas por hora para alertas de temperatura
 const alertBuffers = {
   // Organizado por hora, cada clave es un timestamp y el valor un array de alertas
   hourlyBuffers: {},
-
   // La última hora procesada
   lastProcessedHourTimestamp: null,
-
   // Referencia al intervalo de procesamiento
   processingInterval: null,
 };
@@ -258,6 +256,7 @@ class UbibotService {
 
   /**
    * Procesa los datos de un canal de Ubibot.
+   * Actualiza la información del canal incluyendo su estado de conexión.
    */
   async processChannelData(channelData) {
     const connection = await pool.getConnection();
@@ -278,14 +277,26 @@ class UbibotService {
         created_at: new Date(channelData.created_at),
       };
 
+      // Determinar estado de conexión (1 = online, cualquier otro valor = offline)
+      const isOnline = channelData.net === "1" || channelData.net === 1;
+      const currentTime = new Date();
+
       if (existingChannel.length === 0) {
+        // Si es un canal nuevo, inicializar con valores predeterminados
         await connection.query("INSERT INTO channels_ubibot SET ?", {
           ...basicInfo,
           channel_id: channelData.channel_id,
           name: channelData.name,
+          is_currently_out_of_range: isOnline ? 0 : 1,
+          out_of_range_since: isOnline ? null : currentTime,
+          last_alert_sent: null,
         });
       } else {
+        // Canal existente - actualizar información básica
         const currentChannel = existingChannel[0];
+        const wasOffline = currentChannel.is_currently_out_of_range === 1;
+
+        // Actualizar información básica primero
         const hasChanges = Object.keys(basicInfo).some((key) =>
           basicInfo[key] instanceof Date
             ? basicInfo[key].getTime() !==
@@ -299,9 +310,147 @@ class UbibotService {
             [basicInfo, channelData.channel_id]
           );
         }
+
+        // Ahora manejamos la lógica de estado de conexión
+        await this.updateConnectionStatus(
+          connection,
+          channelData.channel_id,
+          isOnline,
+          wasOffline,
+          currentChannel,
+          currentTime
+        );
       }
     } finally {
       connection.release();
+    }
+  }
+
+  /**
+   * Actualiza el estado de conexión de un canal y envía alertas si es necesario.
+   * @param {Object} connection - Conexión a la base de datos
+   * @param {string} channelId - ID del canal
+   * @param {boolean} isOnline - Si el canal está en línea (true) o fuera de línea (false)
+   * @param {boolean} wasOffline - Si el canal estaba previamente fuera de línea
+   * @param {Object} currentChannel - Datos actuales del canal
+   * @param {Date} currentTime - Tiempo actual
+   */
+  async updateConnectionStatus(
+    connection,
+    channelId,
+    isOnline,
+    wasOffline,
+    currentChannel,
+    currentTime
+  ) {
+    try {
+      if (isOnline) {
+        // Si el canal está en línea ahora
+        if (wasOffline) {
+          // Si estaba offline, actualizar el estado a online
+          await connection.query(
+            "UPDATE channels_ubibot SET is_currently_out_of_range = 0 WHERE channel_id = ?",
+            [channelId]
+          );
+          console.log(
+            `Canal ${channelId} (${currentChannel.name}) está nuevamente en línea.`
+          );
+        }
+      } else {
+        // Canal está offline
+        if (!wasOffline) {
+          // Si acaba de quedar offline, actualizar out_of_range_since
+          await connection.query(
+            "UPDATE channels_ubibot SET is_currently_out_of_range = 1, out_of_range_since = ? WHERE channel_id = ?",
+            [currentTime, channelId]
+          );
+          console.log(
+            `Canal ${channelId} (${
+              currentChannel.name
+            }) ha quedado fuera de línea a las ${currentTime.toISOString()}.`
+          );
+        } else {
+          // Ya estaba offline, verificar si debemos enviar una alerta
+          await this.checkAndSendDisconnectionAlert(
+            connection,
+            currentChannel,
+            currentTime
+          );
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Error al actualizar estado de conexión para canal ${channelId}:`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Verifica si es necesario enviar una alerta de desconexión y la envía si corresponde.
+   * @param {Object} connection - Conexión a la base de datos
+   * @param {Object} channel - Datos del canal
+   * @param {Date} currentTime - Tiempo actual
+   */
+  async checkAndSendDisconnectionAlert(connection, channel, currentTime) {
+    try {
+      // Convertir los timestamps de string a Date si es necesario
+      const outOfRangeSince =
+        channel.out_of_range_since instanceof Date
+          ? channel.out_of_range_since
+          : new Date(channel.out_of_range_since);
+
+      const lastAlertSent = channel.last_alert_sent
+        ? channel.last_alert_sent instanceof Date
+          ? channel.last_alert_sent
+          : new Date(channel.last_alert_sent)
+        : null;
+
+      // Calcular cuánto tiempo ha estado offline (en minutos)
+      const minutesOffline = (currentTime - outOfRangeSince) / (1000 * 60);
+
+      // Si ha estado offline por al menos INTERVALO_SIN_CONEXION_SENSOR minutos y nunca se ha enviado una alerta
+      // O si la última alerta se envió hace más de INTERVALO_SIN_CONEXION_SENSOR minutos
+      const shouldSendAlert =
+        (minutesOffline >= INTERVALO_SIN_CONEXION_SENSOR && !lastAlertSent) ||
+        (lastAlertSent &&
+          (currentTime - lastAlertSent) / (1000 * 60) >=
+            INTERVALO_SIN_CONEXION_SENSOR);
+
+      if (shouldSendAlert) {
+        // Preparar datos para la alerta
+        const disconnectedChannel = [
+          {
+            name: channel.name,
+            lastConnectionTime: outOfRangeSince,
+            disconnectionInterval: minutesOffline.toFixed(0),
+          },
+        ];
+
+        // Enviar la alerta
+        const alertSent = await this.sendDisconnectedSensorsEmail(
+          disconnectedChannel
+        );
+
+        if (alertSent) {
+          // Actualizar last_alert_sent
+          await connection.query(
+            "UPDATE channels_ubibot SET last_alert_sent = ? WHERE channel_id = ?",
+            [currentTime, channel.channel_id]
+          );
+          console.log(
+            `Alerta enviada para canal ${channel.channel_id} (${
+              channel.name
+            }) - offline por ${minutesOffline.toFixed(0)} minutos.`
+          );
+        } else {
+          console.error(
+            `Error al enviar alerta para canal ${channel.channel_id}.`
+          );
+        }
+      }
+    } catch (error) {
+      console.error(`Error al verificar alerta de desconexión:`, error);
     }
   }
 
@@ -447,23 +596,6 @@ class UbibotService {
           `Ubibot: Temperatura dentro del rango permitido. No se requiere alerta.`
         );
       }
-
-      const lastReading = await this.getLastSensorReading(channelId);
-      const utcTimestamp = moment.utc(lastValues.field1.created_at);
-      if (
-        lastReading &&
-        lastReading.external_temperature_timestamp &&
-        isDifferenceGreaterThan(
-          utcTimestamp.toDate(),
-          lastReading.external_temperature_timestamp,
-          INTERVALO_SIN_CONEXION_SENSOR
-        )
-      ) {
-        await this.sendEmaillSensorSinConexion(
-          channelName,
-          lastValues.field8.created_at
-        );
-      }
     } catch (error) {
       console.error("Ubibot: Error en checkParametersAndNotify:", error);
     } finally {
@@ -474,20 +606,13 @@ class UbibotService {
   /**
    * Envía un correo para sensores desconectados
    */
-  async sendEmaillSensorSinConexion(channelName, hora) {
+  async sendDisconnectedSensorsEmail(disconnectedChannels, recipients = null) {
     const emailService = require("../services/emailService");
-
-    const disconnectedChannel = [
-      {
-        name: channelName,
-        lastConnectionTime: hora,
-        disconnectionInterval: INTERVALO_SIN_CONEXION_SENSOR,
-      },
-    ];
 
     try {
       return await emailService.sendDisconnectedSensorsEmail(
-        disconnectedChannel
+        disconnectedChannels,
+        recipients
       );
     } catch (error) {
       console.error("Error enviando alerta de sensor desconectado:", error);
