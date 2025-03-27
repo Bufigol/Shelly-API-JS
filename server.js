@@ -269,6 +269,8 @@ class Server {
    * @throws {Error} If any service or collector fails to initialize.
    */
 
+  // En server.js - dentro de initializeServices()
+
   async initializeServices() {
     console.log("Initializing services...");
 
@@ -280,20 +282,27 @@ class Server {
       }
       console.log("✅ Database connected");
 
+      // Inicializar servicios existentes
       await this.services.energyAverages.initialize();
       console.log("✅ Energy averages service initialized");
 
       await this.services.totalEnergy.initialize();
       console.log("✅ Total energy service initialized");
 
-      /*await this.shellyCollector.start();
+      // Inicializar nuevo servicio SMS
+      const smsService = require("./src/services/smsService");
+      await smsService.initialize();
+      console.log("✅ SMS service initialized");
+
+      // Continuar con los recolectores
+      await this.shellyCollector.start();
       console.log("✅ Shelly Data collector started");
 
       await this.ubibotCollector.start();
       console.log("✅ Ubibot data collector started");
 
       await this.onPremiseCollector.start();
-      console.log("✅ OnPremise collector started");*/
+      console.log("✅ OnPremise collector started");
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;

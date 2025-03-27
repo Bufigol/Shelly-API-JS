@@ -1,19 +1,24 @@
-// src/services/ubibot-service.js
+// src/services/ubibotService.js
 
 const mysql = require("mysql2/promise");
 const config = require("../config/js_files/config-loader");
 const { convertToMySQLDateTime } = require("../utils/transformUtils");
 const { isDifferenceGreaterThan } = require("../utils/math_utils");
-const sgMailConfig = require("../config/jsons/sgMailConfig.json");
-const smsConfig = require("../config/jsons/destinatariosSmsUbibot.json");
 const moment = require("moment-timezone");
-const axios = require("axios");
-const MODEM_URL = "http://192.168.1.140";
-
-// Configuración de SendGrid
-const SENDGRID_API_KEY = sgMailConfig.SENDGRID_API_KEY;
 
 const INTERVALO_SIN_CONEXION_SENSOR = 95;
+
+// Sistema de buffer de alertas por hora
+const alertBuffers = {
+  // Organizado por hora, cada clave es un timestamp y el valor un array de alertas
+  hourlyBuffers: {},
+
+  // La última hora procesada
+  lastProcessedHourTimestamp: null,
+
+  // Referencia al intervalo de procesamiento
+  processingInterval: null,
+};
 
 const pool = mysql.createPool({
   host: config.getConfig().database.host,
@@ -26,14 +31,233 @@ const pool = mysql.createPool({
 });
 
 class UbibotService {
+  constructor() {
+    const { ubibot: ubibotConfig } = config.getConfig();
+    this.accountKey = ubibotConfig.accountKey;
+    this.tokenFile = ubibotConfig.tokenFile;
+
+    // Inicializar sistema de buffer horario de alertas
+    this.setupHourlyAlertProcessing();
+
+    // Programar procesamiento de cola de SMS
+    this.setupSMSQueueProcessing();
+  }
+
+  /**
+   * Configura el sistema de procesamiento horario de alertas
+   */
+  setupHourlyAlertProcessing() {
+    // Limpiar intervalo anterior si existe
+    if (alertBuffers.processingInterval) {
+      clearInterval(alertBuffers.processingInterval);
+    }
+
+    // Calcular tiempo hasta el siguiente comienzo de hora
+    const now = new Date();
+    const nextHour = new Date(now);
+    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+    const timeToNextHour = nextHour - now;
+
+    // Programar el primer procesamiento al inicio de la próxima hora
+    setTimeout(() => {
+      this.processHourlyAlerts();
+
+      // Establecer intervalo para procesar cada hora exactamente
+      alertBuffers.processingInterval = setInterval(
+        () => this.processHourlyAlerts(),
+        60 * 60 * 1000
+      );
+
+      // Programar la limpieza de alertas antiguas cada 12 horas
+      setInterval(() => this.cleanupOldAlerts(), 12 * 60 * 60 * 1000);
+    }, timeToNextHour);
+
+    console.log(
+      `Procesamiento de alertas programado para iniciar en ${Math.round(
+        timeToNextHour / 1000 / 60
+      )} minutos`
+    );
+  }
+
+  /**
+   * Configura el procesamiento periódico de la cola de SMS
+   */
+  setupSMSQueueProcessing() {
+    // Calcular tiempo hasta el próximo procesamiento (cada 30 minutos)
+    const now = new Date();
+    const nextProcessTime = new Date(now);
+    nextProcessTime.setMinutes(
+      nextProcessTime.getMinutes() >= 30 ? 60 : 30,
+      0,
+      0
+    );
+    const timeToNextProcess = nextProcessTime - now;
+
+    // Programar primer procesamiento
+    setTimeout(() => {
+      this.processSMSQueue();
+
+      // Establecer intervalo para procesar cada 30 minutos
+      setInterval(() => this.processSMSQueue(), 30 * 60 * 1000);
+    }, timeToNextProcess);
+
+    console.log(
+      `Procesamiento de cola de SMS programado para iniciar en ${Math.round(
+        timeToNextProcess / 1000 / 60
+      )} minutos`
+    );
+  }
+
+  /**
+   * Procesa la cola de SMS
+   */
+  async processSMSQueue() {
+    try {
+      const smsService = require("./smsService");
+
+      // Procesar cola de SMS
+      const result = await smsService.processTemperatureAlertQueue();
+
+      if (result.success) {
+        console.log(
+          `Cola de SMS procesada: ${result.processed} alertas enviadas`
+        );
+      } else if (result.reason === "working_hours") {
+        console.log(
+          "Procesamiento de cola de SMS pospuesto por horario laboral"
+        );
+      } else {
+        console.warn("Error al procesar cola de SMS:", result);
+      }
+    } catch (error) {
+      console.error("Error al procesar cola de SMS:", error);
+    }
+  }
+
+  /**
+   * Añade una alerta al buffer de la hora correspondiente
+   */
+  addAlertToHourlyBuffer(
+    channelName,
+    temperature,
+    timestamp,
+    minThreshold,
+    maxThreshold
+  ) {
+    // Obtener el timestamp de inicio de la hora actual (redondeando hacia abajo)
+    const date = new Date(timestamp);
+    date.setMinutes(0, 0, 0);
+    const hourTimestamp = date.toISOString();
+
+    // Inicializar el buffer para esta hora si no existe
+    if (!alertBuffers.hourlyBuffers[hourTimestamp]) {
+      alertBuffers.hourlyBuffers[hourTimestamp] = [];
+    }
+
+    // Añadir la alerta al buffer de la hora correspondiente
+    alertBuffers.hourlyBuffers[hourTimestamp].push({
+      name: channelName,
+      temperature: temperature,
+      timestamp: timestamp,
+      minThreshold: minThreshold,
+      maxThreshold: maxThreshold,
+      detectedAt: new Date().toISOString(),
+    });
+
+    console.log(
+      `Alerta para ${channelName} agregada al buffer de la hora ${hourTimestamp}`
+    );
+  }
+
+  /**
+   * Procesa las alertas acumuladas en la última hora
+   */
+  async processHourlyAlerts() {
+    const emailService = require("../services/emailService");
+    const now = new Date();
+
+    // Verificar si estamos fuera del horario laboral
+    if (emailService.isWithinWorkingHours()) {
+      console.log(
+        "Dentro de horario laboral. Posponiendo procesamiento de alertas de temperatura."
+      );
+      return;
+    }
+
+    // Obtener hora actual redondeada a la hora anterior completa
+    const currentHourDate = new Date(now);
+    currentHourDate.setMinutes(0, 0, 0);
+    currentHourDate.setHours(currentHourDate.getHours() - 1); // Procesamos la hora anterior completa
+    const currentHourTimestamp = currentHourDate.toISOString();
+
+    // Verificar si hay alertas para esta hora
+    if (
+      !alertBuffers.hourlyBuffers[currentHourTimestamp] ||
+      alertBuffers.hourlyBuffers[currentHourTimestamp].length === 0
+    ) {
+      console.log(
+        `No hay alertas para procesar en la hora ${currentHourTimestamp}`
+      );
+      return;
+    }
+
+    // Obtener las alertas a procesar
+    const alertsToProcess = alertBuffers.hourlyBuffers[currentHourTimestamp];
+    console.log(
+      `Procesando ${alertsToProcess.length} alertas de temperatura para la hora ${currentHourTimestamp}`
+    );
+
+    try {
+      // Enviar correo con todas las alertas acumuladas
+      const emailSent = await emailService.sendTemperatureRangeAlertsEmail(
+        alertsToProcess,
+        now, // Usar hora actual para verificación de horario
+        null, // Usar destinatarios predeterminados
+        true // Forzar envío independientemente del horario
+      );
+
+      if (emailSent) {
+        console.log(
+          `Email enviado exitosamente con ${alertsToProcess.length} alertas de temperatura.`
+        );
+
+        // Limpiar buffer de esta hora
+        delete alertBuffers.hourlyBuffers[currentHourTimestamp];
+
+        // Actualizar última hora procesada
+        alertBuffers.lastProcessedHourTimestamp = currentHourTimestamp;
+      } else {
+        console.error(
+          "No se pudo enviar el email de alertas. Se intentará en el próximo ciclo."
+        );
+      }
+    } catch (error) {
+      console.error("Error al procesar las alertas horarias:", error);
+    }
+  }
+
+  /**
+   * Limpia buffers de alertas antiguas (más de 24 horas)
+   */
+  cleanupOldAlerts() {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now);
+    twentyFourHoursAgo.setHours(now.getHours() - 24);
+
+    // Recorrer todos los buffers horarios
+    for (const hourTimestamp in alertBuffers.hourlyBuffers) {
+      const bufferTime = new Date(hourTimestamp);
+
+      // Si el buffer es de hace más de 24 horas, eliminarlo
+      if (bufferTime < twentyFourHoursAgo) {
+        console.log(`Limpiando buffer antiguo de alertas: ${hourTimestamp}`);
+        delete alertBuffers.hourlyBuffers[hourTimestamp];
+      }
+    }
+  }
+
   /**
    * Procesa los datos de un canal de Ubibot.
-   * Si el canal no existe en la base de datos, lo crea.
-   * Si el canal ya existe, verifica si ha habido cambios en la información
-   * básica del canal (como la latitud o la fecha de creación), y en caso
-   * de que sí, actualiza la información del canal en la base de datos.
-   * @param {Object} channelData Información del canal de Ubibot
-   * @returns {Promise<void>}
    */
   async processChannelData(channelData) {
     const connection = await pool.getConnection();
@@ -80,27 +304,17 @@ class UbibotService {
       connection.release();
     }
   }
+
   /**
-   * Convierte una fecha/hora UTC a una fecha/hora en la zona horaria de
-   * Santiago de Chile.
-   * @param {Date|String|Number} utcTime Fecha/hora en formato UTC
-   * @returns {moment} Fecha/hora en la zona horaria de Santiago de Chile
+   * Convierte una fecha/hora UTC a una fecha/hora en la zona horaria de Santiago
    */
   getSantiagoTime(utcTime) {
     return moment.utc(utcTime).tz("America/Santiago");
   }
 
   /**
-   * Processes the sensor readings from a Ubibot channel and inserts them into the database.
-   * Converts the timestamp from UTC to the Santiago timezone and logs the timestamp information.
-   * If sensor readings are not present or the timestamp is missing, logs an error and returns.
-   * After data insertion, checks parameters and sends notifications if necessary.
-   *
-   * @param {number} channelId - The ID of the Ubibot channel.
-   * @param {Object} lastValues - The latest sensor readings, including fields for temperature, humidity, light, etc.
-   * @returns {Promise<void>}
+   * Procesa las lecturas del sensor y las inserta en la base de datos
    */
-
   async processSensorReadings(channelId, lastValues) {
     const connection = await pool.getConnection();
     try {
@@ -118,7 +332,7 @@ class UbibotService {
       console.log("Santiago Time:", santiagoTime.format());
 
       await connection.query(
-        "INSERT INTO sensor_readings_ubibot (channel_id, timestamp, temperature, humidity, light, voltage, wifi_rssi, external_temperature,external_temperature_timestamp, insercion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sensor_readings_ubibot (channel_id, timestamp, temperature, humidity, light, voltage, wifi_rssi, external_temperature, external_temperature_timestamp, insercion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           channelId,
           utcTimestamp.toDate(),
@@ -149,23 +363,18 @@ class UbibotService {
   }
 
   /**
-   * Verifica los parámetros del canal especificado y envía notificaciones
-   * si la temperatura se encuentra fuera del rango permitido.
-   *
-   * @param {number} channelId - El ID del canal Ubibot.
-   * @param {Object} lastValues - Los valores más recientes del sensor, incluyendo la temperatura, humedad, luz, etc.
-   * @returns {Promise<void>}
+   * Verifica los parámetros del canal y envía notificaciones si la temperatura está fuera de rango
    */
   async checkParametersAndNotify(channelId, lastValues) {
     let connection;
     try {
       connection = await pool.getConnection();
 
-      // Obtener la información del canal, incluyendo si está operativo y su grupo
+      // Obtener la información del canal
       const [channelInfo] = await connection.query(
         "SELECT c.name, c.esOperativa, p.minimo AS minima_temp_camara, p.maximo AS maxima_temp_camara " +
           "FROM channels_ubibot c " +
-          "JOIN parametrizaciones p ON c.idParametizacion = p.param_id " +
+          "JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id " +
           "WHERE c.channel_id = ?",
         [channelId]
       );
@@ -206,20 +415,24 @@ class UbibotService {
         temperature < minima_temp_camara ||
         temperature > maxima_temp_camara
       ) {
-        console.log(`Ubibot: Temperatura fuera de rango. Enviando alerta.`);
+        console.log(
+          `Ubibot: Temperatura fuera de rango. Agregando a buffer de alertas.`
+        );
 
         const timestamp = moment(lastValues.field1.created_at).format(
           "YYYY-MM-DD HH:mm:ss"
         );
 
-        // Enviar notificaciones
-        await this.sendEmail(
+        // Agregar a buffer horario para emails
+        this.addAlertToHourlyBuffer(
           channelName,
           temperature,
           timestamp,
           minima_temp_camara,
           maxima_temp_camara
         );
+
+        // Agregar a la cola de SMS o enviar inmediatamente
         await this.sendSMS(
           channelName,
           temperature,
@@ -259,155 +472,32 @@ class UbibotService {
   }
 
   /**
-   * Envía un correo electrónico a los destinatarios configurados cuando un sensor
-   * de temperatura externa está desconectado por más de un intervalo determinado.
-   * @param {string} channelName - Nombre del canal
-   * @param {string} hora - Hora en que se detectó la desconexión
+   * Envía un correo para sensores desconectados
    */
   async sendEmaillSensorSinConexion(channelName, hora) {
-    const FROM_EMAIL = sgMailConfig.email_contacto.from_verificado;
+    const emailService = require("../services/emailService");
 
-    const data = {
-      personalizations: [{ to: [{ email: FROM_EMAIL }] }], // Cambiado a un array de objetos
-      from: { email: FROM_EMAIL },
-      subject: `Alerta de Sensor Desconectado para ${channelName}`,
-      content: [
-        {
-          type: "text/plain",
-          value: `El sensor de temperatura externa de ${channelName} está desconectado desde ${hora}.
-                    Límites de desconexion configurado: ${INTERVALO_SIN_CONEXION_SENSOR} minutos`,
-        },
-      ],
-    };
+    const disconnectedChannel = [
+      {
+        name: channelName,
+        lastConnectionTime: hora,
+        disconnectionInterval: INTERVALO_SIN_CONEXION_SENSOR,
+      },
+    ];
 
     try {
-      console.log("Intentando enviar email con la siguiente configuración:");
-      console.log("API Key:", SENDGRID_API_KEY.substring(0, 10) + "...");
-      console.log("Destinatario:", FROM_EMAIL);
-      console.log("Remitente:", FROM_EMAIL);
-
-      const response = await axios.post(
-        "https://api.sendgrid.com/v3/mail/send",
-        data,
-        {
-          headers: {
-            Authorization: `Bearer ${SENDGRID_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
+      return await emailService.sendDisconnectedSensorsEmail(
+        disconnectedChannel
       );
-
-      console.log(
-        "Respuesta de SendGrid:",
-        response.status,
-        response.statusText
-      );
-      console.log("Email enviado exitosamente");
-      return true;
     } catch (error) {
-      console.error("Error al enviar el email:");
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.data);
-        console.error("Estado de respuesta:", error.response.status);
-        console.error("Cabeceras de respuesta:", error.response.headers);
-      } else if (error.request) {
-        console.error(
-          "No se recibió respuesta. Detalles de la solicitud:",
-          error.request
-        );
-      } else {
-        console.error("Error al configurar la solicitud:", error.message);
-      }
-      console.error("Configuración completa del error:", error.config);
+      console.error("Error enviando alerta de sensor desconectado:", error);
       return false;
     }
   }
 
   /**
-   * Envía un correo electrónico a los destinatarios configurados cuando un sensor
-   * de temperatura externa está fuera de los límites establecidos.
-   * @param {string} channelName - Nombre del canal
-   * @param {number} temperature - Temperatura medida en el sensor
-   * @param {string} timestamp - Marca de tiempo en que se detectó la temperatura
-   * @param {number} minima_temp_camara - Límite mínimo de temperatura permitido
-   * @param {number} maxima_temp_camara - Límite máximo de temperatura permitido
-   * @returns {Promise<boolean>} Verdadero si el email se envió exitosamente, falso en caso contrario
-   */
-  async sendEmail(
-    channelName,
-    temperature,
-    timestamp,
-    minima_temp_camara,
-    maxima_temp_camara
-  ) {
-    const FROM_EMAIL = sgMailConfig.email_contacto.from_verificado;
-    const TO_EMAILS = sgMailConfig.email_contacto.destinatarios;
-
-    const data = {
-      personalizations: [{ to: TO_EMAILS.map((email) => ({ email })) }],
-      from: { email: FROM_EMAIL },
-      subject: `Alerta de temperatura para ${channelName}`,
-      content: [
-        {
-          type: "text/plain",
-          value: `La temperatura en ${channelName} está fuera de los límites establecidos en los parámetros.
-                    Temperatura: ${temperature}°C
-                    Timestamp: ${timestamp}
-                    Límites permitidos: ${minima_temp_camara}°C / ${maxima_temp_camara}°C`,
-        },
-      ],
-    };
-
-    try {
-      console.log("Intentando enviar email con la siguiente configuración:");
-      console.log("API Key:", SENDGRID_API_KEY.substring(0, 10) + "...");
-      console.log("Destinatarios:", TO_EMAILS);
-      console.log("Remitente:", FROM_EMAIL);
-
-      const response = await axios.post(
-        "https://api.sendgrid.com/v3/mail/send",
-        data,
-        {
-          headers: {
-            Authorization: `Bearer ${SENDGRID_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      console.log(
-        "Respuesta de SendGrid:",
-        response.status,
-        response.statusText
-      );
-      console.log("Email enviado exitosamente");
-      return true;
-    } catch (error) {
-      console.error("Error al enviar el email:");
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.data);
-        console.error("Estado de respuesta:", error.response.status);
-        console.error("Cabeceras de respuesta:", error.response.headers);
-      } else if (error.request) {
-        console.error(
-          "No se recibió respuesta. Detalles de la solicitud:",
-          error.request
-        );
-      } else {
-        console.error("Error al configurar la solicitud:", error.message);
-      }
-      console.error("Configuración completa del error:", error.config);
-      return false;
-    }
-  }
-  /**
-   * Envía un SMS de alerta a los destinatarios configurados cuando la temperatura en un canal
-   * supera los límites establecidos.
-   * @param {string} channelName - Nombre del canal
-   * @param {number} temperature - Temperatura actual
-   * @param {string} timestamp - Timestamp de la lectura
-   * @param {number} minima_temp_camara - Límite inferior de temperatura permitido
-   * @param {number} maxima_temp_camara - Límite superior de temperatura permitido
+   * Envía un SMS de alerta cuando la temperatura está fuera de rango.
+   * El SMS se envía inmediatamente (sin agrupación) pero respetando el horario laboral.
    */
   async sendSMS(
     channelName,
@@ -416,163 +506,32 @@ class UbibotService {
     minima_temp_camara,
     maxima_temp_camara
   ) {
-    const message = `Alerta ${channelName}: Temp ${temperature}°C (${minima_temp_camara}-${maxima_temp_camara}°C) ${timestamp}`;
-    const destinatarios = smsConfig.sms_destinatarios;
-    console.log("Destinatarios SMS:", destinatarios);
-
     try {
-      await this.checkModemConnection();
+      const smsService = require("./smsService");
 
-      const formatPhoneNumber = (phone) => {
-        let formatted = phone.replace(/\s+/g, "");
-        if (!formatted.startsWith("+")) {
-          formatted = "+" + formatted;
-        }
-        return formatted;
-      };
-
-      const retrySMS = async (destinatario, retries = 2) => {
-        for (let i = 0; i <= retries; i++) {
-          try {
-            // Verificar y refrescar token en cada intento
-            const { headers } = await this.verifyAndRefreshToken();
-            const formattedPhone = formatPhoneNumber(destinatario);
-
-            if (i > 0) {
-              console.log(`Reintento ${i} para ${formattedPhone}`);
-              const waitTime = i === 1 ? 10000 : 7000;
-              await new Promise((resolve) => setTimeout(resolve, waitTime));
-            }
-
-            const smsData = `<?xml version="1.0" encoding="UTF-8"?>
-                        <request>
-                            <Index>-1</Index>
-                            <Phones>
-                                <Phone>${formattedPhone}</Phone>
-                            </Phones>
-                            <Sca></Sca>
-                            <Content>${message}</Content>
-                            <Length>${message.length}</Length>
-                            <Reserved>1</Reserved>
-                            <Date>${
-                              new Date()
-                                .toISOString()
-                                .replace("T", " ")
-                                .split(".")[0]
-                            }</Date>
-                        </request>`;
-
-            const response = await axios({
-              method: "post",
-              url: `${MODEM_URL}/api/sms/send-sms`,
-              data: smsData,
-              headers: headers,
-              transformRequest: [(data) => data],
-              validateStatus: null,
-              timeout: 10000,
-            });
-
-            console.log(
-              `Respuesta del módem para ${formattedPhone}:`,
-              response.data
-            );
-
-            if (response.data.includes("<response>OK</response>")) {
-              console.log(`SMS enviado exitosamente a ${formattedPhone}`);
-              return true;
-            }
-
-            if (response.data.includes("<code>113018</code>")) {
-              console.log(
-                `Error de autenticación detectado, renovando sesión...`
-              );
-              await new Promise((resolve) => setTimeout(resolve, 3000));
-              continue;
-            }
-
-            if (i === retries) {
-              throw new Error(
-                `Error en respuesta del módem después de ${retries} intentos: ${response.data}`
-              );
-            }
-          } catch (error) {
-            if (i === retries) throw error;
-          }
-        }
-      };
-
-      // Enviar SMS a cada destinatario
-      for (const destinatario of destinatarios) {
-        try {
-          await retrySMS(destinatario);
-          // Esperar entre envíos a diferentes destinatarios
-          await new Promise((resolve) => setTimeout(resolve, 8000));
-        } catch (error) {
-          console.error(
-            `Error al enviar SMS a ${destinatario}:`,
-            error.message
-          );
-          continue;
-        }
-      }
-    } catch (error) {
-      console.error("Error general en sendSMS:", error.message);
-      throw error;
-    }
-  }
-  async getToken() {
-    try {
-      const response = await axios.get(
-        `${MODEM_URL}/api/webserver/SesTokInfo`,
-        {
-          headers: {
-            Accept: "*/*",
-            "X-Requested-With": "XMLHttpRequest",
-          },
-        }
+      // Agregar a la cola de SMS para procesamiento agrupado
+      const result = await smsService.sendTemperatureAlert(
+        channelName,
+        temperature,
+        timestamp,
+        minima_temp_camara,
+        maxima_temp_camara,
+        true, // Agregar a cola para envío agrupado
+        null // Usar destinatarios predeterminados
       );
 
-      const responseText = response.data;
-      const sessionIdMatch = responseText.match(/<SesInfo>(.*?)<\/SesInfo>/);
-      const tokenMatch = responseText.match(/<TokInfo>(.*?)<\/TokInfo>/);
-
-      if (!sessionIdMatch || !tokenMatch) {
-        throw new Error("No se pudo obtener el token y la sesión");
+      if (result.success && result.queued) {
+        console.log(`SMS de alerta agregado a la cola para ${channelName}`);
+      } else if (!result.success) {
+        console.warn(
+          `Error al agregar SMS de alerta a la cola para ${channelName}`
+        );
       }
 
-      return {
-        sessionId: sessionIdMatch[1].replace("SessionID=", ""),
-        token: tokenMatch[1],
-      };
+      return result.success;
     } catch (error) {
-      console.error("Error obteniendo token:", error.message);
-      throw error;
-    }
-  }
-
-  async verifyAndRefreshToken() {
-    try {
-      const { sessionId, token } = await this.getToken();
-      return {
-        headers: {
-          Accept: "*/*",
-          "Accept-Encoding": "gzip, deflate",
-          "Accept-Language": "es-ES,es;q=0.9",
-          Connection: "keep-alive",
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          Cookie: `SessionID=${sessionId}`,
-          Host: "192.168.8.1",
-          Origin: MODEM_URL,
-          Referer: `${MODEM_URL}/html/smsinbox.html`,
-          "X-Requested-With": "XMLHttpRequest",
-          __RequestVerificationToken: token,
-        },
-        sessionId,
-        token,
-      };
-    } catch (error) {
-      console.error("Error al verificar/refrescar token:", error.message);
-      throw error;
+      console.error("Error al invocar servicio SMS:", error.message);
+      return false;
     }
   }
 
@@ -594,19 +553,6 @@ class UbibotService {
         error.message
       );
       return null;
-    }
-  }
-
-  async checkModemConnection() {
-    try {
-      await axios.get(`${MODEM_URL}/api/monitoring/status`, {
-        timeout: 5000  // Añadir timeout para conexión remota
-      });
-      console.log('Conexión con el módem remoto establecida');
-      return true;
-    } catch (error) {
-      console.error('Error conectando con el módem remoto:', error.message);
-      throw new Error('No se pudo establecer conexión con el módem remoto');
     }
   }
 }
