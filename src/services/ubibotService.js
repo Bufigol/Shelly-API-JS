@@ -3,19 +3,17 @@
 const mysql = require("mysql2/promise");
 const config = require("../config/js_files/config-loader");
 const { convertToMySQLDateTime } = require("../utils/transformUtils");
-const { isDifferenceGreaterThan } = require("../utils/math_utils");
 const moment = require("moment-timezone");
 
-const INTERVALO_SIN_CONEXION_SENSOR = 95;
+// Configuración para alertas de desconexión (minutos)
+const INTERVALO_SIN_CONEXION_SENSOR = 30;
 
-// Sistema de buffer de alertas por hora
+// Sistema de buffer de alertas por hora para alertas de temperatura
 const alertBuffers = {
   // Organizado por hora, cada clave es un timestamp y el valor un array de alertas
   hourlyBuffers: {},
-
   // La última hora procesada
   lastProcessedHourTimestamp: null,
-
   // Referencia al intervalo de procesamiento
   processingInterval: null,
 };
@@ -411,11 +409,13 @@ class UbibotService {
       // Calcular cuánto tiempo ha estado offline (en minutos)
       const minutesOffline = (currentTime - outOfRangeSince) / (1000 * 60);
 
-      // Si ha estado offline por al menos 30 minutos y nunca se ha enviado una alerta
-      // O si la última alerta se envió hace más de 30 minutos
+      // Si ha estado offline por al menos INTERVALO_SIN_CONEXION_SENSOR minutos y nunca se ha enviado una alerta
+      // O si la última alerta se envió hace más de INTERVALO_SIN_CONEXION_SENSOR minutos
       const shouldSendAlert =
-        (minutesOffline >= 30 && !lastAlertSent) ||
-        (lastAlertSent && (currentTime - lastAlertSent) / (1000 * 60) >= 30);
+        (minutesOffline >= INTERVALO_SIN_CONEXION_SENSOR && !lastAlertSent) ||
+        (lastAlertSent &&
+          (currentTime - lastAlertSent) / (1000 * 60) >=
+            INTERVALO_SIN_CONEXION_SENSOR);
 
       if (shouldSendAlert) {
         // Preparar datos para la alerta
@@ -596,25 +596,6 @@ class UbibotService {
           `Ubibot: Temperatura dentro del rango permitido. No se requiere alerta.`
         );
       }
-
-      // Esta parte ya no es necesaria porque ahora usamos el campo net para determinar
-      // cuando un canal está desconectado, pero la mantenemos por compatibilidad
-      const lastReading = await this.getLastSensorReading(channelId);
-      const utcTimestamp = moment.utc(lastValues.field1.created_at);
-      if (
-        lastReading &&
-        lastReading.external_temperature_timestamp &&
-        isDifferenceGreaterThan(
-          utcTimestamp.toDate(),
-          lastReading.external_temperature_timestamp,
-          INTERVALO_SIN_CONEXION_SENSOR
-        )
-      ) {
-        await this.sendEmaillSensorSinConexion(
-          channelName,
-          lastValues.field8.created_at
-        );
-      }
     } catch (error) {
       console.error("Ubibot: Error en checkParametersAndNotify:", error);
     } finally {
@@ -637,20 +618,6 @@ class UbibotService {
       console.error("Error enviando alerta de sensor desconectado:", error);
       return false;
     }
-  }
-
-  /**
-   * Envía un correo para sensores desconectados (Método existente por compatibilidad)
-   */
-  async sendEmaillSensorSinConexion(channelName, hora) {
-    const disconnectedChannel = [
-      {
-        name: channelName,
-        lastConnectionTime: hora,
-        disconnectionInterval: INTERVALO_SIN_CONEXION_SENSOR,
-      },
-    ];
-    return await this.sendDisconnectedSensorsEmail(disconnectedChannel);
   }
 
   /**
