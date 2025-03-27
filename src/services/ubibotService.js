@@ -5,8 +5,25 @@ const config = require("../config/js_files/config-loader");
 const { convertToMySQLDateTime } = require("../utils/transformUtils");
 const moment = require("moment-timezone");
 
-// Configuración para alertas de desconexión (minutos)
-const INTERVALO_SIN_CONEXION_SENSOR = 30;
+// =====================================================================
+// CONFIGURACIÓN DE CONSTANTES DE TIEMPO
+// =====================================================================
+
+// Intervalos para alertas (en minutos)
+const MINUTOS_ESPERA_ALERTA_DESCONEXION = 30; // Minutos a esperar para enviar alerta cuando un sensor se desconecta
+const MINUTOS_ENTRE_ALERTAS_DESCONEXION = 30; // Minutos entre alertas repetidas para sensores que siguen desconectados
+
+// Intervalos para procesamiento de colas (en milisegundos)
+const MS_INTERVALO_PROCESO_HORARIO = 60 * 60 * 1000; // 1 hora - Frecuencia de procesamiento de alertas acumuladas
+const MS_INTERVALO_PROCESO_SMS = 30 * 60 * 1000; // 30 minutos - Frecuencia de procesamiento de cola SMS
+const MS_INTERVALO_LIMPIEZA_ALERTAS = 12 * 60 * 60 * 1000; // 12 horas - Frecuencia de limpieza de alertas antiguas
+
+// Tiempos de retención de datos (en horas)
+const HORAS_RETENCION_ALERTAS = 24; // Horas de retención para alertas en búfer
+
+// =====================================================================
+// CÓDIGO DEL SERVICIO
+// =====================================================================
 
 // Sistema de buffer de alertas por hora para alertas de temperatura
 const alertBuffers = {
@@ -63,11 +80,11 @@ class UbibotService {
       // Establecer intervalo para procesar cada hora exactamente
       alertBuffers.processingInterval = setInterval(
         () => this.processHourlyAlerts(),
-        60 * 60 * 1000
+        MS_INTERVALO_PROCESO_HORARIO
       );
 
-      // Programar la limpieza de alertas antiguas cada 12 horas
-      setInterval(() => this.cleanupOldAlerts(), 12 * 60 * 60 * 1000);
+      // Programar la limpieza de alertas antiguas periódicamente
+      setInterval(() => this.cleanupOldAlerts(), MS_INTERVALO_LIMPIEZA_ALERTAS);
     }, timeToNextHour);
 
     console.log(
@@ -95,8 +112,8 @@ class UbibotService {
     setTimeout(() => {
       this.processSMSQueue();
 
-      // Establecer intervalo para procesar cada 30 minutos
-      setInterval(() => this.processSMSQueue(), 30 * 60 * 1000);
+      // Establecer intervalo para procesar periódicamente
+      setInterval(() => this.processSMSQueue(), MS_INTERVALO_PROCESO_SMS);
     }, timeToNextProcess);
 
     console.log(
@@ -235,19 +252,19 @@ class UbibotService {
   }
 
   /**
-   * Limpia buffers de alertas antiguas (más de 24 horas)
+   * Limpia buffers de alertas antiguas
    */
   cleanupOldAlerts() {
     const now = new Date();
-    const twentyFourHoursAgo = new Date(now);
-    twentyFourHoursAgo.setHours(now.getHours() - 24);
+    const horasRetrasadas = new Date(now);
+    horasRetrasadas.setHours(now.getHours() - HORAS_RETENCION_ALERTAS);
 
     // Recorrer todos los buffers horarios
     for (const hourTimestamp in alertBuffers.hourlyBuffers) {
       const bufferTime = new Date(hourTimestamp);
 
-      // Si el buffer es de hace más de 24 horas, eliminarlo
-      if (bufferTime < twentyFourHoursAgo) {
+      // Si el buffer es antiguo, eliminarlo
+      if (bufferTime < horasRetrasadas) {
         console.log(`Limpiando buffer antiguo de alertas: ${hourTimestamp}`);
         delete alertBuffers.hourlyBuffers[hourTimestamp];
       }
@@ -409,13 +426,14 @@ class UbibotService {
       // Calcular cuánto tiempo ha estado offline (en minutos)
       const minutesOffline = (currentTime - outOfRangeSince) / (1000 * 60);
 
-      // Si ha estado offline por al menos INTERVALO_SIN_CONEXION_SENSOR minutos y nunca se ha enviado una alerta
-      // O si la última alerta se envió hace más de INTERVALO_SIN_CONEXION_SENSOR minutos
+      // Si ha estado offline por al menos N minutos y nunca se ha enviado una alerta
+      // O si la última alerta se envió hace más de N minutos
       const shouldSendAlert =
-        (minutesOffline >= INTERVALO_SIN_CONEXION_SENSOR && !lastAlertSent) ||
+        (minutesOffline >= MINUTOS_ESPERA_ALERTA_DESCONEXION &&
+          !lastAlertSent) ||
         (lastAlertSent &&
           (currentTime - lastAlertSent) / (1000 * 60) >=
-            INTERVALO_SIN_CONEXION_SENSOR);
+            MINUTOS_ENTRE_ALERTAS_DESCONEXION);
 
       if (shouldSendAlert) {
         // Preparar datos para la alerta
