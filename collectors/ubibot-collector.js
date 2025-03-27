@@ -95,16 +95,8 @@ class UbibotCollector {
    *
    * Retrieves a list of enabled channels from the Ubibot controller and
    * iterates over them. For each channel, it retrieves the channel data
-   * and processes it using the `ubibotService`.
-   *
-   * If the channel data is missing or empty, it logs a message and skips
-   * processing the channel.
-   *
-   * If an error occurs while processing a channel, it logs the error
-   * and calls the `handleCollectionError` method to update the metrics.
-   *
-   * After processing all channels, it updates the metrics and logs a
-   * success message.
+   * and processes it using the `ubibotService`. Additionally checks for
+   * disconnected sensors and sends alerts when needed.
    *
    * @async
    * @returns {void}
@@ -123,6 +115,8 @@ class UbibotCollector {
         );
         return;
       }
+
+      // Procesamiento regular de canales
       for (const channel of channels) {
         try {
           const channelData = await ubibotController.getChannelData(
@@ -141,6 +135,62 @@ class UbibotCollector {
             error.message
           );
           this.handleCollectionError(error);
+        }
+      }
+
+      // Detección de sensores desconectados
+      const disconnectedChannels = [];
+      const INTERVALO_SIN_CONEXION_SENSOR = 95; // minutos
+
+      for (const channel of channels) {
+        try {
+          const lastReading = await ubibotService.getLastSensorReading(
+            channel.channel_id
+          );
+          if (lastReading && lastReading.external_temperature_timestamp) {
+            const now = new Date();
+            const lastTimestamp = new Date(
+              lastReading.external_temperature_timestamp
+            );
+
+            // Calcular la diferencia en minutos
+            const diffMinutes = (now - lastTimestamp) / (1000 * 60);
+
+            if (diffMinutes > INTERVALO_SIN_CONEXION_SENSOR) {
+              console.log(
+                `Canal ${channel.name} desconectado por ${diffMinutes.toFixed(
+                  2
+                )} minutos (límite: ${INTERVALO_SIN_CONEXION_SENSOR})`
+              );
+
+              disconnectedChannels.push({
+                name: channel.name || `Canal ${channel.channel_id}`,
+                lastConnectionTime: lastReading.external_temperature_timestamp,
+                disconnectionInterval: INTERVALO_SIN_CONEXION_SENSOR,
+              });
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Error verificando sensor ${channel.channel_id}:`,
+            error.message
+          );
+        }
+      }
+
+      // Enviar alerta si hay sensores desconectados
+      if (disconnectedChannels.length > 0) {
+        try {
+          const emailService = require("../services/emailService");
+          await emailService.sendDisconnectedSensorsEmail(disconnectedChannels);
+          console.log(
+            `Alerta enviada para ${disconnectedChannels.length} sensores desconectados`
+          );
+        } catch (emailError) {
+          console.error(
+            "Error enviando alerta de sensores desconectados:",
+            emailError
+          );
         }
       }
 
@@ -243,7 +293,7 @@ class UbibotCollector {
       console.log(`Last error: ${this.metrics.lastError}`);
     }
   }
-  
+
   /**
    * Returns the collector statistics as an object.
    *
@@ -268,4 +318,4 @@ class UbibotCollector {
   }
 }
 
-module.exports = UbibotCollector; 
+module.exports = UbibotCollector;
