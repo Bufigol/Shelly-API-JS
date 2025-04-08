@@ -1,6 +1,7 @@
 // src/services/emailService.js
+
 const sgMail = require("@sendgrid/mail");
-const configLoader = require("../config/js_files/config-loader");
+const config = require("../config/js_files/config-loader");
 const moment = require("moment-timezone");
 
 /**
@@ -8,30 +9,36 @@ const moment = require("moment-timezone");
  */
 class EmailService {
   constructor() {
-    const config = configLoader.getConfig();
+    const appConfig = config.getConfig();
 
     // Cargar configuración de email desde el config-loader
-    this.apiKey = config.email?.SENDGRID_API_KEY;
-    this.fromEmail = config.email?.email_contacto?.from_verificado;
-    this.defaultRecipients = config.email?.email_contacto?.destinatarios || [];
+    this.apiKey = appConfig.email?.SENDGRID_API_KEY;
+    this.fromEmail = appConfig.email?.email_contacto?.from_verificado;
+    this.defaultRecipients = appConfig.email?.email_contacto?.destinatarios || [];
 
-    // Horarios laborales específicos
-    this.workingHours = {
-      weekdays: {
-        // Lunes a Viernes
-        start: 8.5, // 8:30
-        end: 18.5, // 18:30
-      },
-      saturday: {
-        // Sábado
-        start: 8.5, // 8:30
-        end: 14.5, // 14:30
-      },
-    };
+    // Horarios laborales desde la configuración centralizada de SMS
+    if (appConfig.sms && appConfig.sms.workingHours) {
+      this.workingHours = appConfig.sms.workingHours;
+      this.timeZone = appConfig.sms.timeZone || "America/Santiago";
+    } else {
+      // Valores por defecto si no se encuentra configuración
+      this.workingHours = {
+        weekdays: {
+          // Lunes a Viernes
+          start: 8.5, // 8:30
+          end: 18.5, // 18:30
+        },
+        saturday: {
+          // Sábado
+          start: 8.5, // 8:30
+          end: 14.5, // 14:30
+        },
+      };
+      this.timeZone = "America/Santiago";
+    }
 
     // Parámetros de configuración para el envío de correos
     this.initialized = false;
-    this.timeZone = config.measurement?.zona_horaria || "America/Santiago";
 
     // Imprimir información de diagnóstico
     console.log(`Email Service - TimeZone: ${this.timeZone}`);
@@ -48,8 +55,8 @@ class EmailService {
 
     if (!this.apiKey) {
       // Intentar recargar la configuración en caso de que haya cambiado
-      const config = configLoader.reloadConfig();
-      this.apiKey = config.email?.SENDGRID_API_KEY;
+      const appConfig = config.reloadConfig();
+      this.apiKey = appConfig.email?.SENDGRID_API_KEY;
 
       if (!this.apiKey) {
         console.error(
@@ -180,9 +187,9 @@ class EmailService {
       return false;
     }
 
-    const config = configLoader.getConfig();
-    const appName = config.appName || "Sistema de Monitoreo";
-    const companyName = config.companyName || "The Next Security";
+    const appConfig = config.getConfig();
+    const appName = appConfig.appName || "Sistema de Monitoreo";
+    const companyName = appConfig.companyName || "The Next Security";
 
     const message = {
       to: email,
@@ -231,9 +238,9 @@ class EmailService {
       return false;
     }
 
-    const config = configLoader.getConfig();
-    const appName = config.appName || "Sistema de Monitoreo";
-    const companyName = config.companyName || "The Next Security";
+    const appConfig = config.getConfig();
+    const appName = appConfig.appName || "Sistema de Monitoreo";
+    const companyName = appConfig.companyName || "The Next Security";
 
     const message = {
       to: email,

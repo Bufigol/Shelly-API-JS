@@ -10,13 +10,13 @@ const moment = require("moment-timezone");
 // =====================================================================
 
 // Intervalos para alertas (en minutos)
-const MINUTOS_ESPERA_ALERTA_DESCONEXION = 30; // Minutos a esperar para enviar alerta cuando un sensor se desconecta
-const MINUTOS_ENTRE_ALERTAS_DESCONEXION = 30; // Minutos entre alertas repetidas para sensores que siguen desconectados
+const MINUTOS_ESPERA_ALERTA_DESCONEXION = 60; // Minutos a esperar para enviar alerta cuando un sensor se desconecta
+const MINUTOS_ENTRE_ALERTAS_DESCONEXION = 60; // Minutos entre alertas repetidas para sensores que siguen desconectados
 
 // Intervalos para procesamiento de colas (en milisegundos)
 const MS_INTERVALO_PROCESO_HORARIO = 60 * 60 * 1000; // 1 hora - Frecuencia de procesamiento de alertas acumuladas
-const MS_INTERVALO_PROCESO_SMS = 30 * 60 * 1000; // 30 minutos - Frecuencia de procesamiento de cola SMS
-const MS_INTERVALO_LIMPIEZA_ALERTAS = 12 * 60 * 60 * 1000; // 12 horas - Frecuencia de limpieza de alertas antiguas
+const MS_INTERVALO_PROCESO_SMS = 60 * 60 * 1000; // 30 minutos - Frecuencia de procesamiento de cola SMS
+const MS_INTERVALO_LIMPIEZA_ALERTAS = 1 * 60 * 60 * 1000; // 12 horas - Frecuencia de limpieza de alertas antiguas
 
 // Tiempos de retención de datos (en horas)
 const HORAS_RETENCION_ALERTAS = 24; // Horas de retención para alertas en búfer
