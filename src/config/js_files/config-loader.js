@@ -10,9 +10,10 @@ class ConfigLoader extends BaseConfigLoader {
     this.measurementConfig = {};
     this.configPaths = {
       api: "../jsons/api-credentials.json",
-      database: "../jsons/database.json",
+      database: "../jsons/ddbb_produccion.json",
       measurement: "../jsons/precios_energia.json",
-      email: "../jsons/sgMailConfig.json", // Nuevo: ruta a la configuración de SendGrid
+      email: "../jsons/sgMailConfig.json",
+      sms: "../jsons/smsServiceConfig.json" // Nombre actualizado del archivo de configuración
     };
     this.jwtConfig = JwtConfigLoader;
 
@@ -68,6 +69,40 @@ class ConfigLoader extends BaseConfigLoader {
         );
       }
 
+      // Cargar configuración de SMS
+      let smsConfig = {};
+      try {
+        smsConfig = this.loadJsonFile(this.configPaths.sms);
+        console.log("✅ Configuración de SMS cargada correctamente");
+      } catch (error) {
+        console.warn(
+          `⚠️ No se pudo cargar la configuración de SMS: ${error.message}`
+        );
+        // Valores por defecto si no se puede cargar
+        smsConfig = {
+          modem: {
+            url: "http://192.168.1.140",
+            apiPath: "/api",
+            host: "192.168.8.1",
+            timeout: 5000,
+            retry: {
+              maxRetries: 2,
+              retryDelays: [10000, 7000],
+              timeBetweenRecipients: 8000
+            }
+          },
+          workingHours: {
+            weekdays: { start: 8.5, end: 18.5 },
+            saturday: { start: 8.5, end: 14.5 }
+          },
+          timeZone: "America/Santiago",
+          queue: {
+            maxAgeHours: 24,
+            maxSizePerBatch: 3
+          }
+        };
+      }
+
       // Construir objeto de configuración
       this.config = {
         api: apiConfig.shelly_cloud.api,
@@ -82,9 +117,10 @@ class ConfigLoader extends BaseConfigLoader {
           excludedChannels: ubibotConfig.EXCLUDED_CHANNELS,
           collectionInterval: 600000,
         },
-        // Nueva configuración de email
         email: emailConfig,
-        // Nueva estructura para bases de datos
+        // Incluir configuración SMS
+        sms: smsConfig,
+        // Mantener compatibilidad con código existente
         databases: {
           main: {
             host: mainDbDetails.host,
@@ -184,10 +220,10 @@ class ConfigLoader extends BaseConfigLoader {
    * - Ubibot: Checks for the presence of account key and token file in the Ubibot
    *   configuration.
    * - JWT: Ensures that the JWT configuration contains a secret.
+   * - SMS: Verifica configuración básica del servicio SMS
    *
    * @throws {Error} If any required configuration fields are missing.
    */
-
   validateConfig() {
     // Validación de bases de datos
     for (const [dbName, dbConfig] of Object.entries(this.config.databases)) {
@@ -224,6 +260,24 @@ class ConfigLoader extends BaseConfigLoader {
     // Validación de configuración JWT
     if (!this.jwtConfig.hasConfig("secret")) {
       throw new Error("Missing JWT secret configuration");
+    }
+
+    // Validación configuración SMS
+    const { sms } = this.config;
+    if (sms) {
+      // Verificar configuración del módem
+      if (!sms.modem || !sms.modem.url) {
+        console.warn("⚠️ Configuración de módem SMS incompleta");
+      }
+
+      // Verificar configuración de horario laboral
+      if (!sms.workingHours ||
+        !sms.workingHours.weekdays ||
+        !sms.workingHours.saturday) {
+        console.warn("⚠️ Configuración de horario laboral SMS incompleta");
+      }
+    } else {
+      console.warn("⚠️ No se ha encontrado configuración SMS");
     }
 
     // Verificar configuración de email (no obligatoria, solo log informativo)
