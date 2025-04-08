@@ -181,7 +181,7 @@ class UbibotCollector {
       // Enviar alerta si hay sensores desconectados
       if (disconnectedChannels.length > 0) {
         try {
-          const emailService = require("../services/emailService");
+          const emailService = require("../src/services/emailService.js");
           await emailService.sendDisconnectedSensorsEmail(disconnectedChannels);
           console.log(
             `Alerta enviada para ${disconnectedChannels.length} sensores desconectados`

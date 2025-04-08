@@ -10,7 +10,7 @@ class ConfigLoader extends BaseConfigLoader {
     this.measurementConfig = {};
     this.configPaths = {
       api: "../jsons/api-credentials.json",
-      database: "../jsons/ddbb_produccion.json",
+      database: "../jsons/database.json",
       measurement: "../jsons/precios_energia.json",
       email: "../jsons/sgMailConfig.json",
       sms: "../jsons/smsServiceConfig.json" // Nombre actualizado del archivo de configuración
