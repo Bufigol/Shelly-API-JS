@@ -1,6 +1,7 @@
 // src/services/smsService.js
 
 const axios = require("axios");
+const BaseAlertService = require("./baseAlertService");
 const config = require("../config/js_files/config-loader");
 const moment = require("moment-timezone");
 
@@ -8,18 +9,15 @@ const moment = require("moment-timezone");
  * Servicio para envío de SMS a través de un módem remoto.
  * Proporciona capacidades de envío individual, grupal, y procesamiento por lotes.
  */
-class SMSService {
+class SmsService extends BaseAlertService {
   constructor() {
+    super();
     this.initialized = false;
-    this.config = null;
-
-    // Intentar cargar la configuración
-    this.loadConfiguration();
-
-    // Métricas
+    this.config = config.getConfig();
+    this.axios = axios;
     this.metrics = {
-      sentMessages: 0,
-      failedMessages: 0,
+      sentAlerts: 0,
+      failedAlerts: 0,
       lastError: null,
       lastSuccessTime: null,
       queueStats: {
@@ -28,6 +26,9 @@ class SMSService {
         failed: 0
       }
     };
+
+    // Intentar cargar la configuración
+    this.loadConfiguration();
 
     // Cola de mensajes
     this.messageQueue = {
@@ -73,37 +74,17 @@ class SMSService {
    * Inicializa el servicio SMS
    * @returns {boolean} True si la inicialización fue exitosa
    */
-  initialize() {
-    if (this.initialized) return true;
+  async initialize() {
+    if (this.initialized) return;
 
     try {
-      // Asegurarnos de que tenemos la configuración más reciente
-      if (!this.config) {
-        this.loadConfiguration();
-      }
-
-      // Validar que tenemos la configuración mínima necesaria
-      if (!this.config || !this.config.modem || !this.config.modem.url) {
-        throw new Error("Configuración SMS incompleta o inválida");
-      }
-
-      // Verificar si hay destinatarios configurados
-      if (!this.defaultRecipients || this.defaultRecipients.length === 0) {
-        console.warn("⚠️ No hay destinatarios SMS predeterminados configurados");
-      }
-
-      // Comprobar conectividad con el módem (sin lanzar error si falla)
-      this.checkModemConnection()
-        .then(() => console.log("✅ Servicio SMS inicializado y módem conectado"))
-        .catch((err) => console.warn(
-          `⚠️ Servicio SMS inicializado pero el módem no está accesible: ${err.message}`
-        ));
-
+      // Inicializar temporizadores del servicio base
+      this.initializeTimers();
       this.initialized = true;
-      return true;
+      console.log("✅ SmsService inicializado correctamente");
     } catch (error) {
-      console.error("Error al inicializar el servicio SMS:", error);
-      return false;
+      console.error("❌ Error inicializando SmsService:", error);
+      throw error;
     }
   }
 
@@ -164,36 +145,14 @@ class SMSService {
    * @returns {Promise<boolean>} True si el módem está conectado
    */
   async checkModemConnection() {
-    // Asegurarnos de que tenemos la configuración
-    if (!this.config || !this.config.modem) {
-      await this.loadConfiguration();
-      if (!this.config || !this.config.modem) {
-        throw new Error("No se pudo cargar la configuración del módem");
-      }
-    }
-
-    const { url, apiPath, timeout } = this.config.modem;
-
     try {
-      const response = await axios.get(`${url}${apiPath || "/api"}/monitoring/status`, {
-        timeout: timeout || 15000,
-        headers: this.getBasicHeaders()
+      const response = await this.axios.get(`${this.config.sms.modem.url}${this.config.sms.modem.apiPath}/status`, {
+        timeout: this.config.sms.modem.timeout
       });
-
-      // Verificar que la respuesta tenga el formato esperado
-      if (!response.data) {
-        throw new Error("Respuesta vacía del módem");
-      }
-
-      console.log('Conexión con el módem remoto establecida correctamente');
-      return true;
+      return response.data.connected === true;
     } catch (error) {
-      const errorMessage = error.response ?
-        `Error HTTP ${error.response.status}` :
-        error.message || "Error desconocido";
-
-      console.error(`Error conectando con el módem remoto: ${errorMessage}`);
-      throw new Error(`No se pudo establecer conexión con el módem remoto: ${errorMessage}`);
+      console.error("Error verificando conexión del módem:", error);
+      return false;
     }
   }
 
@@ -226,7 +185,7 @@ class SMSService {
     const { url, apiPath, timeout } = this.config.modem;
 
     try {
-      const response = await axios.get(
+      const response = await this.axios.get(
         `${url}${apiPath || "/api"}/webserver/SesTokInfo`,
         {
           headers: this.getBasicHeaders(),
@@ -347,7 +306,7 @@ class SMSService {
       const smsData = this.prepareSmsXml(formattedPhone, message);
 
       // Enviar la solicitud al módem
-      const response = await axios({
+      const response = await this.axios({
         method: "post",
         url: `${url}${apiPath || "/api"}/sms/send-sms`,
         data: smsData,
@@ -360,7 +319,7 @@ class SMSService {
       // Verificar respuesta
       if (response.data && response.data.includes("<response>OK</response>")) {
         console.log(`SMS enviado exitosamente a ${formattedPhone}`);
-        this.metrics.sentMessages++;
+        this.metrics.sentAlerts++;
         this.metrics.lastSuccessTime = new Date();
         return true;
       }
@@ -397,7 +356,7 @@ class SMSService {
         `Error al enviar SMS a ${formattedPhone} después de ${maxRetries + 1} intentos:`,
         error.message
       );
-      this.metrics.failedMessages++;
+      this.metrics.failedAlerts++;
       this.metrics.lastError = error.message;
       return false;
     }
@@ -759,10 +718,10 @@ class SMSService {
       lastProcessed: this.messageQueue.lastProcessed,
       queueCreated: this.messageQueue.createdAt,
       successRate:
-        this.metrics.sentMessages + this.metrics.failedMessages > 0
+        this.metrics.sentAlerts + this.metrics.failedAlerts > 0
           ? (
-            (this.metrics.sentMessages /
-              (this.metrics.sentMessages + this.metrics.failedMessages)) *
+            (this.metrics.sentAlerts /
+              (this.metrics.sentAlerts + this.metrics.failedAlerts)) *
             100
           ).toFixed(2) + "%"
           : "N/A",
@@ -778,8 +737,8 @@ class SMSService {
   reset() {
     // Reiniciar métricas
     this.metrics = {
-      sentMessages: 0,
-      failedMessages: 0,
+      sentAlerts: 0,
+      failedAlerts: 0,
       lastError: null,
       lastSuccessTime: null,
       queueStats: {
@@ -805,6 +764,95 @@ class SMSService {
     console.log("SMS Service - Servicio reiniciado");
     return true;
   }
+
+  async processAlert(alert) {
+    if (!this.initialized) {
+      throw new Error("SmsService no inicializado");
+    }
+
+    try {
+      const { type, data, recipients } = alert;
+      const message = this.formatMessage(type, data);
+
+      // Verificar conexión del módem
+      if (!await this.checkModemConnection()) {
+        throw new Error("Módem no disponible");
+      }
+
+      // Enviar SMS a cada destinatario
+      for (const recipient of recipients) {
+        try {
+          await this.sendSms(recipient, message);
+          this.metrics.sentAlerts++;
+        } catch (error) {
+          console.error(`Error enviando SMS a ${recipient}:`, error);
+          this.metrics.failedAlerts++;
+        }
+      }
+
+      this.metrics.lastSuccessTime = new Date();
+    } catch (error) {
+      console.error("Error procesando alerta SMS:", error);
+      this.metrics.failedAlerts++;
+      this.metrics.lastError = error.message;
+      throw error;
+    }
+  }
+
+  formatMessage(type, data) {
+    switch (type) {
+      case "temperature":
+        return `Alerta de temperatura: ${data.temperature}°C en ${data.location}`;
+      case "disconnection":
+        return `Alerta de desconexión: ${data.device} desconectado`;
+      default:
+        return data.message || "Alerta del sistema";
+    }
+  }
+
+  async sendSms(recipient, message) {
+    try {
+      await this.axios.post(
+        `${this.config.sms.modem.url}${this.config.sms.modem.apiPath}/send`,
+        {
+          recipient,
+          message
+        },
+        {
+          timeout: this.config.sms.modem.timeout
+        }
+      );
+    } catch (error) {
+      throw new Error(`Error enviando SMS: ${error.message}`);
+    }
+  }
+
+  async sendAlert(subject, data, templateName) {
+    if (!this.initialized) {
+      throw new Error("SmsService no inicializado");
+    }
+
+    const alert = {
+      type: templateName,
+      data: { ...data, subject },
+      recipients: this.config.sms.recipients,
+      priority: data.priority || "normal",
+      timestamp: new Date()
+    };
+
+    return this.addAlertToQueue(alert);
+  }
+
+  getStatus() {
+    return {
+      ...super.getStatus(),
+      service: "sms",
+      config: {
+        modemUrl: this.config.sms.modem.url,
+        recipients: this.config.sms.recipients
+      }
+    };
+  }
 }
 
-module.exports = new SMSService();
+module.exports = new SmsService();
