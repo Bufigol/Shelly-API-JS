@@ -58,6 +58,36 @@ class UbibotService {
     this.setupSMSQueueProcessing();
   }
 
+  async sendTemperatureAlert(channelName, temperature, timestamp, minThreshold, maxThreshold) {
+    // Agregar a buffer horario para procesamiento posterior
+    this.addAlertToHourlyBuffer(
+      channelName,
+      temperature,
+      timestamp,
+      minThreshold,
+      maxThreshold
+    );
+  }
+
+  async sendDisconnectedSensorsEmail(disconnectedChannels) {
+    const emailService = require('./emailService');
+    const smsService = require('./smsService');
+
+    const alert = {
+      type: 'disconnection',
+      data: {
+        devices: disconnectedChannels,
+        timestamp: new Date()
+      },
+      priority: 'high',
+      timestamp: new Date(),
+      recipients: emailService.defaultRecipients
+    };
+
+    await emailService.sendAlert(alert);
+    await smsService.sendAlert(alert);
+  }
+
   /**
    * Configura el sistema de procesamiento horario de alertas
    */
@@ -188,10 +218,11 @@ class UbibotService {
    * Procesa las alertas acumuladas en la última hora
    */
   async processHourlyAlerts() {
-    const emailService = require("../services/emailService");
+    const emailService = require("./emailService");
+    const smsService = require("./smsService");
     const now = new Date();
 
-    // Verificar si estamos fuera del horario laboral
+    // Verificar si estamos dentro del horario laboral
     if (emailService.isWithinWorkingHours()) {
       console.log(
         "Dentro de horario laboral. Posponiendo procesamiento de alertas de temperatura."
@@ -223,29 +254,29 @@ class UbibotService {
     );
 
     try {
-      // Enviar correo con todas las alertas acumuladas
-      const emailSent = await emailService.sendTemperatureRangeAlertsEmail(
-        alertsToProcess,
-        now, // Usar hora actual para verificación de horario
-        null, // Usar destinatarios predeterminados
-        true // Forzar envío independientemente del horario
-      );
+      // Crear alerta consolidada
+      const alert = {
+        type: 'temperature',
+        data: {
+          alerts: alertsToProcess,
+          timestamp: now
+        },
+        priority: 'high',
+        timestamp: now,
+        recipients: emailService.defaultRecipients
+      };
 
-      if (emailSent) {
-        console.log(
-          `Email enviado exitosamente con ${alertsToProcess.length} alertas de temperatura.`
-        );
+      // Enviar alerta
+      await emailService.sendAlert(alert);
+      await smsService.sendAlert(alert);
 
-        // Limpiar buffer de esta hora
-        delete alertBuffers.hourlyBuffers[currentHourTimestamp];
+      // Limpiar buffer de esta hora
+      delete alertBuffers.hourlyBuffers[currentHourTimestamp];
 
-        // Actualizar última hora procesada
-        alertBuffers.lastProcessedHourTimestamp = currentHourTimestamp;
-      } else {
-        console.error(
-          "No se pudo enviar el email de alertas. Se intentará en el próximo ciclo."
-        );
-      }
+      // Actualizar última hora procesada
+      alertBuffers.lastProcessedHourTimestamp = currentHourTimestamp;
+
+      console.log(`Alertas enviadas exitosamente para la hora ${currentHourTimestamp}`);
     } catch (error) {
       console.error("Error al procesar las alertas horarias:", error);
     }
@@ -317,7 +348,7 @@ class UbibotService {
         const hasChanges = Object.keys(basicInfo).some((key) =>
           basicInfo[key] instanceof Date
             ? basicInfo[key].getTime() !==
-              new Date(currentChannel[key]).getTime()
+            new Date(currentChannel[key]).getTime()
             : basicInfo[key] !== currentChannel[key]
         );
 
@@ -382,8 +413,7 @@ class UbibotService {
             [currentTime, channelId]
           );
           console.log(
-            `Canal ${channelId} (${
-              currentChannel.name
+            `Canal ${channelId} (${currentChannel.name
             }) ha quedado fuera de línea a las ${currentTime.toISOString()}.`
           );
         } else {
@@ -433,7 +463,7 @@ class UbibotService {
           !lastAlertSent) ||
         (lastAlertSent &&
           (currentTime - lastAlertSent) / (1000 * 60) >=
-            MINUTOS_ENTRE_ALERTAS_DESCONEXION);
+          MINUTOS_ENTRE_ALERTAS_DESCONEXION);
 
       if (shouldSendAlert) {
         // Preparar datos para la alerta
@@ -457,8 +487,7 @@ class UbibotService {
             [currentTime, channel.channel_id]
           );
           console.log(
-            `Alerta enviada para canal ${channel.channel_id} (${
-              channel.name
+            `Alerta enviada para canal ${channel.channel_id} (${channel.name
             }) - offline por ${minutesOffline.toFixed(0)} minutos.`
           );
         } else {
@@ -540,9 +569,9 @@ class UbibotService {
       // Obtener la información del canal
       const [channelInfo] = await connection.query(
         "SELECT c.name, c.esOperativa, p.minimo AS minima_temp_camara, p.maximo AS maxima_temp_camara " +
-          "FROM channels_ubibot c " +
-          "JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id " +
-          "WHERE c.channel_id = ?",
+        "FROM channels_ubibot c " +
+        "JOIN parametrizaciones p ON c.id_parametrizacion = p.param_id " +
+        "WHERE c.channel_id = ?",
         [channelId]
       );
 
@@ -583,24 +612,15 @@ class UbibotService {
         temperature > maxima_temp_camara
       ) {
         console.log(
-          `Ubibot: Temperatura fuera de rango. Agregando a buffer de alertas.`
+          `Ubibot: Temperatura fuera de rango. Enviando alerta.`
         );
 
         const timestamp = moment(lastValues.field1.created_at).format(
           "YYYY-MM-DD HH:mm:ss"
         );
 
-        // Agregar a buffer horario para emails
-        this.addAlertToHourlyBuffer(
-          channelName,
-          temperature,
-          timestamp,
-          minima_temp_camara,
-          maxima_temp_camara
-        );
-
-        // Agregar a la cola de SMS o enviar inmediatamente
-        await this.sendSMS(
+        // Enviar alerta usando el nuevo sistema
+        await this.sendTemperatureAlert(
           channelName,
           temperature,
           timestamp,
@@ -618,63 +638,6 @@ class UbibotService {
       console.error("Ubibot: Error en checkParametersAndNotify:", error);
     } finally {
       if (connection) connection.release();
-    }
-  }
-
-  /**
-   * Envía un correo para sensores desconectados
-   */
-  async sendDisconnectedSensorsEmail(disconnectedChannels, recipients = null) {
-    const emailService = require("../services/emailService");
-
-    try {
-      return await emailService.sendDisconnectedSensorsEmail(
-        disconnectedChannels,
-        recipients
-      );
-    } catch (error) {
-      console.error("Error enviando alerta de sensor desconectado:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Envía un SMS de alerta cuando la temperatura está fuera de rango.
-   * El SMS se envía inmediatamente (sin agrupación) pero respetando el horario laboral.
-   */
-  async sendSMS(
-    channelName,
-    temperature,
-    timestamp,
-    minima_temp_camara,
-    maxima_temp_camara
-  ) {
-    try {
-      const smsService = require("./smsService");
-
-      // Agregar a la cola de SMS para procesamiento agrupado
-      const result = await smsService.sendTemperatureAlert(
-        channelName,
-        temperature,
-        timestamp,
-        minima_temp_camara,
-        maxima_temp_camara,
-        true, // Agregar a cola para envío agrupado
-        null // Usar destinatarios predeterminados
-      );
-
-      if (result.success && result.queued) {
-        console.log(`SMS de alerta agregado a la cola para ${channelName}`);
-      } else if (!result.success) {
-        console.warn(
-          `Error al agregar SMS de alerta a la cola para ${channelName}`
-        );
-      }
-
-      return result.success;
-    } catch (error) {
-      console.error("Error al invocar servicio SMS:", error.message);
-      return false;
     }
   }
 

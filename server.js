@@ -9,7 +9,6 @@ const energyAveragesService = require("./src/services/energy-averages-service");
 const totalEnergyService = require("./src/services/total-energy-service");
 const deviceRoutes = require("./src/routes/deviceRoutes");
 const configRoutes = require("./src/routes/configRoutes");
-
 class Server {
   /**
    * Initializes a new instance of the Server class.
@@ -23,7 +22,6 @@ class Server {
     this.port = process.env.PORT || 1337;
     this.shellyCollector = new ShellyCollector();
     this.ubibotCollector = new UbibotCollector();
-    this.onPremiseCollector = new OnPremiseCollector();
     this.services = {
       database: databaseService,
       energyAverages: energyAveragesService,
@@ -58,11 +56,11 @@ class Server {
       next();
     });
 
-    // Servir archivos estáticos
+    // Servir archivos estÃ¡ticos
     this.app.use(express.static(path.join(__dirname, "public")));
     this.app.use;
 
-    // Configuración de CSP
+    // ConfiguraciÃ³n de CSP
     this.setupContentSecurityPolicy();
 
     // Logging middleware
@@ -92,6 +90,7 @@ class Server {
       next();
     });
   }
+
 
   /**
    * Configura las rutas del servidor
@@ -231,10 +230,6 @@ class Server {
           running: this.ubibotCollector.isRunning,
           stats: this.ubibotCollector.getCollectorStats(),
         },
-        onPremise: {
-          running: this.onPremiseCollector.isRunning,
-          stats: this.onPremiseCollector.getCollectorStats(),
-        },
       },
       database: {
         connected: this.services.database.connected,
@@ -260,16 +255,16 @@ class Server {
    * 1. Initializes the database service and tests the connection.
    * 2. Initializes the energy averages service.
    * 3. Initializes the total energy service.
-   * 4. Starts the Shelly data collector.
-   * 5. Starts the Ubibot data collector.
+   * 4. Initializes the Email service.
+   * 5. Initializes the SMS service.
+   * 6. Starts the Shelly data collector.
+   * 7. Starts the Ubibot data collector.
    *
    * If any of these steps fail, an error is logged and re-thrown to be
    * handled by the caller.
    *
    * @throws {Error} If any service or collector fails to initialize.
    */
-
-  // En server.js - dentro de initializeServices()
 
   async initializeServices() {
     console.log("Initializing services...");
@@ -280,29 +275,32 @@ class Server {
       if (!dbConnected) {
         throw new Error("Database connection failed");
       }
-      console.log("✅ Database connected");
+      console.log("? Database connected");
 
       // Inicializar servicios existentes
       await this.services.energyAverages.initialize();
-      console.log("✅ Energy averages service initialized");
+      console.log("? Energy averages service initialized");
 
       await this.services.totalEnergy.initialize();
-      console.log("✅ Total energy service initialized");
+      console.log("? Total energy service initialized");
+
+      // Inicializar servicio de Email
+      const emailService = require("./src/services/emailService");
+      await emailService.initialize();
+      console.log("? Email service initialized");
 
       // Inicializar nuevo servicio SMS
       const smsService = require("./src/services/smsService");
       await smsService.initialize();
-      console.log("✅ SMS service initialized");
+      console.log("? SMS service initialized");
 
       // Continuar con los recolectores
       await this.shellyCollector.start();
-      console.log("✅ Shelly Data collector started");
+      console.log("? Shelly Data collector started");
 
       await this.ubibotCollector.start();
-      console.log("✅ Ubibot data collector started");
+      console.log("? Ubibot data collector started");
 
-      await this.onPremiseCollector.start();
-      console.log("✅ OnPremise collector started");
     } catch (error) {
       console.error("Error initializing services:", error);
       throw error;
@@ -320,7 +318,7 @@ class Server {
       await this.initializeServices();
 
       this.server = this.app.listen(this.port, () => {
-        console.log(`🚀 Server running on http://localhost:${this.port}`);
+        console.log(`ðŸš€ Server running on http://localhost:${this.port}`);
       });
 
       // Setup graceful shutdown
@@ -342,24 +340,21 @@ class Server {
    * @return {Promise<void>}
    */
   async shutdown() {
-    console.log("\n🛑 Starting graceful shutdown...");
+    console.log("\nðŸ›‘ Starting graceful shutdown...");
     if (this.server) {
       await new Promise((resolve) => this.server.close(resolve));
-      console.log("✅ HTTP server stopped");
+      console.log("âœ… HTTP server stopped");
     }
     this.shellyCollector.stop();
-    console.log("✅ Shelly Data collector stopped");
+    console.log("âœ… Shelly Data collector stopped");
 
     this.ubibotCollector.stop();
-    console.log("✅ Ubibot data collector stopped");
-
-    this.onPremiseCollector.stop();
-    console.log("✅ OnPremise collector stopped");
+    console.log("âœ… Ubibot data collector stopped");
 
     await this.services.database.close();
-    console.log("✅ Database connections closed");
+    console.log("âœ… Database connections closed");
 
-    console.log("👋 Server shutdown complete");
+    console.log("ðŸ‘‹ Server shutdown complete");
     process.exit(0);
   }
 }

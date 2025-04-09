@@ -103,6 +103,30 @@ class ConfigLoader extends BaseConfigLoader {
         };
       }
 
+      // Configuración del sistema de alertas
+      const alertSystemConfig = {
+        timeZone: "America/Santiago",
+        workingHours: {
+          weekdays: { start: 8.5, end: 18.5 },
+          saturday: { start: 8.5, end: 14.5 }
+        },
+        intervals: {
+          processing: 60 * 60 * 1000, // 1 hora
+          cleanup: 12 * 60 * 60 * 1000, // 12 horas
+          temperature: {
+            initialDelay: 60, // minutos
+            betweenAlerts: 60 // minutos
+          },
+          disconnection: {
+            initialDelay: 60, // minutos
+            betweenAlerts: 60 // minutos
+          }
+        },
+        retention: {
+          maxAgeHours: 24
+        }
+      };
+
       // Construir objeto de configuración
       this.config = {
         api: apiConfig.shelly_cloud.api,
@@ -166,6 +190,7 @@ class ConfigLoader extends BaseConfigLoader {
           tipo_tarifa: measurementConfig.precios_energia.metadatos.tipo_tarifa,
         },
         jwt: this.jwtConfig.getJwtConfig(),
+        alertSystem: alertSystemConfig
       };
 
       this.validateConfig();
