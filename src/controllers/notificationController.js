@@ -8,23 +8,32 @@ const smsService = require("../services/smsService");
 
 class NotificationController {
     constructor() {
-        // Configuración
+        // Cargar configuración global
         this.config = config.getConfig();
-        this.timeZone = "America/Santiago";
+
+        // Configurar zona horaria desde la configuración
+        this.timeZone = this.config.sms?.timeZone || "America/Santiago";
+
+        // Crear pool de conexiones usando la configuración de la base de datos
         this.pool = mysql.createPool({
             host: this.config.database.host,
             user: this.config.database.username,
             password: this.config.database.password,
             database: this.config.database.database,
             waitForConnections: true,
-            connectionLimit: 10,
+            connectionLimit: this.config.database.pool?.max_size || 10,
             queueLimit: 0,
         });
 
-        // Intervalos de tiempo (en minutos)
-        this.alertGroupingInterval = 60; // Intervalo para agrupar alertas (1 hora por defecto)
-        this.disconnectionAlertThreshold = 60; // Minutos para considerar una desconexión persistente
-        this.cleanupInterval = 120; // Minutos para limpiar contadores inactivos
+        // Intervalos de tiempo (en minutos) - Usar valores de config si están disponibles
+        this.alertGroupingInterval =
+            (this.config.alertSystem?.intervals?.processing || 60 * 60 * 1000) / (60 * 1000);
+
+        this.disconnectionAlertThreshold =
+            (this.config.alertSystem?.intervals?.disconnection?.initialDelay || 60);
+
+        this.cleanupInterval =
+            (this.config.alertSystem?.intervals?.cleanup || 12 * 60 * 1000) / (60 * 1000);
 
         // Estructura para almacenar contadores de temperatura fuera de rango
         this.tempAlertCounters = {}; // Formato: { channelId: { count: X, lastUpdate: timestamp, values: [] } }
@@ -44,23 +53,27 @@ class NotificationController {
         this.setupTimers();
 
         console.log("✅ NotificationController inicializado");
+        console.log(`  - Zona horaria: ${this.timeZone}`);
+        console.log(`  - Intervalo de agrupación: ${this.alertGroupingInterval} minutos`);
+        console.log(`  - Umbral de desconexión: ${this.disconnectionAlertThreshold} minutos`);
+        console.log(`  - Intervalo de limpieza: ${this.cleanupInterval} minutos`);
     }
 
     /**
      * Configura los timers para procesar alertas y limpiar contadores
      */
     setupTimers() {
-        // Timer para procesar alertas de temperatura agrupadas (cada 1 hora por defecto)
+        // Timer para procesar alertas de temperatura agrupadas
         setInterval(() => {
             this.processBufferedTemperatureAlerts();
         }, this.alertGroupingInterval * 60 * 1000);
 
-        // Timer para procesar alertas de desconexión agrupadas (cada 1 hora por defecto)
+        // Timer para procesar alertas de desconexión agrupadas
         setInterval(() => {
             this.processBufferedDisconnectionAlerts();
         }, this.alertGroupingInterval * 60 * 1000);
 
-        // Timer para limpiar contadores antiguos (cada 2 horas por defecto)
+        // Timer para limpiar contadores antiguos
         setInterval(() => {
             this.cleanupOldCounters();
         }, this.cleanupInterval * 60 * 1000);
@@ -77,8 +90,11 @@ class NotificationController {
         const hourDecimal = now.hour() + now.minute() / 60;
         const dayOfWeek = now.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
 
-        // Configuración del horario laboral
-        const workingHours = this.config.sms.workingHours;
+        // Obtener la configuración del horario laboral desde config-loader
+        const workingHours = this.config.sms?.workingHours || {
+            weekdays: { start: 8.5, end: 18.5 },
+            saturday: { start: 8.5, end: 14.5 }
+        };
 
         // Domingo siempre fuera de horario laboral
         if (dayOfWeek === 0) return false;
@@ -459,7 +475,7 @@ class NotificationController {
             const smsMessage = this.formatDisconnectionAlertsForSMS(alerts);
             const smsResult = await smsService.sendSMS(
                 smsMessage,
-                null, // Usar destinatarios predeterminados
+                this.config.sms?.recipients?.disconnectionAlerts || null, // Usar destinatarios específicos para desconexión o predeterminados
                 true  // Forzar envío incluso si estamos en horario laboral
             );
 
@@ -486,20 +502,23 @@ class NotificationController {
         const count = alerts.length;
         let message = `ALERTA TEMPERATURA: ${count} sensor${count > 1 ? 'es' : ''} fuera de rango. `;
 
-        // Incluir detalles para los primeros 3 (o menos) sensores
-        const detailLimit = Math.min(3, count);
+        // Obtener límite máximo de alertas detalladas desde configuración
+        const maxSizePerBatch = this.config.sms?.queue?.maxSizePerBatch || 3;
+
+        // Incluir detalles para los primeros N sensores
+        const detailLimit = Math.min(maxSizePerBatch, count);
         for (let i = 0; i < detailLimit; i++) {
             const alert = alerts[i];
             message += `${alert.name}: ${alert.temperature}°C. `;
         }
 
-        // Si hay más de 3, agregar resumen
+        // Si hay más de N, agregar resumen
         if (count > detailLimit) {
             message += `Y ${count - detailLimit} más. `;
         }
 
         // Añadir timestamp
-        message += `${moment().format("DD/MM HH:mm")}`;
+        message += `${moment().tz(this.timeZone).format("DD/MM HH:mm")}`;
 
         return message;
     }
@@ -513,20 +532,23 @@ class NotificationController {
         const count = alerts.length;
         let message = `ALERTA DESCONEXION: ${count} sensor${count > 1 ? 'es' : ''} offline. `;
 
-        // Incluir detalles para los primeros 3 (o menos) sensores
-        const detailLimit = Math.min(3, count);
+        // Obtener límite máximo de alertas detalladas desde configuración
+        const maxSizePerBatch = this.config.sms?.queue?.maxSizePerBatch || 3;
+
+        // Incluir detalles para los primeros N sensores
+        const detailLimit = Math.min(maxSizePerBatch, count);
         for (let i = 0; i < detailLimit; i++) {
             const alert = alerts[i];
             message += `${alert.name}: ${alert.disconnectionInterval}min. `;
         }
 
-        // Si hay más de 3, agregar resumen
+        // Si hay más de N, agregar resumen
         if (count > detailLimit) {
             message += `Y ${count - detailLimit} más. `;
         }
 
         // Añadir timestamp
-        message += `${moment().format("DD/MM HH:mm")}`;
+        message += `${moment().tz(this.timeZone).format("DD/MM HH:mm")}`;
 
         return message;
     }
