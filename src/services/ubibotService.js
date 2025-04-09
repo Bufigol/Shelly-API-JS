@@ -4,37 +4,9 @@ const mysql = require("mysql2/promise");
 const config = require("../config/js_files/config-loader");
 const { convertToMySQLDateTime } = require("../utils/transformUtils");
 const moment = require("moment-timezone");
+const notificationController = require("../controllers/notificationController");
 
-// =====================================================================
-// CONFIGURACIÓN DE CONSTANTES DE TIEMPO
-// =====================================================================
-
-// Intervalos para alertas (en minutos)
-const MINUTOS_ESPERA_ALERTA_DESCONEXION = 60; // Minutos a esperar para enviar alerta cuando un sensor se desconecta
-const MINUTOS_ENTRE_ALERTAS_DESCONEXION = 60; // Minutos entre alertas repetidas para sensores que siguen desconectados
-
-// Intervalos para procesamiento de colas (en milisegundos)
-const MS_INTERVALO_PROCESO_HORARIO = 60 * 60 * 1000; // 1 hora - Frecuencia de procesamiento de alertas acumuladas
-const MS_INTERVALO_PROCESO_SMS = 60 * 60 * 1000; // 30 minutos - Frecuencia de procesamiento de cola SMS
-const MS_INTERVALO_LIMPIEZA_ALERTAS = 1 * 60 * 60 * 1000; // 12 horas - Frecuencia de limpieza de alertas antiguas
-
-// Tiempos de retención de datos (en horas)
-const HORAS_RETENCION_ALERTAS = 24; // Horas de retención para alertas en búfer
-
-// =====================================================================
-// CÓDIGO DEL SERVICIO
-// =====================================================================
-
-// Sistema de buffer de alertas por hora para alertas de temperatura
-const alertBuffers = {
-  // Organizado por hora, cada clave es un timestamp y el valor un array de alertas
-  hourlyBuffers: {},
-  // La última hora procesada
-  lastProcessedHourTimestamp: null,
-  // Referencia al intervalo de procesamiento
-  processingInterval: null,
-};
-
+// Creación del pool de conexiones
 const pool = mysql.createPool({
   host: config.getConfig().database.host,
   user: config.getConfig().database.username,
@@ -50,256 +22,16 @@ class UbibotService {
     const { ubibot: ubibotConfig } = config.getConfig();
     this.accountKey = ubibotConfig.accountKey;
     this.tokenFile = ubibotConfig.tokenFile;
+    this.timeZone = "America/Santiago";
 
-    // Inicializar sistema de buffer horario de alertas
-    this.setupHourlyAlertProcessing();
-
-    // Programar procesamiento de cola de SMS
-    this.setupSMSQueueProcessing();
-  }
-
-  async sendTemperatureAlert(channelName, temperature, timestamp, minThreshold, maxThreshold) {
-    // Agregar a buffer horario para procesamiento posterior
-    this.addAlertToHourlyBuffer(
-      channelName,
-      temperature,
-      timestamp,
-      minThreshold,
-      maxThreshold
-    );
-  }
-
-  async sendDisconnectedSensorsEmail(disconnectedChannels) {
-    const emailService = require('./emailService');
-    const smsService = require('./smsService');
-
-    const alert = {
-      type: 'disconnection',
-      data: {
-        devices: disconnectedChannels,
-        timestamp: new Date()
-      },
-      priority: 'high',
-      timestamp: new Date(),
-      recipients: emailService.defaultRecipients
-    };
-
-    await emailService.sendAlert(alert);
-    await smsService.sendAlert(alert);
+    console.log("✅ UbibotService inicializado");
   }
 
   /**
-   * Configura el sistema de procesamiento horario de alertas
+   * Convierte una fecha/hora UTC a una fecha/hora en la zona horaria de Santiago
    */
-  setupHourlyAlertProcessing() {
-    // Limpiar intervalo anterior si existe
-    if (alertBuffers.processingInterval) {
-      clearInterval(alertBuffers.processingInterval);
-    }
-
-    // Calcular tiempo hasta el siguiente comienzo de hora
-    const now = new Date();
-    const nextHour = new Date(now);
-    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
-    const timeToNextHour = nextHour - now;
-
-    // Programar el primer procesamiento al inicio de la próxima hora
-    setTimeout(() => {
-      this.processHourlyAlerts();
-
-      // Establecer intervalo para procesar cada hora exactamente
-      alertBuffers.processingInterval = setInterval(
-        () => this.processHourlyAlerts(),
-        MS_INTERVALO_PROCESO_HORARIO
-      );
-
-      // Programar la limpieza de alertas antiguas periódicamente
-      setInterval(() => this.cleanupOldAlerts(), MS_INTERVALO_LIMPIEZA_ALERTAS);
-    }, timeToNextHour);
-
-    console.log(
-      `Procesamiento de alertas programado para iniciar en ${Math.round(
-        timeToNextHour / 1000 / 60
-      )} minutos`
-    );
-  }
-
-  /**
-   * Configura el procesamiento periódico de la cola de SMS
-   */
-  setupSMSQueueProcessing() {
-    // Calcular tiempo hasta el próximo procesamiento (cada 30 minutos)
-    const now = new Date();
-    const nextProcessTime = new Date(now);
-    nextProcessTime.setMinutes(
-      nextProcessTime.getMinutes() >= 30 ? 60 : 30,
-      0,
-      0
-    );
-    const timeToNextProcess = nextProcessTime - now;
-
-    // Programar primer procesamiento
-    setTimeout(() => {
-      this.processSMSQueue();
-
-      // Establecer intervalo para procesar periódicamente
-      setInterval(() => this.processSMSQueue(), MS_INTERVALO_PROCESO_SMS);
-    }, timeToNextProcess);
-
-    console.log(
-      `Procesamiento de cola de SMS programado para iniciar en ${Math.round(
-        timeToNextProcess / 1000 / 60
-      )} minutos`
-    );
-  }
-
-  /**
-   * Procesa la cola de SMS
-   */
-  async processSMSQueue() {
-    try {
-      const smsService = require("./smsService");
-
-      // Procesar cola de SMS
-      const result = await smsService.processTemperatureAlertQueue();
-
-      if (result.success) {
-        console.log(
-          `Cola de SMS procesada: ${result.processed} alertas enviadas`
-        );
-      } else if (result.reason === "working_hours") {
-        console.log(
-          "Procesamiento de cola de SMS pospuesto por horario laboral"
-        );
-      } else {
-        console.warn("Error al procesar cola de SMS:", result);
-      }
-    } catch (error) {
-      console.error("Error al procesar cola de SMS:", error);
-    }
-  }
-
-  /**
-   * Añade una alerta al buffer de la hora correspondiente
-   */
-  addAlertToHourlyBuffer(
-    channelName,
-    temperature,
-    timestamp,
-    minThreshold,
-    maxThreshold
-  ) {
-    // Obtener el timestamp de inicio de la hora actual (redondeando hacia abajo)
-    const date = new Date(timestamp);
-    date.setMinutes(0, 0, 0);
-    const hourTimestamp = date.toISOString();
-
-    // Inicializar el buffer para esta hora si no existe
-    if (!alertBuffers.hourlyBuffers[hourTimestamp]) {
-      alertBuffers.hourlyBuffers[hourTimestamp] = [];
-    }
-
-    // Añadir la alerta al buffer de la hora correspondiente
-    alertBuffers.hourlyBuffers[hourTimestamp].push({
-      name: channelName,
-      temperature: temperature,
-      timestamp: timestamp,
-      minThreshold: minThreshold,
-      maxThreshold: maxThreshold,
-      detectedAt: new Date().toISOString(),
-    });
-
-    console.log(
-      `Alerta para ${channelName} agregada al buffer de la hora ${hourTimestamp}`
-    );
-  }
-
-  /**
-   * Procesa las alertas acumuladas en la última hora
-   */
-  async processHourlyAlerts() {
-    const emailService = require("./emailService");
-    const smsService = require("./smsService");
-    const now = new Date();
-
-    // Verificar si estamos dentro del horario laboral
-    if (emailService.isWithinWorkingHours()) {
-      console.log(
-        "Dentro de horario laboral. Posponiendo procesamiento de alertas de temperatura."
-      );
-      return;
-    }
-
-    // Obtener hora actual redondeada a la hora anterior completa
-    const currentHourDate = new Date(now);
-    currentHourDate.setMinutes(0, 0, 0);
-    currentHourDate.setHours(currentHourDate.getHours() - 1); // Procesamos la hora anterior completa
-    const currentHourTimestamp = currentHourDate.toISOString();
-
-    // Verificar si hay alertas para esta hora
-    if (
-      !alertBuffers.hourlyBuffers[currentHourTimestamp] ||
-      alertBuffers.hourlyBuffers[currentHourTimestamp].length === 0
-    ) {
-      console.log(
-        `No hay alertas para procesar en la hora ${currentHourTimestamp}`
-      );
-      return;
-    }
-
-    // Obtener las alertas a procesar
-    const alertsToProcess = alertBuffers.hourlyBuffers[currentHourTimestamp];
-    console.log(
-      `Procesando ${alertsToProcess.length} alertas de temperatura para la hora ${currentHourTimestamp}`
-    );
-
-    try {
-      // Crear alerta consolidada
-      const alert = {
-        type: 'temperature',
-        data: {
-          alerts: alertsToProcess,
-          timestamp: now
-        },
-        priority: 'high',
-        timestamp: now,
-        recipients: emailService.defaultRecipients
-      };
-
-      // Enviar alerta
-      await emailService.sendAlert(alert);
-      await smsService.sendAlert(alert);
-
-      // Limpiar buffer de esta hora
-      delete alertBuffers.hourlyBuffers[currentHourTimestamp];
-
-      // Actualizar última hora procesada
-      alertBuffers.lastProcessedHourTimestamp = currentHourTimestamp;
-
-      console.log(`Alertas enviadas exitosamente para la hora ${currentHourTimestamp}`);
-    } catch (error) {
-      console.error("Error al procesar las alertas horarias:", error);
-    }
-  }
-
-  /**
-   * Limpia buffers de alertas antiguas
-   */
-  cleanupOldAlerts() {
-    const now = new Date();
-    const horasRetrasadas = new Date(now);
-    horasRetrasadas.setHours(now.getHours() - HORAS_RETENCION_ALERTAS);
-
-    // Recorrer todos los buffers horarios
-    for (const hourTimestamp in alertBuffers.hourlyBuffers) {
-      const bufferTime = new Date(hourTimestamp);
-
-      // Si el buffer es antiguo, eliminarlo
-      if (bufferTime < horasRetrasadas) {
-        console.log(`Limpiando buffer antiguo de alertas: ${hourTimestamp}`);
-        delete alertBuffers.hourlyBuffers[hourTimestamp];
-      }
-    }
+  getSantiagoTime(utcTime) {
+    return moment.utc(utcTime).tz(this.timeZone);
   }
 
   /**
@@ -343,6 +75,7 @@ class UbibotService {
         // Canal existente - actualizar información básica
         const currentChannel = existingChannel[0];
         const wasOffline = currentChannel.is_currently_out_of_range === 1;
+        const isOperational = currentChannel.esOperativa === 1;
 
         // Actualizar información básica primero
         const hasChanges = Object.keys(basicInfo).some((key) =>
@@ -363,8 +96,10 @@ class UbibotService {
         await this.updateConnectionStatus(
           connection,
           channelData.channel_id,
+          channelData.name,
           isOnline,
           wasOffline,
+          isOperational,
           currentChannel,
           currentTime
         );
@@ -375,19 +110,23 @@ class UbibotService {
   }
 
   /**
-   * Actualiza el estado de conexión de un canal y envía alertas si es necesario.
+   * Actualiza el estado de conexión de un canal
    * @param {Object} connection - Conexión a la base de datos
    * @param {string} channelId - ID del canal
-   * @param {boolean} isOnline - Si el canal está en línea (true) o fuera de línea (false)
+   * @param {string} channelName - Nombre del canal
+   * @param {boolean} isOnline - Si el canal está en línea
    * @param {boolean} wasOffline - Si el canal estaba previamente fuera de línea
+   * @param {boolean} isOperational - Si el canal está operativo
    * @param {Object} currentChannel - Datos actuales del canal
    * @param {Date} currentTime - Tiempo actual
    */
   async updateConnectionStatus(
     connection,
     channelId,
+    channelName,
     isOnline,
     wasOffline,
+    isOperational,
     currentChannel,
     currentTime
   ) {
@@ -401,7 +140,7 @@ class UbibotService {
             [channelId]
           );
           console.log(
-            `Canal ${channelId} (${currentChannel.name}) está nuevamente en línea.`
+            `Canal ${channelId} (${channelName}) está nuevamente en línea.`
           );
         }
       } else {
@@ -413,99 +152,27 @@ class UbibotService {
             [currentTime, channelId]
           );
           console.log(
-            `Canal ${channelId} (${currentChannel.name
-            }) ha quedado fuera de línea a las ${currentTime.toISOString()}.`
-          );
-        } else {
-          // Ya estaba offline, verificar si debemos enviar una alerta
-          await this.checkAndSendDisconnectionAlert(
-            connection,
-            currentChannel,
-            currentTime
+            `Canal ${channelId} (${channelName}) ha quedado fuera de línea a las ${currentTime.toISOString()}.`
           );
         }
       }
+
+      // Notificar al controlador sobre el cambio de estado de conexión
+      await notificationController.processConnectionStatusChange(
+        channelId,
+        channelName,
+        isOnline,
+        wasOffline,
+        currentChannel.out_of_range_since,
+        currentChannel.last_alert_sent,
+        isOperational
+      );
     } catch (error) {
       console.error(
         `Error al actualizar estado de conexión para canal ${channelId}:`,
         error
       );
     }
-  }
-
-  /**
-   * Verifica si es necesario enviar una alerta de desconexión y la envía si corresponde.
-   * @param {Object} connection - Conexión a la base de datos
-   * @param {Object} channel - Datos del canal
-   * @param {Date} currentTime - Tiempo actual
-   */
-  async checkAndSendDisconnectionAlert(connection, channel, currentTime) {
-    try {
-      // Convertir los timestamps de string a Date si es necesario
-      const outOfRangeSince =
-        channel.out_of_range_since instanceof Date
-          ? channel.out_of_range_since
-          : new Date(channel.out_of_range_since);
-
-      const lastAlertSent = channel.last_alert_sent
-        ? channel.last_alert_sent instanceof Date
-          ? channel.last_alert_sent
-          : new Date(channel.last_alert_sent)
-        : null;
-
-      // Calcular cuánto tiempo ha estado offline (en minutos)
-      const minutesOffline = (currentTime - outOfRangeSince) / (1000 * 60);
-
-      // Si ha estado offline por al menos N minutos y nunca se ha enviado una alerta
-      // O si la última alerta se envió hace más de N minutos
-      const shouldSendAlert =
-        (minutesOffline >= MINUTOS_ESPERA_ALERTA_DESCONEXION &&
-          !lastAlertSent) ||
-        (lastAlertSent &&
-          (currentTime - lastAlertSent) / (1000 * 60) >=
-          MINUTOS_ENTRE_ALERTAS_DESCONEXION);
-
-      if (shouldSendAlert) {
-        // Preparar datos para la alerta
-        const disconnectedChannel = [
-          {
-            name: channel.name,
-            lastConnectionTime: outOfRangeSince,
-            disconnectionInterval: minutesOffline.toFixed(0),
-          },
-        ];
-
-        // Enviar la alerta
-        const alertSent = await this.sendDisconnectedSensorsEmail(
-          disconnectedChannel
-        );
-
-        if (alertSent) {
-          // Actualizar last_alert_sent
-          await connection.query(
-            "UPDATE channels_ubibot SET last_alert_sent = ? WHERE channel_id = ?",
-            [currentTime, channel.channel_id]
-          );
-          console.log(
-            `Alerta enviada para canal ${channel.channel_id} (${channel.name
-            }) - offline por ${minutesOffline.toFixed(0)} minutos.`
-          );
-        } else {
-          console.error(
-            `Error al enviar alerta para canal ${channel.channel_id}.`
-          );
-        }
-      }
-    } catch (error) {
-      console.error(`Error al verificar alerta de desconexión:`, error);
-    }
-  }
-
-  /**
-   * Convierte una fecha/hora UTC a una fecha/hora en la zona horaria de Santiago
-   */
-  getSantiagoTime(utcTime) {
-    return moment.utc(utcTime).tz("America/Santiago");
   }
 
   /**
@@ -559,7 +226,7 @@ class UbibotService {
   }
 
   /**
-   * Verifica los parámetros del canal y envía notificaciones si la temperatura está fuera de rango
+   * Verifica los parámetros del canal y notifica si la temperatura está fuera de rango
    */
   async checkParametersAndNotify(channelId, lastValues) {
     let connection;
@@ -575,18 +242,30 @@ class UbibotService {
         [channelId]
       );
 
-      if (channelInfo.length === 0 || !channelInfo[0].esOperativa) {
+      if (channelInfo.length === 0) {
         console.log(
-          `Ubibot: Canal ${channelId} no encontrado o no operativo. Abortando la verificación.`
+          `Ubibot: Canal ${channelId} no encontrado. Abortando la verificación.`
         );
         return;
       }
 
       const {
         name: channelName,
+        esOperativa,
         minima_temp_camara,
         maxima_temp_camara,
       } = channelInfo[0];
+
+      const isOperational = esOperativa === 1;
+
+      // Si el canal no está operativo, ignorarlo
+      if (!isOperational) {
+        console.log(
+          `Ubibot: Canal ${channelId} (${channelName}) no operativo. Ignorando lectura.`
+        );
+        return;
+      }
+
       const temperature = lastValues.field8
         ? parseFloat(lastValues.field8.value)
         : null;
@@ -607,33 +286,21 @@ class UbibotService {
         `Ubibot: Rango permitido: ${minima_temp_camara}°C a ${maxima_temp_camara}°C`
       );
 
-      if (
-        temperature < minima_temp_camara ||
-        temperature > maxima_temp_camara
-      ) {
-        console.log(
-          `Ubibot: Temperatura fuera de rango. Enviando alerta.`
-        );
+      // Procesar la lectura de temperatura con el nuevo controlador
+      const timestamp = moment(lastValues.field8.created_at).format(
+        "YYYY-MM-DD HH:mm:ss"
+      );
 
-        const timestamp = moment(lastValues.field1.created_at).format(
-          "YYYY-MM-DD HH:mm:ss"
-        );
+      await notificationController.processTemperatureReading(
+        channelId,
+        channelName,
+        temperature,
+        timestamp,
+        minima_temp_camara,
+        maxima_temp_camara,
+        isOperational
+      );
 
-        // Enviar alerta usando el nuevo sistema
-        await this.sendTemperatureAlert(
-          channelName,
-          temperature,
-          timestamp,
-          minima_temp_camara,
-          maxima_temp_camara
-        );
-
-        console.log(`Ubibot: Alertas enviadas para el canal ${channelName}`);
-      } else {
-        console.log(
-          `Ubibot: Temperatura dentro del rango permitido. No se requiere alerta.`
-        );
-      }
     } catch (error) {
       console.error("Ubibot: Error en checkParametersAndNotify:", error);
     } finally {
