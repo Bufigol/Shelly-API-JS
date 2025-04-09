@@ -1,25 +1,31 @@
 // src/services/emailService.js
 
 const sgMail = require("@sendgrid/mail");
+const fs = require("fs");
+const path = require("path");
+const BaseAlertService = require("./baseAlertService");
 const config = require("../config/js_files/config-loader");
 const moment = require("moment-timezone");
 
 /**
  * Servicio centralizado para el envío de correos electrónicos
  */
-class EmailService {
+class EmailService extends BaseAlertService {
   constructor() {
-    const appConfig = config.getConfig();
+    super();
+    this.initialized = false;
+    this.config = config.getConfig();
+    this.sgMail = sgMail;
+    this.sgMail.setApiKey(this.config.email.SENDGRID_API_KEY);
 
     // Cargar configuración de email desde el config-loader
-    this.apiKey = appConfig.email?.SENDGRID_API_KEY;
-    this.fromEmail = appConfig.email?.email_contacto?.from_verificado;
-    this.defaultRecipients = appConfig.email?.email_contacto?.destinatarios || [];
+    this.fromEmail = this.config.email?.email_contacto?.from_verificado;
+    this.defaultRecipients = this.config.email?.email_contacto?.destinatarios || [];
 
     // Horarios laborales desde la configuración centralizada de SMS
-    if (appConfig.sms && appConfig.sms.workingHours) {
-      this.workingHours = appConfig.sms.workingHours;
-      this.timeZone = appConfig.sms.timeZone || "America/Santiago";
+    if (this.config.sms && this.config.sms.workingHours) {
+      this.workingHours = this.config.sms.workingHours;
+      this.timeZone = this.config.sms.timeZone || "America/Santiago";
     } else {
       // Valores por defecto si no se encuentra configuración
       this.workingHours = {
@@ -37,9 +43,6 @@ class EmailService {
       this.timeZone = "America/Santiago";
     }
 
-    // Parámetros de configuración para el envío de correos
-    this.initialized = false;
-
     // Imprimir información de diagnóstico
     console.log(`Email Service - TimeZone: ${this.timeZone}`);
     console.log(
@@ -47,36 +50,144 @@ class EmailService {
     );
   }
 
-  /**
-   * Inicializa el servicio de correo electrónico
-   */
-  initialize() {
-    if (this.initialized) return true;
+  async initialize() {
+    if (this.initialized) return;
 
-    if (!this.apiKey) {
-      // Intentar recargar la configuración en caso de que haya cambiado
-      const appConfig = config.reloadConfig();
-      this.apiKey = appConfig.email?.SENDGRID_API_KEY;
+    try {
+      // Inicializar temporizadores del servicio base
+      this.initializeTimers();
+      this.initialized = true;
+      console.log("✅ EmailService inicializado correctamente");
+    } catch (error) {
+      console.error("❌ Error inicializando EmailService:", error);
+      throw error;
+    }
+  }
 
-      if (!this.apiKey) {
-        console.error(
-          "Error: SendGrid API key no encontrada en la configuración"
-        );
-        throw new Error(
-          "SendGrid API key no disponible. Verifique la configuración."
-        );
-      }
+  async processAlert(alert) {
+    if (!this.initialized) {
+      throw new Error("EmailService no inicializado");
     }
 
     try {
-      sgMail.setApiKey(this.apiKey);
-      this.initialized = true;
-      console.log("✅ Email service initialized");
-      return true;
+      const { type, data, recipients } = alert;
+
+      // Verificar que haya destinatarios, usar los predeterminados si no hay
+      const emailRecipients = recipients || this.defaultRecipients;
+
+      if (!emailRecipients || emailRecipients.length === 0) {
+        throw new Error("No hay destinatarios configurados para la alerta");
+      }
+
+      // Generar contenido del correo basado en el tipo de alerta
+      const { subject, htmlContent, plainText } = this.generateEmailContent(type, data);
+
+      const msg = {
+        to: emailRecipients,
+        from: this.fromEmail,
+        subject: subject,
+        text: plainText,
+        html: htmlContent
+      };
+
+      await this.sgMail.send(msg);
+      this.metrics.sentAlerts++;
+      this.metrics.lastSuccessTime = new Date();
     } catch (error) {
-      console.error("Error initializing email service:", error);
+      console.error("Error enviando alerta por email:", error);
+      this.metrics.failedAlerts++;
+      this.metrics.lastError = error.message;
       throw error;
     }
+  }
+
+  generateEmailContent(type, data) {
+    let subject, htmlContent, plainText;
+
+    switch (type) {
+      case "temperature":
+        subject = `Alerta de Temperatura - ${data.location}`;
+        htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+            <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Temperatura</h2>
+            <p>Se ha detectado una temperatura fuera del rango permitido:</p>
+            <ul>
+              <li>Ubicación: ${data.location}</li>
+              <li>Temperatura actual: ${data.temperature}°C</li>
+              <li>Límite mínimo: ${data.minThreshold}°C</li>
+              <li>Límite máximo: ${data.maxThreshold}°C</li>
+            </ul>
+            <p>Fecha y hora: ${new Date().toLocaleString()}</p>
+          </div>
+        `;
+        plainText = `Alerta de Temperatura\nUbicación: ${data.location}\nTemperatura: ${data.temperature}°C\nLímites: ${data.minThreshold}°C - ${data.maxThreshold}°C`;
+        break;
+
+      case "disconnection":
+        subject = `Alerta de Desconexión - ${data.device}`;
+        htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+            <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Desconexión</h2>
+            <p>Se ha detectado una desconexión en el dispositivo:</p>
+            <ul>
+              <li>Dispositivo: ${data.device}</li>
+              <li>Última conexión: ${data.lastConnection}</li>
+              <li>Tiempo sin conexión: ${data.disconnectionTime}</li>
+            </ul>
+            <p>Fecha y hora: ${new Date().toLocaleString()}</p>
+          </div>
+        `;
+        plainText = `Alerta de Desconexión\nDispositivo: ${data.device}\nÚltima conexión: ${data.lastConnection}\nTiempo sin conexión: ${data.disconnectionTime}`;
+        break;
+
+      default:
+        subject = data.subject || "Alerta del Sistema";
+        htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+            <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">${subject}</h2>
+            <p>${data.message || "Se ha generado una alerta en el sistema."}</p>
+            <p>Fecha y hora: ${new Date().toLocaleString()}</p>
+          </div>
+        `;
+        plainText = `${subject}\n${data.message || "Se ha generado una alerta en el sistema."}`;
+    }
+
+    return { subject, htmlContent, plainText };
+  }
+
+  async sendAlert(subject, data, templateName) {
+    if (!this.initialized) {
+      throw new Error("EmailService no inicializado");
+    }
+
+    let alert;
+
+    // Si se recibe un objeto completo (nuevo formato)
+    if (typeof subject === 'object') {
+      alert = subject;
+    } else {
+      // Formato antiguo (subject, data, templateName)
+      alert = {
+        type: templateName,
+        data: { ...data, subject },
+        recipients: this.defaultRecipients,
+        priority: data?.priority || "normal",
+        timestamp: new Date()
+      };
+    }
+
+    return this.processAlert(alert);
+  }
+
+  getStatus() {
+    return {
+      ...super.getStatus(),
+      service: "email",
+      config: {
+        fromEmail: this.fromEmail,
+        recipients: this.defaultRecipients
+      }
+    };
   }
 
   /**
@@ -133,7 +244,7 @@ class EmailService {
    * Verifica si el servicio de email está correctamente configurado
    */
   isConfigured() {
-    const hasApiKey = !!this.apiKey;
+    const hasApiKey = !!this.config.email?.SENDGRID_API_KEY;
     const hasFromEmail = !!this.fromEmail;
 
     if (!hasApiKey) {
@@ -216,7 +327,7 @@ class EmailService {
     };
 
     try {
-      await sgMail.send(message);
+      await this.sgMail.send(message);
       console.log(`Correo de restablecimiento enviado a: ${email}`);
       this.recordEmailSuccess(message.subject, 1);
       return true;
@@ -260,7 +371,7 @@ class EmailService {
     };
 
     try {
-      await sgMail.send(message);
+      await this.sgMail.send(message);
       console.log(`Correo de confirmación enviado a: ${email}`);
       this.recordEmailSuccess(message.subject, 1);
       return true;
@@ -385,7 +496,7 @@ class EmailService {
     };
 
     try {
-      await sgMail.send(message);
+      await this.sgMail.send(message);
       console.log(
         `Correo de alerta de temperatura enviado a: ${emailRecipients.join(
           ", "
@@ -499,7 +610,7 @@ class EmailService {
     };
 
     try {
-      await sgMail.send(message);
+      await this.sgMail.send(message);
       console.log(
         `Correo de alerta de sensores desconectados enviado a: ${emailRecipients.join(
           ", "
@@ -543,4 +654,4 @@ class EmailService {
   }
 }
 
-module.exports = new EmailService();
+module.exports = new EmailService();  
