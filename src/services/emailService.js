@@ -6,6 +6,7 @@ const path = require("path");
 const BaseAlertService = require("./baseAlertService");
 const config = require("../config/js_files/config-loader");
 const moment = require("moment-timezone");
+const notificationController = require("../controllers/notificationController");
 
 /**
  * Servicio centralizado para el envío de correos electrónicos
@@ -22,32 +23,11 @@ class EmailService extends BaseAlertService {
     this.fromEmail = this.config.email?.email_contacto?.from_verificado;
     this.defaultRecipients = this.config.email?.email_contacto?.destinatarios || [];
 
-    // Horarios laborales desde la configuración centralizada de SMS
-    if (this.config.sms && this.config.sms.workingHours) {
-      this.workingHours = this.config.sms.workingHours;
-      this.timeZone = this.config.sms.timeZone || "America/Santiago";
-    } else {
-      // Valores por defecto si no se encuentra configuración
-      this.workingHours = {
-        weekdays: {
-          // Lunes a Viernes
-          start: 8.5, // 8:30
-          end: 18.5, // 18:30
-        },
-        saturday: {
-          // Sábado
-          start: 8.5, // 8:30
-          end: 14.5, // 14:30
-        },
-      };
-      this.timeZone = "America/Santiago";
-    }
+    // Horarios laborales desde la configuración centralizada
+    this.timeZone = this.config.alertSystem?.timeZone || "America/Santiago";
 
     // Imprimir información de diagnóstico
     console.log(`Email Service - TimeZone: ${this.timeZone}`);
-    console.log(
-      `Email Service - Working Hours: Mon-Fri ${this.workingHours.weekdays.start}-${this.workingHours.weekdays.end}, Sat ${this.workingHours.saturday.start}-${this.workingHours.saturday.end}`
-    );
   }
 
   async initialize() {
@@ -192,52 +172,13 @@ class EmailService extends BaseAlertService {
 
   /**
    * Verifica si estamos dentro del horario laboral para enviar notificaciones
+   * Usa NotificationController como fuente centralizada
    * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar (opcional)
    * @returns {boolean} true si estamos en horario laboral
    */
   isWithinWorkingHours(checkTime = null) {
-    // Si hay una hora específica para verificar, usarla, sino usar la hora actual
-    let timeToCheck;
-
-    if (checkTime) {
-      // Preservar el objeto moment original si ya es un objeto moment
-      timeToCheck = moment.isMoment(checkTime)
-        ? checkTime.clone()
-        : moment(checkTime);
-    } else {
-      timeToCheck = moment();
-    }
-
-    const localTime = timeToCheck.tz(this.timeZone);
-
-    // Obtener el día de la semana y la hora como decimal para las comparaciones
-    const dayOfWeek = localTime.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
-    const hourDecimal = localTime.hour() + localTime.minute() / 60; // Hora como decimal (ej: 8:30 = 8.5)
-
-    console.log(
-      `Verificando horario: día ${dayOfWeek}, hora ${hourDecimal.toFixed(
-        2
-      )}, fecha completa: ${localTime.format("YYYY-MM-DD HH:mm:ss")}`
-    );
-
-    // Domingo siempre está fuera de horario laboral
-    if (dayOfWeek === 0) {
-      return false;
-    }
-
-    // Sábado tiene horario especial
-    if (dayOfWeek === 6) {
-      return (
-        hourDecimal >= this.workingHours.saturday.start &&
-        hourDecimal <= this.workingHours.saturday.end
-      );
-    }
-
-    // Lunes a viernes (días 1-5)
-    return (
-      hourDecimal >= this.workingHours.weekdays.start &&
-      hourDecimal <= this.workingHours.weekdays.end
-    );
+    // Usar NotificationController como fuente centralizada
+    return notificationController.isWithinWorkingHours();
   }
 
   /**
@@ -271,14 +212,17 @@ class EmailService extends BaseAlertService {
    * Devuelve una descripción de texto del horario laboral
    */
   getWorkingHoursDescription() {
+    // Obtener la configuración desde notificationController
+    const workingHours = notificationController.workingHours;
+
     const weekdayStart = this._formatHourToText(
-      this.workingHours.weekdays.start
+      workingHours.weekdays.start
     );
-    const weekdayEnd = this._formatHourToText(this.workingHours.weekdays.end);
+    const weekdayEnd = this._formatHourToText(workingHours.weekdays.end);
     const saturdayStart = this._formatHourToText(
-      this.workingHours.saturday.start
+      workingHours.saturday.start
     );
-    const saturdayEnd = this._formatHourToText(this.workingHours.saturday.end);
+    const saturdayEnd = this._formatHourToText(workingHours.saturday.end);
 
     return `Lunes a Viernes de ${weekdayStart} a ${weekdayEnd}, Sábados de ${saturdayStart} a ${saturdayEnd}`;
   }
@@ -401,16 +345,14 @@ class EmailService extends BaseAlertService {
     recipients = null,
     forceOutsideWorkingHours = false
   ) {
-    if (!this.isConfigured() || !this.initialize()) {
+    if (!this.isConfigured() || !this.initialized) {
       return false;
     }
 
-    // CAMBIO CRÍTICO: Invertir la lógica para enviar solo FUERA del horario laboral
-    // a menos que se fuerce específicamente con el parámetro forceOutsideWorkingHours
-    if (!forceOutsideWorkingHours && this.isWithinWorkingHours(currentTime)) {
-      const workingHoursDesc = this.getWorkingHoursDescription();
+    // CAMBIO CRÍTICO: Usar NotificationController para verificar horario laboral
+    if (!forceOutsideWorkingHours && notificationController.isWithinWorkingHours()) {
       console.log(
-        `Email Service - Dentro de horario laboral (${workingHoursDesc}). Posponiendo alertas de temperatura para fuera de horario.`
+        `Email Service - Dentro de horario laboral. Posponiendo alertas de temperatura para fuera de horario.`
       );
       return false;
     }
@@ -523,7 +465,7 @@ class EmailService extends BaseAlertService {
    * Se envía independientemente del horario
    */
   async sendDisconnectedSensorsEmail(disconnectedChannels, recipients = null) {
-    if (!this.isConfigured() || !this.initialize()) {
+    if (!this.isConfigured() || !this.initialized) {
       return false;
     }
 
@@ -654,4 +596,4 @@ class EmailService extends BaseAlertService {
   }
 }
 
-module.exports = new EmailService();  
+module.exports = new EmailService();
