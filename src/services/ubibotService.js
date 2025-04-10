@@ -256,9 +256,10 @@ class UbibotService {
         maxima_temp_camara,
       } = channelInfo[0];
 
+      // Convertir a booleano explícitamente
       const isOperational = esOperativa === 1;
 
-      // Si el canal no está operativo, ignorarlo
+      // Si el canal no está operativo, ignorarlo temprano
       if (!isOperational) {
         console.log(
           `Ubibot: Canal ${channelId} (${channelName}) no operativo. Ignorando lectura.`
@@ -286,7 +287,8 @@ class UbibotService {
         `Ubibot: Rango permitido: ${minima_temp_camara}°C a ${maxima_temp_camara}°C`
       );
 
-      // Procesar la lectura de temperatura con el nuevo controlador
+      // Procesar la lectura de temperatura con el controlador de notificaciones
+      // Pasando explícitamente isOperational para asegurar consistencia
       const timestamp = moment(lastValues.field8.created_at).format(
         "YYYY-MM-DD HH:mm:ss"
       );
@@ -298,7 +300,7 @@ class UbibotService {
         timestamp,
         minima_temp_camara,
         maxima_temp_camara,
-        isOperational
+        isOperational  // Pasamos explícitamente el valor booleano
       );
 
     } catch (error) {
