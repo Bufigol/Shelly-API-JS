@@ -4,6 +4,7 @@ const axios = require("axios");
 const BaseAlertService = require("./baseAlertService");
 const config = require("../config/js_files/config-loader");
 const moment = require("moment-timezone");
+const notificationController = require("../controllers/notificationController");
 
 /**
  * Servicio para envío de SMS a través de un módem remoto.
@@ -90,54 +91,13 @@ class SmsService extends BaseAlertService {
 
   /**
    * Verifica si estamos dentro del horario laboral
+   * Usa NotificationController como fuente centralizada
    * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar
    * @returns {boolean} true si estamos en horario laboral
    */
   isWithinWorkingHours(checkTime = null) {
-    // Si no tenemos configuración, cargamos la configuración
-    if (!this.config || !this.config.workingHours) {
-      this.loadConfiguration();
-
-      // Si aún no tenemos configuración, asumimos que estamos fuera de horario laboral
-      if (!this.config || !this.config.workingHours) {
-        console.warn("⚠️ No se pudo determinar horario laboral por falta de configuración");
-        return false;
-      }
-    }
-
-    // Usar la configuración centralizada
-    const { workingHours, timeZone } = this.config;
-
-    // Implementación local
-    let timeToCheck;
-    if (checkTime) {
-      timeToCheck = moment.isMoment(checkTime)
-        ? checkTime.clone()
-        : moment(checkTime);
-    } else {
-      timeToCheck = moment();
-    }
-
-    const localTime = timeToCheck.tz(timeZone || "America/Santiago");
-    const dayOfWeek = localTime.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
-    const hourDecimal = localTime.hour() + localTime.minute() / 60;
-
-    // Domingo siempre está fuera de horario laboral
-    if (dayOfWeek === 0) return false;
-
-    // Sábado tiene horario especial
-    if (dayOfWeek === 6) {
-      return (
-        hourDecimal >= workingHours.saturday.start &&
-        hourDecimal <= workingHours.saturday.end
-      );
-    }
-
-    // Lunes a viernes (días 1-5)
-    return (
-      hourDecimal >= workingHours.weekdays.start &&
-      hourDecimal <= workingHours.weekdays.end
-    );
+    // Usar NotificationController como fuente centralizada
+    return notificationController.isWithinWorkingHours();
   }
 
   /**
@@ -146,8 +106,8 @@ class SmsService extends BaseAlertService {
    */
   async checkModemConnection() {
     try {
-      const response = await this.axios.get(`${this.config.sms.modem.url}${this.config.sms.modem.apiPath}/status`, {
-        timeout: this.config.sms.modem.timeout
+      const response = await this.axios.get(`${this.config.modem.url}${this.config.modem.apiPath}/status`, {
+        timeout: this.config.modem.timeout
       });
       return response.data.connected === true;
     } catch (error) {
@@ -423,7 +383,8 @@ class SmsService extends BaseAlertService {
     }
 
     // Verificar si estamos fuera del horario laboral (a menos que se fuerce el envío)
-    if (!forceOutsideWorkingHours && this.isWithinWorkingHours()) {
+    // Usar NotificationController para verificar horario laboral
+    if (!forceOutsideWorkingHours && notificationController.isWithinWorkingHours()) {
       console.log(
         "SMS Service - Dentro de horario laboral. Posponiendo envío de SMS para fuera de horario."
       );
@@ -600,8 +561,8 @@ class SmsService extends BaseAlertService {
       return { success: true, processed: 0 };
     }
 
-    // Verificar si estamos fuera del horario laboral
-    if (!forceOutsideWorkingHours && this.isWithinWorkingHours()) {
+    // Verificar si estamos fuera del horario laboral usando NotificationController
+    if (!forceOutsideWorkingHours && notificationController.isWithinWorkingHours()) {
       console.log(
         "SMS Service - Dentro de horario laboral. Posponiendo procesamiento de alertas SMS."
       );
@@ -813,13 +774,13 @@ class SmsService extends BaseAlertService {
   async sendSms(recipient, message) {
     try {
       await this.axios.post(
-        `${this.config.sms.modem.url}${this.config.sms.modem.apiPath}/send`,
+        `${this.config.modem.url}${this.config.modem.apiPath}/send`,
         {
           recipient,
           message
         },
         {
-          timeout: this.config.sms.modem.timeout
+          timeout: this.config.modem.timeout
         }
       );
     } catch (error) {
@@ -835,7 +796,7 @@ class SmsService extends BaseAlertService {
     const alert = {
       type: templateName,
       data: { ...data, subject },
-      recipients: this.config.sms.recipients,
+      recipients: this.config.recipients,
       priority: data.priority || "normal",
       timestamp: new Date()
     };
@@ -848,8 +809,8 @@ class SmsService extends BaseAlertService {
       ...super.getStatus(),
       service: "sms",
       config: {
-        modemUrl: this.config.sms.modem.url,
-        recipients: this.config.sms.recipients
+        modemUrl: this.config.modem?.url,
+        recipients: this.defaultRecipients
       }
     };
   }

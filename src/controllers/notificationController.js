@@ -11,8 +11,8 @@ class NotificationController {
         // Cargar configuración global
         this.config = config.getConfig();
 
-        // Configurar zona horaria desde la configuración
-        this.timeZone = this.config.sms?.timeZone || "America/Santiago";
+        // Configurar zona horaria desde la configuración centralizada
+        this.timeZone = this.config.alertSystem?.timeZone || "America/Santiago";
 
         // Crear pool de conexiones usando la configuración de la base de datos
         this.pool = mysql.createPool({
@@ -25,15 +25,16 @@ class NotificationController {
             queueLimit: 0,
         });
 
-        // Intervalos de tiempo (en minutos) - Usar valores de config si están disponibles
-        this.alertGroupingInterval =
-            (this.config.alertSystem?.intervals?.processing || 60 * 60 * 1000) / (60 * 1000);
+        // Obtener horario laboral de la configuración centralizada
+        this.workingHours = this.config.alertSystem?.workingHours || {
+            weekdays: { start: 8.5, end: 18.5 }, // Por defecto: 8:30 - 18:30
+            saturday: { start: 8.5, end: 14.5 }  // Por defecto: 8:30 - 14:30
+        };
 
-        this.disconnectionAlertThreshold =
-            (this.config.alertSystem?.intervals?.disconnection?.initialDelay || 60);
-
-        this.cleanupInterval =
-            (this.config.alertSystem?.intervals?.cleanup || 12 * 60 * 1000) / (60 * 1000);
+        // Intervalos de tiempo (en minutos)
+        this.alertGroupingInterval = 60; // 1 hora para procesar alertas agrupadas
+        this.disconnectionAlertThreshold = 60; // 1 hora umbral para alertas de desconexión
+        this.cleanupInterval = 720; // 12 horas para limpieza
 
         // Estructura para almacenar contadores de temperatura fuera de rango
         this.tempAlertCounters = {}; // Formato: { channelId: { count: X, lastUpdate: timestamp, values: [] } }
@@ -54,6 +55,8 @@ class NotificationController {
 
         console.log("✅ NotificationController inicializado");
         console.log(`  - Zona horaria: ${this.timeZone}`);
+        console.log(`  - Horario laboral L-V: ${this.workingHours.weekdays.start} - ${this.workingHours.weekdays.end}`);
+        console.log(`  - Horario laboral Sábado: ${this.workingHours.saturday.start} - ${this.workingHours.saturday.end}`);
         console.log(`  - Intervalo de agrupación: ${this.alertGroupingInterval} minutos`);
         console.log(`  - Umbral de desconexión: ${this.disconnectionAlertThreshold} minutos`);
         console.log(`  - Intervalo de limpieza: ${this.cleanupInterval} minutos`);
@@ -82,7 +85,7 @@ class NotificationController {
     }
 
     /**
-     * Verifica si es horario laboral según la configuración
+     * Verifica si es horario laboral según la configuración centralizada
      * @returns {boolean} true si es horario laboral, false si no
      */
     isWithinWorkingHours() {
@@ -90,27 +93,21 @@ class NotificationController {
         const hourDecimal = now.hour() + now.minute() / 60;
         const dayOfWeek = now.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
 
-        // Obtener la configuración del horario laboral desde config-loader
-        const workingHours = this.config.sms?.workingHours || {
-            weekdays: { start: 8.5, end: 18.5 },
-            saturday: { start: 8.5, end: 14.5 }
-        };
-
         // Domingo siempre fuera de horario laboral
         if (dayOfWeek === 0) return false;
 
         // Sábado tiene horario especial
         if (dayOfWeek === 6) {
             return (
-                hourDecimal >= workingHours.saturday.start &&
-                hourDecimal <= workingHours.saturday.end
+                hourDecimal >= this.workingHours.saturday.start &&
+                hourDecimal <= this.workingHours.saturday.end
             );
         }
 
         // Lunes a viernes
         return (
-            hourDecimal >= workingHours.weekdays.start &&
-            hourDecimal <= workingHours.weekdays.end
+            hourDecimal >= this.workingHours.weekdays.start &&
+            hourDecimal <= this.workingHours.weekdays.end
         );
     }
 
@@ -135,7 +132,7 @@ class NotificationController {
         isOperational
     ) {
         try {
-            // Si el canal no está operativo, ignorarlo
+            // IMPORTANTE: Si el canal no está operativo, ignorarlo
             if (!isOperational) {
                 console.log(`Canal ${channelName} (${channelId}) no operativo. Ignorando lectura.`);
                 return;
@@ -215,7 +212,7 @@ class NotificationController {
         isOperational
     ) {
         try {
-            // Si el canal no está operativo, ignorarlo
+            // IMPORTANTE: Si el canal no está operativo, ignorarlo
             if (!isOperational) {
                 console.log(`Canal ${channelName} (${channelId}) no operativo. Ignorando cambio de conexión.`);
                 return;
@@ -475,7 +472,7 @@ class NotificationController {
             const smsMessage = this.formatDisconnectionAlertsForSMS(alerts);
             const smsResult = await smsService.sendSMS(
                 smsMessage,
-                this.config.sms?.recipients?.disconnectionAlerts || null, // Usar destinatarios específicos para desconexión o predeterminados
+                null, // Usar destinatarios predeterminados
                 true  // Forzar envío incluso si estamos en horario laboral
             );
 
