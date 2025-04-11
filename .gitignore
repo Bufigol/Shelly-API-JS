@@ -16,3 +16,4 @@ src/config/token_id.txt
 .vscode
 .idea
 .github
+sendgrid.env
