@@ -1,13 +1,58 @@
 // config/js_files/config-loader.js
 const BaseConfigLoader = require("./base-config-loader");
 const path = require("path");
+const fs = require("fs");
 
 class ConfigLoader extends BaseConfigLoader {
   constructor() {
     super();
     this.config = {};
     this.configPath = "../jsons/unified-config.json";
+
+    // Asegurar que el directorio existe
+    this.ensureDirectoryExists();
+
+    // Inicializar configuración
     this.loadConfiguration();
+  }
+
+  /**
+   * Asegura que el directorio de configuración existe
+   * @private
+   */
+  ensureDirectoryExists() {
+    const dirPath = path.dirname(path.join(__dirname, this.configPath));
+
+    if (!fs.existsSync(dirPath)) {
+      try {
+        fs.mkdirSync(dirPath, { recursive: true });
+        console.log(`Directorio creado: ${dirPath}`);
+      } catch (error) {
+        console.error(`Error al crear directorio ${dirPath}:`, error.message);
+      }
+    }
+  }
+
+  /**
+   * Busca el archivo de configuración en varias ubicaciones posibles
+   * @returns {string|null} - Ruta al archivo de configuración o null si no se encuentra
+   * @private
+   */
+  findConfigFile() {
+    const possiblePaths = [
+      path.join(__dirname, this.configPath),
+      path.join(__dirname, "..", "..", "src", "config", "jsons", "unified-config.json"),
+      path.join(__dirname, "..", "..", "config", "jsons", "unified-config.json"),
+      path.join(__dirname, "..", "..", "unified-config.json")
+    ];
+
+    for (const filePath of possiblePaths) {
+      if (fs.existsSync(filePath)) {
+        return filePath;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -28,35 +73,46 @@ class ConfigLoader extends BaseConfigLoader {
         return this.cachedConfig;
       }
 
+      // Buscar el archivo de configuración
+      const configFilePath = this.findConfigFile();
+
+      if (!configFilePath) {
+        throw new Error("No se encontró el archivo de configuración unificada.");
+      }
+
       // Cargar el archivo de configuración unificado
-      const unifiedConfig = this.loadJsonFile(this.configPath);
-      
+      const configData = fs.readFileSync(configFilePath, "utf8");
+      const unifiedConfig = JSON.parse(configData);
+
       // Determinar el entorno actual (0 = desarrollo, 1 = producción)
       const currentEnv = unifiedConfig.environment.current;
       const envLabel = unifiedConfig.environment.labels[currentEnv];
-      
+
       console.log(`Cargando configuración para entorno: ${envLabel}`);
-      
+
       // Construir objeto de configuración
       this.config = {
         // Configuración de base de datos según el entorno
         database: unifiedConfig.database[envLabel],
-        
+
         // Mantener referencia para compatibilidad con código existente
         databases: {
           main: unifiedConfig.database[envLabel]
         },
-        
+
         // Configuración de API
         api: unifiedConfig.api.shelly_cloud,
-        
+
+        // Mapbox (si existe)
+        mapbox: unifiedConfig.api.mapbox || {},
+
         // Configuración de recolección
         collection: {
           interval: unifiedConfig.api.shelly_cloud.collection_interval,
           retryAttempts: 3,
           retryDelay: 5000,
         },
-        
+
         // Configuración de Ubibot
         ubibot: {
           accountKey: unifiedConfig.ubibot.account_key,
@@ -64,23 +120,26 @@ class ConfigLoader extends BaseConfigLoader {
           excludedChannels: unifiedConfig.ubibot.excluded_channels,
           collectionInterval: unifiedConfig.ubibot.collection_interval,
         },
-        
+
         // Configuración de Email
         email: {
           SENDGRID_API_KEY: unifiedConfig.email.sendgrid_api_key,
           email_contacto: unifiedConfig.email.email_contacto
         },
-        
+
         // Configuración de SMS
         sms: unifiedConfig.sms,
-        
+
+        // Configuración de Twilio
+        twilio: unifiedConfig.twilio,
+
         // Configuración de JWT
         jwt: {
           secret: unifiedConfig.jwt.secret,
           issuer: unifiedConfig.jwt.issuer,
           expiresIn: unifiedConfig.jwt.expires_in
         },
-        
+
         // Configuración de mediciones
         measurement: {
           precio_kwh: unifiedConfig.precios_energia.precio_kwh.valor,
@@ -102,20 +161,23 @@ class ConfigLoader extends BaseConfigLoader {
           proveedor: unifiedConfig.precios_energia.metadatos.proveedor_energia,
           tipo_tarifa: unifiedConfig.precios_energia.metadatos.tipo_tarifa,
         },
-        
+
         // Sistema de alertas
         alertSystem: unifiedConfig.alertSystem,
-        
+
         // Información de la aplicación
         appName: unifiedConfig.appInfo.appName,
         companyName: unifiedConfig.appInfo.companyName,
-        
+
         // Metadatos
         environment: {
           current: currentEnv,
           name: envLabel
         }
       };
+
+      // Guardar la referencia al archivo de configuración actual
+      this.currentConfigPath = configFilePath;
 
       this.validateConfig();
 
@@ -138,26 +200,29 @@ class ConfigLoader extends BaseConfigLoader {
    */
   changeEnvironment(envIndex) {
     try {
-      // Cargar el archivo de configuración unificado
-      const unifiedConfig = this.loadJsonFile(this.configPath);
-      
+      if (!this.currentConfigPath) {
+        throw new Error("No se ha cargado ningún archivo de configuración previamente");
+      }
+
+      // Leer el archivo de configuración
+      const configData = fs.readFileSync(this.currentConfigPath, "utf8");
+      const unifiedConfig = JSON.parse(configData);
+
       // Validar el índice de entorno
       if (envIndex !== 0 && envIndex !== 1) {
         throw new Error("El índice de entorno debe ser 0 (desarrollo) o 1 (producción)");
       }
-      
+
       // Actualizar el índice de entorno
       unifiedConfig.environment.current = envIndex;
-      
+
       // Guardar el archivo actualizado
-      const filePath = path.join(__dirname, this.configPath);
-      const fs = require('fs');
-      fs.writeFileSync(filePath, JSON.stringify(unifiedConfig, null, 2), 'utf8');
-      
+      fs.writeFileSync(this.currentConfigPath, JSON.stringify(unifiedConfig, null, 2), "utf8");
+
       // Limpiar caché y recargar
       this.cachedConfig = null;
       this.lastLoadTime = null;
-      
+
       return this.loadConfiguration();
     } catch (error) {
       throw new Error(`Error al cambiar de entorno: ${error.message}`);
@@ -225,8 +290,10 @@ class ConfigLoader extends BaseConfigLoader {
     const { email } = this.config;
     if (!email || !email.SENDGRID_API_KEY) {
       console.warn("⚠️ No se encontró configuración de SendGrid o está incompleta");
-    } else {
+    } else if (email.SENDGRID_API_KEY.startsWith("SG.")) {
       console.log("✅ Configuración de SendGrid verificada");
+    } else {
+      console.warn("⚠️ La API key de SendGrid no tiene el formato correcto (debe comenzar con 'SG.')");
     }
   }
 
@@ -251,12 +318,19 @@ class ConfigLoader extends BaseConfigLoader {
   /**
    * Obtiene un valor específico de la configuración usando notación de punto
    * @param {string} path Ruta al valor (ejemplo: "database.host")
-   * @returns {any} Valor encontrado en la ruta especificada
+   * @returns {any} Valor encontrado en la ruta especificada o undefined si no existe
    */
   getValue(path) {
-    return path
-      .split(".")
-      .reduce((obj, key) => obj && obj[key], this.getConfig());
+    if (!path) return undefined;
+
+    try {
+      return path
+        .split(".")
+        .reduce((obj, key) => obj && obj[key], this.getConfig());
+    } catch (error) {
+      console.warn(`Error al acceder a la ruta "${path}":`, error.message);
+      return undefined;
+    }
   }
 
   /**
@@ -267,7 +341,7 @@ class ConfigLoader extends BaseConfigLoader {
   hasConfig(path) {
     return this.getValue(path) !== undefined;
   }
-  
+
   /**
    * Obtiene el entorno actual (desarrollo/producción)
    * @returns {Object} Información del entorno actual
@@ -277,6 +351,53 @@ class ConfigLoader extends BaseConfigLoader {
       index: this.config.environment.current,
       name: this.config.environment.name
     };
+  }
+
+  /**
+   * Actualiza un valor específico en la configuración
+   * @param {string} path - Ruta al valor a actualizar (ejemplo: "email.sendgrid_api_key")
+   * @param {any} value - Nuevo valor
+   * @returns {boolean} - true si la actualización fue exitosa
+   */
+  updateConfigValue(path, value) {
+    try {
+      if (!this.currentConfigPath) {
+        throw new Error("No se ha cargado ningún archivo de configuración previamente");
+      }
+
+      // Leer el archivo de configuración
+      const configData = fs.readFileSync(this.currentConfigPath, "utf8");
+      const unifiedConfig = JSON.parse(configData);
+
+      // Dividir la ruta en partes
+      const parts = path.split(".");
+
+      // Navegar en el objeto y actualizar el valor
+      let current = unifiedConfig;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) {
+          current[parts[i]] = {};
+        }
+        current = current[parts[i]];
+      }
+
+      // Actualizar el valor
+      current[parts[parts.length - 1]] = value;
+
+      // Guardar el archivo actualizado
+      fs.writeFileSync(this.currentConfigPath, JSON.stringify(unifiedConfig, null, 2), "utf8");
+
+      // Limpiar caché y recargar
+      this.cachedConfig = null;
+      this.lastLoadTime = null;
+      this.loadConfiguration();
+
+      console.log(`✅ Valor "${path}" actualizado correctamente`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error al actualizar valor "${path}":`, error.message);
+      return false;
+    }
   }
 }
 

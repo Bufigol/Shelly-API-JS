@@ -3,10 +3,10 @@
 const sgMail = require("@sendgrid/mail");
 const fs = require("fs");
 const path = require("path");
-const BaseAlertService = require("./baseAlertService");
-const config = require("../config/js_files/config-loader");
+const BaseAlertService = require("../baseAlertService");
+const config = require("../../config/js_files/config-loader");
 const moment = require("moment-timezone");
-const notificationController = require("../controllers/notificationController");
+const notificationController = require("../../controllers/notificationController");
 
 /**
  * Servicio centralizado para el envío de correos electrónicos
