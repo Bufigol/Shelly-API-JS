@@ -285,12 +285,12 @@ class Server {
       console.log("? Total energy service initialized");
 
       // Inicializar servicio de Email
-      const emailService = require("./src/services/emailService");
+      const emailService = require("./src/services/email/emailService");
       await emailService.initialize();
       console.log("? Email service initialized");
 
       // Inicializar nuevo servicio SMS
-      const smsService = require("./src/services/smsService");
+      const smsService = require("./src/services/sms/smsService");
       await smsService.initialize();
       console.log("? SMS service initialized");
 
