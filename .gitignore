@@ -16,3 +16,16 @@ src/config/token_id.txt
 .vscode
 .idea
 .github
+sendgrid.env
+src/tests/simple-email-test.js
+src/tests/test-config-email-integration.js
+src/tests/test-direct-email.js
+src/tests/test-email-environment.js
+src/tests/test-email-service.js
+src/tests/test-jwt.js
+src/services/email/direct-email-adapter.js
+src/services/email/email-service-adapter.js
+src/services/email/direct-email-adapter.js
+src/services/email/email-service-adapter.js
+src/services/email/direct-email-adapter.js
+src/services/email/email-service-adapter.js

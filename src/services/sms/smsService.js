@@ -1,10 +1,10 @@
 // src/services/smsService.js
 
 const axios = require("axios");
-const BaseAlertService = require("./baseAlertService");
-const config = require("../config/js_files/config-loader");
+const BaseAlertService = require("../baseAlertService");
+const config = require("../../config/js_files/config-loader");
 const moment = require("moment-timezone");
-const notificationController = require("../controllers/notificationController");
+const notificationController = require("../../controllers/notificationController");
 
 /**
  * Servicio para envío de SMS a través de un módem remoto.
@@ -52,7 +52,7 @@ class SmsService extends BaseAlertService {
 
         // Cargar destinatarios de los archivos JSON existentes si no están en la nueva config
         try {
-          const smsConfigRecipients = require("../config/jsons/destinatariosSmsUbibot.json");
+          const smsConfigRecipients = require("../../config/jsons/destinatariosSmsUbibot.json");
           this.defaultRecipients = smsConfigRecipients.sms_destinatarios || [];
         } catch (e) {
           console.warn("⚠️ No se pudo cargar destinatarios SMS:", e.message);
