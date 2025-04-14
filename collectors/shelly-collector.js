@@ -83,7 +83,6 @@ class ShellyCollector {
 
   async collect() {
     try {
-      console.log("\n📥 Starting data collection cycle...");
       const currentTimestamp = Date.now();
 
       const data = await this.fetchDeviceData();
@@ -100,8 +99,6 @@ class ShellyCollector {
       this.lastCollectionTime = currentTimestamp;
       this.lastMeasurement = enrichedData;
       this.retryCount = 0;
-
-      console.log("✅ Collection cycle completed successfully\n");
     } catch (error) {
       this.handleCollectionError(error);
     }
