@@ -118,13 +118,16 @@ class BaseAlertService {
      * Limpia los temporizadores del servicio
      */
     cleanupTimers() {
-        if (this.timers.processing) {
-            clearInterval(this.timers.processing);
-            this.timers.processing = null;
+        if (this.hourlyProcessingTimer) {
+            clearTimeout(this.hourlyProcessingTimer);
+            this.hourlyProcessingTimer = null;
+            console.log("Timer de procesamiento inicial de alertas detenido");
         }
-        if (this.timers.cleanup) {
-            clearInterval(this.timers.cleanup);
-            this.timers.cleanup = null;
+        
+        if (this.recurringHourlyTimer) {
+            clearInterval(this.recurringHourlyTimer);
+            this.recurringHourlyTimer = null;
+            console.log("Timer recurrente de procesamiento de alertas detenido");
         }
     }
 
