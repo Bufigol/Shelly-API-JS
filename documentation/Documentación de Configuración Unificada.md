@@ -84,11 +84,11 @@ Configuración para las APIs del sistema:
   "shelly_cloud": {
     "url": "https://shelly-141-eu.shelly.cloud/device/status",
     "device_id": "fce8c0d82d08",
-    "auth_key": "MmFiZjhhdWlk034B5775CD00678BED88307AC12C6AC61723EFAF4CAAA56938B9C142DED8A06FF450DDDB07437418",
+    "auth_key": "",
     "collection_interval": 10000
   },
   "mapbox": {
-    "access_token": "pk.eyJ1IjoidGhlbmV4dHNlY3VyaXR5IiwiYSI6ImNsd3YxdmhkeDBqZDgybHB2OTh4dmo3Z2EifQ.bpZlTBTa56pF4cPhE3aSzg"
+    "access_token": ""
   }
 }
 ```
@@ -99,7 +99,7 @@ Configuración para autenticación JWT:
 
 ```json
 "jwt": {
-  "secret": "89119f44efa937e2b7004497cb854a7073a2af48f77736a6e2d0d76bf80a2981",
+  "secret": "",
   "issuer": "TNS_TRACK",
   "expires_in": "1h",
   "legacy_secret": "Shelly-API-JS-Pao-Secret-Key"
@@ -112,7 +112,7 @@ Configuración del servicio de correo electrónico:
 
 ```json
 "email": {
-  "sendgrid_api_key": "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",
+  "sendgrid_api_key": "",
   "email_contacto": {
     "from_verificado": "f.vasquez.tort@proton.me",
     "destinatarios": [
@@ -172,7 +172,7 @@ Configuración del servicio Ubibot:
 
 ```json
 "ubibot": {
-  "account_key": "2bb378b1b4e0b210b3974a02b9d5b4d0",
+  "account_key": "",
   "token_file": "./src/config/token_id.txt",
   "excluded_channels": ["80005"],
   "collection_interval": 300000
