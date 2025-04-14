@@ -3,8 +3,8 @@
 const mysql = require("mysql2/promise");
 const moment = require("moment-timezone");
 const config = require("../config/js_files/config-loader");
-const emailService = require("../services/emailService");
-const smsService = require("../services/smsService");
+const emailService = require("../services/email/emailService");
+const smsService = require("../services/sms/smsService");
 
 class NotificationController {
     constructor() {
