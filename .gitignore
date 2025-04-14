@@ -27,3 +27,5 @@ src/services/email/direct-email-adapter.js
 src/services/email/email-service-adapter.js
 src/services/email/direct-email-adapter.js
 src/services/email/email-service-adapter.js
+src/services/email/direct-email-adapter.js
+src/services/email/email-service-adapter.js
