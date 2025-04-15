@@ -474,14 +474,15 @@ class SmsService extends BaseAlertService {
   }
 
   /**
-   * Agrega una alerta de temperatura a la cola
-   * @param {string} channelName - Nombre del canal
-   * @param {number} temperature - Temperatura detectada
-   * @param {string} timestamp - Timestamp de la medición
-   * @param {number} minThreshold - Umbral mínimo
-   * @param {number} maxThreshold - Umbral máximo
-   * @returns {boolean} True si se agregó correctamente
-   */
+  * Agrega una alerta de temperatura a la cola
+  * Adaptado para trabajar con el nuevo formato de alertas agrupadas
+  * @param {string} channelName - Nombre del canal
+  * @param {number} temperature - Temperatura detectada
+  * @param {string} timestamp - Timestamp de la medición
+  * @param {number} minThreshold - Umbral mínimo
+  * @param {number} maxThreshold - Umbral máximo
+  * @returns {boolean} - true si se agregó correctamente
+  */
   addTemperatureAlertToQueue(
     channelName,
     temperature,
@@ -491,12 +492,12 @@ class SmsService extends BaseAlertService {
   ) {
     // Validaciones
     if (!channelName || typeof channelName !== 'string') {
-      console.error("Nombre de canal inválido:", channelName);
+      console.error('Nombre de canal inválido:', channelName);
       return false;
     }
 
     if (isNaN(temperature)) {
-      console.error("Temperatura inválida:", temperature);
+      console.error('Temperatura inválida:', temperature);
       return false;
     }
 
@@ -625,44 +626,126 @@ class SmsService extends BaseAlertService {
   }
 
   /**
-   * Envía un SMS de alerta de temperatura inmediatamente o lo agrega a la cola
-   * @param {string} channelName - Nombre del canal
-   * @param {number} temperature - Temperatura detectada
-   * @param {string} timestamp - Timestamp de la medición
-   * @param {number} minThreshold - Umbral mínimo
-   * @param {number} maxThreshold - Umbral máximo
-   * @param {boolean} [queueForBatch=true] - Si es true, agrega a la cola; si es false, envía inmediatamente
-   * @param {Array<string>} [recipients=null] - Destinatarios personalizados
-   * @returns {Promise<{success: boolean}>} Resultado de la operación
-   */
-  async sendTemperatureAlert(
-    channelName,
-    temperature,
-    timestamp,
-    minThreshold,
-    maxThreshold,
-    queueForBatch = true,
-    recipients = null
-  ) {
-    // Si se debe encolar para envío posterior agrupado
-    if (queueForBatch) {
-      const added = this.addTemperatureAlertToQueue(
-        channelName,
-        temperature,
-        timestamp,
-        minThreshold,
-        maxThreshold
-      );
-      return { success: added, queued: true };
+ * Envía un SMS de alerta de temperatura inmediatamente o lo agrega a la cola
+ * Adaptado para el nuevo formato de alertas agrupadas
+ * @param {Array} formattedAlerts - Alertas formateadas
+ * @param {Array<string>} [recipients=null] - Destinatarios personalizados
+ * @param {boolean} [forceOutsideWorkingHours=true] - Forzar envío incluso en horario laboral
+ * @returns {Promise<{success: boolean}>} - Resultado de la operación
+ */
+  async sendTemperatureAlert(formattedAlerts, recipients = null, forceOutsideWorkingHours = true) {
+    if (!this.isConfigured()) {
+      console.error('El servicio SMS no está configurado correctamente');
+      return { success: false, reason: 'not_configured' };
     }
 
-    // Si se debe enviar inmediatamente
-    const message = `Alerta ${channelName}: Temp ${temperature}°C (${minThreshold}-${maxThreshold}°C) ${timestamp}`;
-    const result = await this.sendSMS(message, recipients, true); // Forzar envío incluso en horario laboral
+    if (!formattedAlerts || formattedAlerts.length === 0) {
+      console.log('No hay alertas de temperatura para reportar');
+      return { success: false, reason: 'no_alerts' };
+    }
+
+    // Usar destinatarios específicos para temperatura o predeterminados
+    const smsRecipients = recipients ||
+      this.config.recipients.temperatureAlerts ||
+      this.config.recipients.default;
+
+    if (!smsRecipients || smsRecipients.length === 0) {
+      console.error('No hay destinatarios configurados para alertas de temperatura');
+      return { success: false, reason: 'no_recipients' };
+    }
+
+    // Crear mensaje formateado para SMS
+    let message = `TEMPERATURA: ${formattedAlerts.length} sensor${formattedAlerts.length > 1 ? 'es' : ''} fuera de rango. `;
+
+    // Obtener límite máximo de alertas detalladas desde configuración
+    const maxSizePerBatch = this.config.queue?.maxSizePerBatch || 3;
+
+    // Incluir detalles para los primeros N sensores
+    const detailLimit = Math.min(maxSizePerBatch, formattedAlerts.length);
+    for (let i = 0; i < detailLimit; i++) {
+      const alert = formattedAlerts[i];
+      message += `${alert.name}: ${alert.temperature}°C. `;
+    }
+
+    // Si hay más de N, agregar resumen
+    if (formattedAlerts.length > detailLimit) {
+      message += `Y ${formattedAlerts.length - detailLimit} más. `;
+    }
+
+    // Añadir timestamp
+    const moment = require('moment-timezone');
+    message += `${moment().tz(this.config.timeZone).format("DD/MM HH:mm")}`;
+
+    // Enviar el SMS
+    const result = await this.sendSMS(message, smsRecipients, forceOutsideWorkingHours);
 
     return {
       success: result.success,
-      queued: false,
+      sentCount: result.sentCount,
+      failedCount: result.failedCount,
+    };
+  }
+  /**
+ * Envía un SMS de alerta de desconexión
+ * Adaptado para el nuevo formato de alertas agrupadas
+ * @param {Array} disconnectedChannels - Canales con eventos de conexión
+ * @param {Array<string>} [recipients=null] - Destinatarios personalizados
+ * @param {boolean} [forceOutsideWorkingHours=true] - Forzar envío incluso en horario laboral
+ * @returns {Promise<{success: boolean}>} - Resultado de la operación
+ */
+  async sendDisconnectionAlert(
+    disconnectedChannels,
+    recipients = null,
+    forceOutsideWorkingHours = true
+  ) {
+    if (!this.isConfigured()) {
+      console.error('El servicio SMS no está configurado correctamente');
+      return { success: false, reason: 'not_configured' };
+    }
+
+    if (!disconnectedChannels || disconnectedChannels.length === 0) {
+      console.log('No hay canales con eventos de conexión para reportar');
+      return { success: false, reason: 'no_channels' };
+    }
+
+    // Usar destinatarios personalizados o los específicos para alertas de desconexión o los predeterminados
+    const smsRecipients = recipients ||
+      this.config.recipients.disconnectionAlerts ||
+      this.config.recipients.default;
+
+    if (!smsRecipients || smsRecipients.length === 0) {
+      console.error('No hay destinatarios configurados para alertas de desconexión');
+      return { success: false, reason: 'no_recipients' };
+    }
+
+    // Crear mensaje
+    let message = `CONEXION: ${disconnectedChannels.length} sensor${disconnectedChannels.length > 1 ? 'es' : ''} con eventos. `;
+
+    // Obtener límite máximo de alertas detalladas desde configuración
+    const maxSizePerBatch = this.config.queue?.maxSizePerBatch || 3;
+
+    // Incluir detalles para los primeros N sensores
+    const detailLimit = Math.min(maxSizePerBatch, disconnectedChannels.length);
+    for (let i = 0; i < detailLimit; i++) {
+      const alert = disconnectedChannels[i];
+      const status = alert.lastEvent === "disconnected" ? "DESCONECT" : "CONECTADO";
+      message += `${alert.name}: ${status}. `;
+    }
+
+    // Si hay más de N, agregar resumen
+    if (disconnectedChannels.length > detailLimit) {
+      message += `Y ${disconnectedChannels.length - detailLimit} más. `;
+    }
+
+    // Añadir timestamp
+    const moment = require('moment-timezone');
+    message += `${moment().tz(this.config.timeZone).format("DD/MM HH:mm")}`;
+
+    // Enviar el SMS
+    const result = await this.sendSMS(message, smsRecipients, forceOutsideWorkingHours);
+
+    return {
+      success: result.success,
       sentCount: result.sentCount,
       failedCount: result.failedCount,
     };

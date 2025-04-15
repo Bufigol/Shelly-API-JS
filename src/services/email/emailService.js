@@ -330,15 +330,15 @@ class EmailService extends BaseAlertService {
   }
 
   /**
-   * Envía un correo con todos los canales fuera del rango de temperatura
-   * Solo envía FUERA del horario laboral a menos que se fuerce con forceOutsideWorkingHours
-   *
-   * @param {Array} outOfRangeChannels - Array de objetos con información de canales fuera de rango
-   * @param {Date} [currentTime=null] - Hora actual
-   * @param {Array} [recipients=null] - Lista de destinatarios
-   * @param {boolean} [forceOutsideWorkingHours=false] - Forzar envío incluso en horario laboral
-   * @returns {Promise<boolean>} true si el correo se envió exitosamente
-   */
+ * Envía un correo con todos los canales fuera del rango de temperatura
+ * Adaptado para funcionar con el nuevo formato de alertas agrupadas
+ *
+ * @param {Array} outOfRangeChannels - Array de objetos con información de canales fuera de rango
+ * @param {Date} [currentTime=null] - Hora actual
+ * @param {Array} [recipients=null] - Lista de destinatarios
+ * @param {boolean} [forceOutsideWorkingHours=false] - Forzar envío incluso en horario laboral
+ * @returns {Promise<boolean>} true si el correo se envió exitosamente
+ */
   async sendTemperatureRangeAlertsEmail(
     outOfRangeChannels,
     currentTime = null,
@@ -380,11 +380,16 @@ class EmailService extends BaseAlertService {
     let textContent = `Alerta: ${outOfRangeChannels.length} canales tienen temperaturas fuera de los límites establecidos.\n\n`;
     let htmlRows = "";
 
+    // CAMBIO: Adaptado para trabajar con el nuevo formato de alertas
     outOfRangeChannels.forEach((channel) => {
+      // Verificar si tenemos múltiples lecturas
+      const hasMultipleReadings = channel.allReadings && channel.allReadings.length > 1;
+
       const status =
         channel.temperature < channel.minThreshold
           ? "Por debajo"
           : "Por encima";
+
       const readTime = moment(channel.timestamp)
         .tz(this.timeZone)
         .format("DD/MM/YYYY HH:mm:ss");
@@ -395,15 +400,37 @@ class EmailService extends BaseAlertService {
       const statusColor =
         channel.temperature < channel.minThreshold ? "#0000FF" : "#FF0000";
 
+      // Crear fila principal
       htmlRows += `
-        <tr>
-          <td style="padding: 8px; border: 1px solid #ddd;">${channel.name}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${channel.temperature}°C</td>
-          <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${status}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${channel.minThreshold}°C - ${channel.maxThreshold}°C</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${readTime}</td>
-        </tr>
+          <tr>
+              <td style="padding: 8px; border: 1px solid #ddd;">${channel.name}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${channel.temperature}°C</td>
+              <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${status}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${channel.minThreshold}°C - ${channel.maxThreshold}°C</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${readTime}</td>
+          </tr>
       `;
+
+      // Si hay múltiples lecturas, agregar detalles de cada una (opcional)
+      if (hasMultipleReadings) {
+        channel.allReadings.forEach((reading, index) => {
+          if (index === channel.allReadings.length - 1) return; // Omitir la última que ya está en la fila principal
+
+          const readingStatus = reading.temperature < reading.minThreshold ? "Por debajo" : "Por encima";
+          const readingColor = reading.temperature < reading.minThreshold ? "#0000FF" : "#FF0000";
+          const readingTime = moment(reading.timestamp).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss");
+
+          htmlRows += `
+                  <tr style="background-color: #f9f9f9;">
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${channel.name} (lectura previa)</td>
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${reading.temperature}°C</td>
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; color: ${readingColor}; font-weight: bold; font-size: 0.9em;">${readingStatus}</td>
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${reading.minThreshold}°C - ${reading.maxThreshold}°C</td>
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${readingTime}</td>
+                  </tr>
+              `;
+        });
+      }
     });
 
     const message = {
@@ -412,28 +439,28 @@ class EmailService extends BaseAlertService {
       subject: `Alerta de Temperatura - ${outOfRangeChannels.length} canales fuera de rango`,
       text: textContent,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-          <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Temperatura</h2>
-          <p>Se han detectado <strong>${outOfRangeChannels.length} canales</strong> con temperaturas fuera de los límites establecidos.</p>
-          <p>Fecha y hora de la alerta: ${formattedTime}</p>
-          
-          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-            <thead style="background-color: #f2f2f2;">
-              <tr>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Temperatura</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Estado</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Rango Permitido</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Lectura</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${htmlRows}
-            </tbody>
-          </table>
-          
-          <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente. Por favor, tome las medidas necesarias.</p>
-        </div>
+          <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+              <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Temperatura</h2>
+              <p>Se han detectado <strong>${outOfRangeChannels.length} canales</strong> con temperaturas fuera de los límites establecidos.</p>
+              <p>Fecha y hora de la alerta: ${formattedTime}</p>
+              
+              <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                  <thead style="background-color: #f2f2f2;">
+                      <tr>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Temperatura</th>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Estado</th>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Rango Permitido</th>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Lectura</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${htmlRows}
+                  </tbody>
+              </table>
+              
+              <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente. Por favor, tome las medidas necesarias.</p>
+          </div>
       `,
     };
 
@@ -461,9 +488,12 @@ class EmailService extends BaseAlertService {
   }
 
   /**
-   * Envía un correo con todos los canales desconectados
-   * Se envía independientemente del horario
-   */
+ * Envía un correo con todos los canales desconectados
+ * Adaptado para funcionar con el nuevo formato de alertas agrupadas
+ * @param {Array} disconnectedChannels - Canales desconectados
+ * @param {Array} [recipients=null] - Destinatarios personalizados
+ * @returns {Promise<boolean>} true si el envío fue exitoso
+ */
   async sendDisconnectedSensorsEmail(disconnectedChannels, recipients = null) {
     if (!this.isConfigured() || !this.initialized) {
       return false;
@@ -494,67 +524,96 @@ class EmailService extends BaseAlertService {
     const formattedTime = moment()
       .tz(this.timeZone)
       .format("DD/MM/YYYY HH:mm:ss");
-    let textContent = `Alerta: ${disconnectedChannels.length} sensores de temperatura están desconectados.\n\n`;
+    let textContent = `Alerta: ${disconnectedChannels.length} sensores de temperatura tienen eventos de conexión reportados.\n\n`;
     let htmlRows = "";
 
+    // CAMBIO: Adaptado para el nuevo formato con eventos agrupados
     disconnectedChannels.forEach((channel) => {
-      const lastConnectionFormatted = moment(channel.lastConnectionTime)
-        .tz(this.timeZone)
-        .format("DD/MM/YYYY HH:mm:ss");
-      const disconnectionDuration = moment.duration(
-        moment().diff(moment(channel.lastConnectionTime))
-      );
-      const durationText = `${Math.floor(
-        disconnectionDuration.asHours()
-      )}h ${disconnectionDuration.minutes()}m`;
+      // Determinar si tuvo eventos de desconexión y reconexión
+      const hadDisconnection = channel.disconnectTime !== undefined;
+      const hadReconnection = channel.reconnectTime !== undefined;
 
-      textContent += `- ${channel.name}: Sin conexión desde ${lastConnectionFormatted} (${durationText}). Límite de desconexión configurado: ${channel.disconnectionInterval} minutos\n`;
+      // Formatear tiempos
+      const disconnectFormatted = hadDisconnection ?
+        moment(channel.disconnectTime).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss") :
+        "No en este período";
+
+      const reconnectFormatted = hadReconnection ?
+        moment(channel.reconnectTime).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss") :
+        "No en este período";
+
+      // Determinar estado final
+      const finalStatus = channel.lastEvent === "disconnected" ?
+        "DESCONECTADO" : "CONECTADO";
+
+      // Texto plano del mensaje
+      textContent += `- ${channel.name}: Estado actual: ${finalStatus}\n`;
+      textContent += `  Desconexión: ${disconnectFormatted}\n`;
+      textContent += `  Reconexión: ${reconnectFormatted}\n\n`;
+
+      // Formatear fila HTML
+      const statusColor = channel.lastEvent === "disconnected" ? "#FF0000" : "#00AA00";
 
       htmlRows += `
-        <tr>
-          <td style="padding: 8px; border: 1px solid #ddd;">${channel.name}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${lastConnectionFormatted}</td>
-          <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${durationText}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${channel.disconnectionInterval} minutos</td>
-        </tr>
+          <tr>
+              <td style="padding: 8px; border: 1px solid #ddd;">${channel.name}</td>
+              <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${finalStatus}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${disconnectFormatted}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${reconnectFormatted}</td>
+          </tr>
       `;
+
+      // Añadir detalles de cada evento (opcional)
+      if (channel.events && channel.events.length > 1) {
+        channel.events.forEach((event, index) => {
+          const eventTime = moment(event.timestamp).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss");
+          const eventColor = event.event === "disconnected" ? "#FF0000" : "#00AA00";
+
+          htmlRows += `
+                  <tr style="background-color: #f9f9f9;">
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${channel.name} (evento ${index + 1})</td>
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; color: ${eventColor}; font-weight: bold; font-size: 0.9em;">${event.event.toUpperCase()}</td>
+                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;" colspan="2">${eventTime}</td>
+                  </tr>
+              `;
+        });
+      }
     });
 
     const message = {
       to: emailRecipients,
       from: this.fromEmail,
-      subject: `Alerta de Sensores Desconectados - ${disconnectedChannels.length} dispositivos sin conexión`,
+      subject: `Alerta de Conexión de Sensores - ${disconnectedChannels.length} dispositivos con eventos reportados`,
       text: textContent,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-          <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Sensores Desconectados</h2>
-          <p>Se han detectado <strong>${disconnectedChannels.length} sensores</strong> de temperatura sin conexión.</p>
-          <p>Fecha y hora de la alerta: ${formattedTime}</p>
-          
-          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-            <thead style="background-color: #f2f2f2;">
-              <tr>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Última Conexión</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Tiempo Sin Conexión</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Límite Configurado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${htmlRows}
-            </tbody>
-          </table>
-          
-          <p style="margin-top: 20px; color: #D32F2F; font-weight: bold;">Se requiere atención inmediata para restablecer la conexión de estos sensores.</p>
-          <p style="font-style: italic;">Esta alerta se genera automáticamente y se envía independientemente del horario laboral.</p>
-        </div>
+          <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+              <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Conexión de Sensores</h2>
+              <p>Se han detectado <strong>${disconnectedChannels.length} sensores</strong> con eventos de conexión o desconexión.</p>
+              <p>Fecha y hora de la alerta: ${formattedTime}</p>
+              
+              <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                  <thead style="background-color: #f2f2f2;">
+                      <tr>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Estado Actual</th>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Desconexión</th>
+                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Reconexión</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${htmlRows}
+                  </tbody>
+              </table>
+              
+              <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente y se envía fuera del horario laboral.</p>
+          </div>
       `,
     };
 
     try {
       await this.sgMail.send(message);
       console.log(
-        `Correo de alerta de sensores desconectados enviado a: ${emailRecipients.join(
+        `Correo de alerta de conexión de sensores enviado a: ${emailRecipients.join(
           ", "
         )}`
       );
