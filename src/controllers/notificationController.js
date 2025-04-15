@@ -6,6 +6,7 @@ const config = require("../config/js_files/config-loader");
 const emailService = require("../services/email/emailService");
 const smsService = require("../services/sms/smsService");
 
+
 class NotificationController {
     constructor() {
         // Cargar configuración global
@@ -305,123 +306,154 @@ class NotificationController {
     }
 
     /**
-     * Procesa las alertas de desconexión para una hora específica
-     * @param {string} hourKey - Clave de hora en formato "YYYY-MM-DD-HH"
-     */
+ * Procesa las alertas de desconexión para una hora específica
+ * @param {string} hourKey - Clave de hora en formato "YYYY-MM-DD-HH"
+ */
     async processHourlyDisconnectionAlerts(hourKey) {
-        const alertsForHour = this.disconnectionAlertsByHour[hourKey] || {};
-        const channelIds = Object.keys(alertsForHour);
+        try {
+            const alertsForHour = this.disconnectionAlertsByHour[hourKey] || {};
+            const channelIds = Object.keys(alertsForHour);
 
-        if (channelIds.length === 0) {
-            console.log(`No hay alertas de desconexión para la hora ${hourKey}`);
-            return;
-        }
-
-        console.log(`Procesando ${channelIds.length} canales con alertas de desconexión para la hora ${hourKey}`);
-
-        // Preparar los datos para enviar por email/SMS
-        const formattedAlerts = [];
-
-        for (const channelId of channelIds) {
-            const events = alertsForHour[channelId] || [];
-            if (events.length === 0) continue;
-
-            // Obtener información del canal
-            const channelName = events[0].channelName || `Canal ${channelId}`;
-
-            // Analizar los eventos para determinar el estado final
-            const lastEvent = events[events.length - 1];
-            const disconnectTime = events.find(e => e.event === "disconnected")?.timestamp;
-            const reconnectTime = events.find(e => e.event === "connected")?.timestamp;
-
-            formattedAlerts.push({
-                name: channelName,
-                channelId: channelId,
-                events: events,
-                lastEvent: lastEvent.event,
-                disconnectTime: disconnectTime,
-                reconnectTime: reconnectTime,
-                lastConnectionTime: lastEvent.timestamp
-            });
-        }
-
-        if (formattedAlerts.length > 0) {
-            // Enviar por Email
-            try {
-                const emailResult = await emailService.sendDisconnectedSensorsEmail(formattedAlerts);
-                console.log(`Email de alertas de desconexión enviado: ${emailResult}`);
-            } catch (error) {
-                console.error("Error al enviar email de desconexión:", error);
+            if (channelIds.length === 0) {
+                console.log(`No hay alertas de desconexión para la hora ${hourKey}`);
+                return;
             }
 
-            // Enviar por SMS
-            try {
-                const smsMessage = this.formatDisconnectionAlertsForSMS(formattedAlerts);
-                const smsResult = await smsService.sendSMS(smsMessage, null, true);
-                console.log(`SMS de alertas de desconexión enviado: ${smsResult.success}`);
-            } catch (error) {
-                console.error("Error al enviar SMS de desconexión:", error);
+            console.log(`Procesando ${channelIds.length} canales con alertas de desconexión para la hora ${hourKey}`);
+
+            // Preparar los datos para enviar por email/SMS
+            const formattedAlerts = [];
+
+            for (const channelId of channelIds) {
+                const events = alertsForHour[channelId] || [];
+                if (events.length === 0) continue;
+
+                // Obtener información del canal
+                const channelName = events[0].channelName || `Canal ${channelId}`;
+
+                // Detectar eventos de desconexión y reconexión
+                let disconnectTime = null;
+                let reconnectTime = null;
+
+                // Analizar la secuencia de eventos para encontrar desconexiones y reconexiones
+                for (const event of events) {
+                    if (event.event === "disconnected" && !disconnectTime) {
+                        disconnectTime = event.timestamp;
+                    } else if (event.event === "connected" && disconnectTime && !reconnectTime) {
+                        reconnectTime = event.timestamp;
+                    }
+                }
+
+                // Determinar el estado final según el último evento
+                const lastEvent = events[events.length - 1];
+
+                formattedAlerts.push({
+                    name: channelName,
+                    channelId: channelId,
+                    events: events,
+                    lastEvent: lastEvent.event,
+                    disconnectTime: disconnectTime,
+                    reconnectTime: reconnectTime,
+                    lastConnectionTime: lastEvent.timestamp
+                });
             }
+
+            if (formattedAlerts.length > 0) {
+                // Enviar por Email
+                try {
+                    const emailResult = await emailService.sendDisconnectedSensorsEmail(formattedAlerts);
+                    console.log(`Email de alertas de desconexión enviado: ${emailResult ? 'éxito' : 'fallo'}`);
+                } catch (error) {
+                    console.error("Error al enviar email de desconexión:", error);
+                    this.logError(`Error al enviar email de desconexión: ${error.message}`);
+                }
+
+                // Enviar por SMS
+                try {
+                    const smsResult = await smsService.sendDisconnectionAlert(formattedAlerts, null, true);
+                    console.log(`SMS de alertas de desconexión enviado: ${smsResult.success ? 'éxito' : 'fallo'}`);
+                } catch (error) {
+                    console.error("Error al enviar SMS de desconexión:", error);
+                    this.logError(`Error al enviar SMS de desconexión: ${error.message}`);
+                }
+            }
+        } catch (error) {
+            console.error(`Error al procesar alertas de desconexión para la hora ${hourKey}:`, error);
+            this.logError(`Error al procesar alertas de desconexión para la hora ${hourKey}: ${error.message}`);
+            throw error; // Relanzar para manejo en el nivel superior
         }
     }
 
     /**
-     * Procesa las alertas de temperatura para una hora específica
-     * @param {string} hourKey - Clave de hora en formato "YYYY-MM-DD-HH"
-     */
+ * Procesa las alertas de temperatura para una hora específica
+ * @param {string} hourKey - Clave de hora en formato "YYYY-MM-DD-HH"
+ */
     async processHourlyTemperatureAlerts(hourKey) {
-        const alertsForHour = this.temperatureAlertsByHour[hourKey] || {};
-        const channelIds = Object.keys(alertsForHour);
+        try {
+            const alertsForHour = this.temperatureAlertsByHour[hourKey] || {};
+            const channelIds = Object.keys(alertsForHour);
 
-        if (channelIds.length === 0) {
-            console.log(`No hay alertas de temperatura para la hora ${hourKey}`);
-            return;
-        }
+            if (channelIds.length === 0) {
+                console.log(`No hay alertas de temperatura para la hora ${hourKey}`);
+                return;
+            }
 
-        console.log(`Procesando ${channelIds.length} canales con alertas de temperatura para la hora ${hourKey}`);
+            console.log(`Procesando ${channelIds.length} canales con alertas de temperatura para la hora ${hourKey}`);
 
-        // Preparar los datos para enviar por email/SMS
-        const formattedAlerts = [];
+            // Preparar los datos para enviar por email/SMS
+            const formattedAlerts = [];
 
-        for (const channelId of channelIds) {
-            const alerts = alertsForHour[channelId] || [];
-            if (alerts.length === 0) continue;
+            for (const channelId of channelIds) {
+                const alerts = alertsForHour[channelId] || [];
+                if (alerts.length === 0) continue;
 
-            // Usar la última alerta para el resumen
-            const lastAlert = alerts[alerts.length - 1];
-
-            formattedAlerts.push({
-                name: lastAlert.channelName,
-                temperature: lastAlert.temperature,
-                timestamp: lastAlert.timestamp,
-                minThreshold: lastAlert.minThreshold,
-                maxThreshold: lastAlert.maxThreshold,
-                allReadings: alerts // Incluir todas las lecturas para detalles
-            });
-        }
-
-        if (formattedAlerts.length > 0) {
-            // Enviar por Email
-            try {
-                const emailResult = await emailService.sendTemperatureRangeAlertsEmail(
-                    formattedAlerts,
-                    new Date(),
-                    null, // Usar destinatarios predeterminados
-                    true  // Forzar envío incluso si estamos en horario laboral (ya verificamos antes)
+                // Ordenar alertas por timestamp para asegurar que la última sea la más reciente
+                const sortedAlerts = [...alerts].sort((a, b) =>
+                    new Date(a.timestamp || a.detectedAt).getTime() -
+                    new Date(b.timestamp || b.detectedAt).getTime()
                 );
-                console.log(`Email de alertas de temperatura enviado: ${emailResult}`);
-            } catch (error) {
-                console.error("Error al enviar email de temperatura:", error);
+
+                // Usar la última alerta para el resumen
+                const lastAlert = sortedAlerts[sortedAlerts.length - 1];
+
+                formattedAlerts.push({
+                    name: lastAlert.channelName,
+                    temperature: lastAlert.temperature,
+                    timestamp: lastAlert.timestamp || lastAlert.detectedAt,
+                    minThreshold: lastAlert.minThreshold,
+                    maxThreshold: lastAlert.maxThreshold,
+                    allReadings: sortedAlerts // Incluir todas las lecturas para detalles
+                });
             }
 
-            // Enviar por SMS
-            try {
-                const smsMessage = this.formatTemperatureAlertsForSMS(formattedAlerts);
-                const smsResult = await smsService.sendSMS(smsMessage, null, true);
-                console.log(`SMS de alertas de temperatura enviado: ${smsResult.success}`);
-            } catch (error) {
-                console.error("Error al enviar SMS de temperatura:", error);
+            if (formattedAlerts.length > 0) {
+                // Enviar por Email
+                try {
+                    const emailResult = await emailService.sendTemperatureRangeAlertsEmail(
+                        formattedAlerts,
+                        new Date(),
+                        null, // Usar destinatarios predeterminados
+                        true  // Forzar envío incluso si estamos en horario laboral (ya verificamos antes)
+                    );
+                    console.log(`Email de alertas de temperatura enviado: ${emailResult ? 'éxito' : 'fallo'}`);
+                } catch (error) {
+                    console.error("Error al enviar email de temperatura:", error);
+                    this.logError(`Error al enviar email de temperatura: ${error.message}`);
+                }
+
+                // Enviar por SMS
+                try {
+                    const smsResult = await smsService.sendTemperatureAlert(formattedAlerts, null, true);
+                    console.log(`SMS de alertas de temperatura enviado: ${smsResult.success ? 'éxito' : 'fallo'}`);
+                } catch (error) {
+                    console.error("Error al enviar SMS de temperatura:", error);
+                    this.logError(`Error al enviar SMS de temperatura: ${error.message}`);
+                }
             }
+        } catch (error) {
+            console.error(`Error al procesar alertas de temperatura para la hora ${hourKey}:`, error);
+            this.logError(`Error al procesar alertas de temperatura para la hora ${hourKey}: ${error.message}`);
+            throw error; // Relanzar para manejo en el nivel superior
         }
     }
 
