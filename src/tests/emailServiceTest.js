@@ -1,5 +1,5 @@
 // src/tests/emailServiceTest.js
-const emailService = require('../services/emailService');
+const emailService = require('../services/email/emailService');
 const moment = require('moment-timezone');
 
 /**
