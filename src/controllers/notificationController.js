@@ -71,9 +71,8 @@ class NotificationController {
     }
 
     /**
-      * Configura los timers para procesar alertas y limpiar contadores
-      * Modificado para incluir el timer por hora
-      */
+     * Configura los timers para procesar alertas y limpiar contadores
+     */
     setupTimers() {
         // NUEVO: Timer para procesar alertas acumuladas cada hora
         this.setupHourlyAlertProcessing();
@@ -89,6 +88,7 @@ class NotificationController {
 
     /**
      * Configura el timer para procesar alertas cada hora
+     * Este método programa un timer para que se ejecute al inicio de cada hora
      */
     setupHourlyAlertProcessing() {
         try {
@@ -143,11 +143,30 @@ class NotificationController {
             }, 60 * 1000); // Intentar de nuevo en 1 minuto
         }
     }
+
     /**
-   * NUEVO: Genera una clave para el diccionario de alertas por hora
-   * @param {Date} date - Fecha para la cual generar la clave
-   * @returns {string} - Clave en formato "YYYY-MM-DD-HH"
-   */
+     * Detiene y limpia los timers de procesamiento de alertas
+     * Útil para reinicio o recarga de configuración
+     */
+    cleanupTimers() {
+        if (this.hourlyProcessingTimer) {
+            clearTimeout(this.hourlyProcessingTimer);
+            this.hourlyProcessingTimer = null;
+            console.log("Timer de procesamiento inicial de alertas detenido");
+        }
+
+        if (this.recurringHourlyTimer) {
+            clearInterval(this.recurringHourlyTimer);
+            this.recurringHourlyTimer = null;
+            console.log("Timer recurrente de procesamiento de alertas detenido");
+        }
+    }
+
+    /**
+     * Genera una clave para el diccionario de alertas por hora
+     * @param {Date} date - Fecha para la cual generar la clave
+     * @returns {string} - Clave en formato "YYYY-MM-DD-HH"
+     */
     getHourKey(date = null) {
         const d = date || new Date();
         const localTime = moment(d).tz(this.timeZone);
@@ -155,7 +174,36 @@ class NotificationController {
     }
 
     /**
-     * NUEVO: Procesa las alertas acumuladas en la hora anterior
+     * Verifica si es horario laboral según la configuración centralizada
+     * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar
+     * @returns {boolean} true si es horario laboral, false si no
+     */
+    isWithinWorkingHours(checkTime = null) {
+        const now = moment(checkTime || new Date()).tz(this.timeZone);
+        const hourDecimal = now.hour() + now.minute() / 60;
+        const dayOfWeek = now.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
+
+        // Domingo siempre fuera de horario laboral
+        if (dayOfWeek === 0) return false;
+
+        // Sábado tiene horario especial
+        if (dayOfWeek === 6) {
+            return (
+                hourDecimal >= this.workingHours.saturday.start &&
+                hourDecimal <= this.workingHours.saturday.end
+            );
+        }
+
+        // Lunes a viernes
+        return (
+            hourDecimal >= this.workingHours.weekdays.start &&
+            hourDecimal <= this.workingHours.weekdays.end
+        );
+    }
+
+    /**
+     * Procesa las alertas acumuladas en la hora anterior
+     * @returns {Promise<void>}
      */
     async processHourlyAlerts() {
         try {
@@ -257,7 +305,7 @@ class NotificationController {
     }
 
     /**
-     * NUEVO: Procesa las alertas de desconexión para una hora específica
+     * Procesa las alertas de desconexión para una hora específica
      * @param {string} hourKey - Clave de hora en formato "YYYY-MM-DD-HH"
      */
     async processHourlyDisconnectionAlerts(hourKey) {
@@ -318,7 +366,7 @@ class NotificationController {
     }
 
     /**
-     * NUEVO: Procesa las alertas de temperatura para una hora específica
+     * Procesa las alertas de temperatura para una hora específica
      * @param {string} hourKey - Clave de hora en formato "YYYY-MM-DD-HH"
      */
     async processHourlyTemperatureAlerts(hourKey) {
@@ -378,7 +426,7 @@ class NotificationController {
     }
 
     /**
-     * NUEVO: Limpia las alertas antiguas por hora
+     * Limpia las alertas antiguas por hora
      */
     cleanupOldHourlyAlerts() {
         const now = new Date();
@@ -409,7 +457,7 @@ class NotificationController {
     }
 
     /**
-     * NUEVO: Limpia las alertas de una hora específica después de procesarlas
+     * Limpia las alertas de una hora específica después de procesarlas
      * @param {string} hourKey - Clave de hora en formato "YYYY-MM-DD-HH"
      */
     cleanupProcessedHourlyAlerts(hourKey) {
@@ -425,37 +473,106 @@ class NotificationController {
     }
 
     /**
- * Verifica si es horario laboral según la configuración centralizada
- * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar
- * @returns {boolean} true si es horario laboral, false si no
- */
-    isWithinWorkingHours(checkTime = null) {
-        const now = moment(checkTime || new Date()).tz(this.timeZone);
-        const hourDecimal = now.hour() + now.minute() / 60;
-        const dayOfWeek = now.day(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
+     * Procesa un evento de cambio de estado de conexión
+     * Modificado para acumular alertas por hora
+     * @param {string} channelId - ID del canal 
+     * @param {string} channelName - Nombre del canal
+     * @param {boolean} isOnline - Si el canal está en línea
+     * @param {boolean} wasOffline - Si el canal estaba fuera de línea anteriormente
+     * @param {Date} outOfRangeSince - Desde cuándo está fuera de línea
+     * @param {Date|null} lastAlertSent - Cuándo se envió la última alerta
+     * @param {boolean} isOperational - Si el canal está operativo
+     * @returns {Promise<void>}
+     */
+    async processConnectionStatusChange(
+        channelId,
+        channelName,
+        isOnline,
+        wasOffline,
+        outOfRangeSince,
+        lastAlertSent,
+        isOperational
+    ) {
+        try {
+            // IMPORTANTE: Si el canal no está operativo, ignorarlo
+            if (!isOperational) {
+                console.log(`Canal ${channelName} (${channelId}) no operativo. Ignorando cambio de conexión.`);
+                return;
+            }
 
-        // Domingo siempre fuera de horario laboral
-        if (dayOfWeek === 0) return false;
+            const now = new Date();
+            const hourKey = this.getHourKey(now);
 
-        // Sábado tiene horario especial
-        if (dayOfWeek === 6) {
-            return (
-                hourDecimal >= this.workingHours.saturday.start &&
-                hourDecimal <= this.workingHours.saturday.end
-            );
+            // Inicializar estructura para este canal y hora si no existe
+            if (!this.disconnectionAlertsByHour[hourKey]) {
+                this.disconnectionAlertsByHour[hourKey] = {};
+            }
+
+            if (!this.disconnectionAlertsByHour[hourKey][channelId]) {
+                this.disconnectionAlertsByHour[hourKey][channelId] = [];
+            }
+
+            // Determinar el tipo de evento
+            const eventType = isOnline ? "connected" : "disconnected";
+
+            // Registrar el evento
+            this.disconnectionAlertsByHour[hourKey][channelId].push({
+                channelId,
+                channelName,
+                event: eventType,
+                timestamp: now.toISOString(),
+                outOfRangeSince: outOfRangeSince ? new Date(outOfRangeSince).toISOString() : null
+            });
+
+            console.log(`Evento de ${eventType} para canal ${channelName} (${channelId}) registrado para la hora ${hourKey}`);
+
+            // Mantener comportamiento para compatibilidad con sistema anterior
+            if (!isOnline) {
+                // Si está offline
+                if (wasOffline) {
+                    // Ya estaba offline, verificar si debemos enviar una alerta
+                    if (outOfRangeSince) {
+                        const minutesOffline = (now - new Date(outOfRangeSince)) / (60 * 1000);
+
+                        // Verificar si ha estado desconectado por el tiempo umbral
+                        if (minutesOffline >= this.disconnectionAlertThreshold) {
+                            // Verificar si ya enviamos una alerta y si ha pasado al menos el tiempo umbral desde la última
+                            const shouldSendAlert = !lastAlertSent ||
+                                ((now - new Date(lastAlertSent)) / (60 * 1000) >= this.disconnectionAlertThreshold);
+
+                            if (shouldSendAlert) {
+                                // Solo actualizar timestamp de última alerta en la base de datos
+                                const connection = await this.pool.getConnection();
+                                try {
+                                    await connection.query(
+                                        "UPDATE channels_ubibot SET last_alert_sent = ? WHERE channel_id = ?",
+                                        [now, channelId]
+                                    );
+                                } finally {
+                                    connection.release();
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Acaba de quedar offline, solo registrarlo (la actualización de la BD se hace en ubibotService)
+                    console.log(`Canal ${channelName} (${channelId}) ha quedado fuera de línea.`);
+                }
+            } else if (wasOffline) {
+                // El canal ha vuelto a estar online después de estar offline
+                console.log(`Canal ${channelName} (${channelId}) ha vuelto a estar en línea.`);
+            }
+        } catch (error) {
+            console.error(`Error al procesar cambio de estado de conexión para ${channelId}:`, error.message);
+            this.logError(`Error al procesar cambio de estado de conexión para ${channelId}: ${error.message}`);
         }
-
-        // Lunes a viernes
-        return (
-            hourDecimal >= this.workingHours.weekdays.start &&
-            hourDecimal <= this.workingHours.weekdays.end
-        );
     }
 
     /**
      * Procesa una nueva lectura de temperatura
-     * @param {string} channelId - ID del canal/sensor
-     * @param {string} channelName - Nombre del canal/sensor
+     * Modificado para acumular alertas por hora
+     * @param {string} channelId - ID del canal
+     * @param {string} channelName - Nombre del canal
      * @param {number} temperature - Temperatura detectada
      * @param {string} timestamp - Timestamp de la lectura
      * @param {number} minThreshold - Umbral mínimo de temperatura
@@ -554,361 +671,36 @@ class NotificationController {
     }
 
     /**
-     * Procesa un evento de cambio de estado de conexión
-     * @param {string} channelId - ID del canal 
-     * @param {string} channelName - Nombre del canal
-     * @param {boolean} isOnline - Si el canal está en línea
-     * @param {boolean} wasOffline - Si el canal estaba fuera de línea anteriormente
-     * @param {Date} outOfRangeSince - Desde cuándo está fuera de línea
-     * @param {Date|null} lastAlertSent - Cuándo se envió la última alerta
-     * @param {boolean} isOperational - Si el canal está operativo
-     * @returns {Promise<void>}
+     * Limpia contadores antiguos
      */
-    async processConnectionStatusChange(
-        channelId,
-        channelName,
-        isOnline,
-        wasOffline,
-        outOfRangeSince,
-        lastAlertSent,
-        isOperational
-    ) {
-        try {
-            // IMPORTANTE: Si el canal no está operativo, ignorarlo
-            if (!isOperational) {
-                console.log(`Canal ${channelName} (${channelId}) no operativo. Ignorando cambio de conexión.`);
-                return;
+    cleanupOldCounters() {
+        const now = new Date();
+        const cutoffTime = new Date(now.getTime() - (this.cleanupInterval * 60 * 1000));
+
+        let cleanupCount = 0;
+
+        // Limpiar contadores de temperatura
+        for (const channelId in this.tempAlertCounters) {
+            const counter = this.tempAlertCounters[channelId];
+            if (counter.lastUpdate < cutoffTime) {
+                delete this.tempAlertCounters[channelId];
+                cleanupCount++;
             }
+        }
 
-            const now = new Date();
-            const hourKey = this.getHourKey(now);
-
-            // Inicializar estructura para este canal y hora si no existe
-            if (!this.disconnectionAlertsByHour[hourKey]) {
-                this.disconnectionAlertsByHour[hourKey] = {};
-            }
-
-            if (!this.disconnectionAlertsByHour[hourKey][channelId]) {
-                this.disconnectionAlertsByHour[hourKey][channelId] = [];
-            }
-
-            // Determinar el tipo de evento
-            const eventType = isOnline ? "connected" : "disconnected";
-
-            // Registrar el evento
-            this.disconnectionAlertsByHour[hourKey][channelId].push({
-                channelId,
-                channelName,
-                event: eventType,
-                timestamp: now.toISOString(),
-                outOfRangeSince: outOfRangeSince ? new Date(outOfRangeSince).toISOString() : null
-            });
-
-            console.log(`Evento de ${eventType} para canal ${channelName} (${channelId}) registrado para la hora ${hourKey}`);
-
-            // Mantener comportamiento para compatibilidad con sistema anterior
-            if (!isOnline) {
-                // Si está offline
-                if (wasOffline) {
-                    // Ya estaba offline, verificar si debemos enviar una alerta
-                    if (outOfRangeSince) {
-                        const minutesOffline = (now - new Date(outOfRangeSince)) / (60 * 1000);
-
-                        // Verificar si ha estado desconectado por el tiempo umbral
-                        if (minutesOffline >= this.disconnectionAlertThreshold) {
-                            // Verificar si ya enviamos una alerta y si ha pasado al menos el tiempo umbral desde la última
-                            const shouldSendAlert = !lastAlertSent ||
-                                ((now - new Date(lastAlertSent)) / (60 * 1000) >= this.disconnectionAlertThreshold);
-
-                            if (shouldSendAlert) {
-                                // Solo actualizar timestamp de última alerta en la base de datos
-                                const connection = await this.pool.getConnection();
-                                try {
-                                    await connection.query(
-                                        "UPDATE channels_ubibot SET last_alert_sent = ? WHERE channel_id = ?",
-                                        [now, channelId]
-                                    );
-                                } finally {
-                                    connection.release();
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Acaba de quedar offline, solo registrarlo (la actualización de la BD se hace en ubibotService)
-                    console.log(`Canal ${channelName} (${channelId}) ha quedado fuera de línea.`);
-                }
-            } else if (wasOffline) {
-                // El canal ha vuelto a estar online después de estar offline
-                console.log(`Canal ${channelName} (${channelId}) ha vuelto a estar en línea.`);
-            }
-        } catch (error) {
-            console.error(`Error al procesar cambio de estado de conexión para ${channelId}:`, error.message);
-            this.logError(`Error al procesar cambio de estado de conexión para ${channelId}: ${error.message}`);
+        if (cleanupCount > 0) {
+            console.log(`Limpiados ${cleanupCount} contadores de temperatura antiguos.`);
         }
     }
-
-
     /**
-     * Añade una alerta de temperatura al buffer
-     * @param {string} channelId - ID del canal
-     * @param {string} channelName - Nombre del canal
-     * @param {Array} measurements - Mediciones de temperatura que causaron la alerta
-     * @returns {Promise<void>}
-     */
-    async addToTemperatureAlertBuffer(channelId, channelName, measurements) {
-        this.temperatureAlertBuffer.alerts.push({
-            channelId,
-            channelName,
-            measurements: [...measurements], // Copia para evitar modificaciones
-            addedAt: new Date()
-        });
-
-        console.log(`Alerta de temperatura para ${channelName} añadida al buffer. Total: ${this.temperatureAlertBuffer.alerts.length}`);
-
-        // Si no estamos en horario laboral, procesar inmediatamente
-        if (!this.isWithinWorkingHours()) {
-            await this.processBufferedTemperatureAlerts();
-        }
-    }
-
-    /**
-     * Añade una alerta de desconexión al buffer
-     * @param {string} channelId - ID del canal
-     * @param {string} channelName - Nombre del canal
-     * @param {Date} outOfRangeSince - Desde cuándo está fuera de línea
-     * @param {number} minutesOffline - Minutos que ha estado desconectado
-     * @returns {Promise<void>}
-     */
-    async addToDisconnectionAlertBuffer(channelId, channelName, outOfRangeSince, minutesOffline) {
-        this.disconnectionAlertBuffer.alerts.push({
-            channelId,
-            channelName,
-            outOfRangeSince,
-            minutesOffline,
-            addedAt: new Date()
-        });
-
-        console.log(`Alerta de desconexión para ${channelName} añadida al buffer. Total: ${this.disconnectionAlertBuffer.alerts.length}`);
-
-        // Si no estamos en horario laboral, procesar inmediatamente
-        if (!this.isWithinWorkingHours()) {
-            await this.processBufferedDisconnectionAlerts();
-        }
-    }
-
-    /**
-     * Procesa las alertas de temperatura en el buffer
-     * @returns {Promise<void>}
-     */
-    async processBufferedTemperatureAlerts() {
-        // Si no hay alertas, no hacer nada
-        if (this.temperatureAlertBuffer.alerts.length === 0) {
-            return;
-        }
-
-        // Si estamos en horario laboral, posponer el procesamiento
-        if (this.isWithinWorkingHours()) {
-            console.log("En horario laboral. Posponiendo procesamiento de alertas de temperatura.");
-            return;
-        }
-
-        try {
-            const alerts = [...this.temperatureAlertBuffer.alerts];
-            console.log(`Procesando ${alerts.length} alertas de temperatura.`);
-
-            // Preparar datos para la notificación
-            const formattedAlerts = alerts.map(alert => {
-                // Usar solo la última medición para el resumen
-                const latestMeasurement = alert.measurements[alert.measurements.length - 1];
-                return {
-                    name: alert.channelName,
-                    temperature: latestMeasurement.temperature,
-                    timestamp: latestMeasurement.timestamp,
-                    minThreshold: latestMeasurement.minThreshold,
-                    maxThreshold: latestMeasurement.maxThreshold
-                };
-            });
-
-            // Enviar alertas por email y SMS
-            const result = await this.sendTemperatureAlerts(formattedAlerts);
-
-            if (result.success) {
-                console.log(`Alertas de temperatura enviadas correctamente: ${alerts.length}`);
-                this.logToDatabase(`Alertas de temperatura enviadas: ${alerts.length} canales`);
-
-                // Limpiar el buffer
-                this.temperatureAlertBuffer.alerts = [];
-                this.temperatureAlertBuffer.timestamp = new Date();
-            } else {
-                console.error("Error al enviar alertas de temperatura:", result.error);
-                this.logError(`Error al enviar alertas de temperatura: ${result.error}`);
-            }
-        } catch (error) {
-            console.error("Error al procesar alertas de temperatura:", error);
-            this.logError(`Error al procesar alertas de temperatura: ${error.message}`);
-        }
-    }
-
-    /**
-     * Procesa las alertas de desconexión en el buffer
-     * @returns {Promise<void>}
-     */
-    async processBufferedDisconnectionAlerts() {
-        // Si no hay alertas, no hacer nada
-        if (this.disconnectionAlertBuffer.alerts.length === 0) {
-            return;
-        }
-
-        // Si estamos en horario laboral, posponer el procesamiento
-        if (this.isWithinWorkingHours()) {
-            console.log("En horario laboral. Posponiendo procesamiento de alertas de desconexión.");
-            return;
-        }
-
-        try {
-            const alerts = [...this.disconnectionAlertBuffer.alerts];
-            console.log(`Procesando ${alerts.length} alertas de desconexión.`);
-
-            // Preparar datos para la notificación
-            const formattedAlerts = alerts.map(alert => {
-                return {
-                    name: alert.channelName,
-                    lastConnectionTime: alert.outOfRangeSince,
-                    disconnectionInterval: Math.round(alert.minutesOffline)
-                };
-            });
-
-            // Enviar alertas por email y SMS
-            const result = await this.sendDisconnectionAlerts(formattedAlerts);
-
-            if (result.success) {
-                console.log(`Alertas de desconexión enviadas correctamente: ${alerts.length}`);
-                this.logToDatabase(`Alertas de desconexión enviadas: ${alerts.length} canales`);
-
-                // Limpiar el buffer
-                this.disconnectionAlertBuffer.alerts = [];
-                this.disconnectionAlertBuffer.timestamp = new Date();
-            } else {
-                console.error("Error al enviar alertas de desconexión:", result.error);
-                this.logError(`Error al enviar alertas de desconexión: ${result.error}`);
-            }
-        } catch (error) {
-            console.error("Error al procesar alertas de desconexión:", error);
-            this.logError(`Error al procesar alertas de desconexión: ${error.message}`);
-        }
-    }
-
-    /**
-     * Envía alertas de temperatura por email y SMS
-     * @param {Array} alerts - Alertas formateadas
-     * @returns {Promise<{success: boolean, error?: string}>}
-     */
-    async sendTemperatureAlerts(alerts) {
-        try {
-            // Enviar por Email
-            const emailResult = await emailService.sendTemperatureRangeAlertsEmail(
-                alerts,
-                new Date(),
-                null, // Usar destinatarios predeterminados
-                true  // Forzar envío incluso si estamos en horario laboral (ya verificamos antes)
-            );
-
-            // Enviar por SMS (formato más compacto)
-            const smsMessage = this.formatTemperatureAlertsForSMS(alerts);
-            const smsResult = await smsService.sendSMS(
-                smsMessage,
-                null, // Usar destinatarios predeterminados
-                true  // Forzar envío incluso si estamos en horario laboral
-            );
-
-            return {
-                success: emailResult && smsResult.success,
-                emailResult,
-                smsResult
-            };
-        } catch (error) {
-            console.error("Error al enviar alertas de temperatura:", error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    /**
-     * Envía alertas de desconexión por email y SMS
-     * @param {Array} alerts - Alertas formateadas
-     * @returns {Promise<{success: boolean, error?: string}>}
-     */
-    async sendDisconnectionAlerts(alerts) {
-        try {
-            // Enviar por Email
-            const emailResult = await emailService.sendDisconnectedSensorsEmail(
-                alerts,
-                null // Usar destinatarios predeterminados
-            );
-
-            // Enviar por SMS (formato más compacto)
-            const smsMessage = this.formatDisconnectionAlertsForSMS(alerts);
-            const smsResult = await smsService.sendSMS(
-                smsMessage,
-                null, // Usar destinatarios predeterminados
-                true  // Forzar envío incluso si estamos en horario laboral
-            );
-
-            return {
-                success: emailResult && smsResult.success,
-                emailResult,
-                smsResult
-            };
-        } catch (error) {
-            console.error("Error al enviar alertas de desconexión:", error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    /**
-     * Formatea alertas de temperatura para SMS
-     * @param {Array} alerts - Alertas
-     * @returns {string} Mensaje formateado
-     */
-    formatTemperatureAlertsForSMS(alerts) {
-        const count = alerts.length;
-        let message = `ALERTA TEMPERATURA: ${count} sensor${count > 1 ? 'es' : ''} fuera de rango. `;
-
-        // Obtener límite máximo de alertas detalladas desde configuración
-        const maxSizePerBatch = this.config.sms?.queue?.maxSizePerBatch || 3;
-
-        // Incluir detalles para los primeros N sensores
-        const detailLimit = Math.min(maxSizePerBatch, count);
-        for (let i = 0; i < detailLimit; i++) {
-            const alert = alerts[i];
-            message += `${alert.name}: ${alert.temperature}°C. `;
-        }
-
-        // Si hay más de N, agregar resumen
-        if (count > detailLimit) {
-            message += `Y ${count - detailLimit} más. `;
-        }
-
-        // Añadir timestamp
-        message += `${moment().tz(this.timeZone).format("DD/MM HH:mm")}`;
-
-        return message;
-    }
-
-    /**
-     * Formatea alertas de desconexión para SMS
-     * @param {Array} alerts - Alertas
-     * @returns {string} Mensaje formateado
-     */
+    * Formatea alertas de desconexión para SMS
+    * Actualizado para el nuevo formato de alertas por hora
+    * @param {Array} alerts - Alertas formateadas
+    * @returns {string} - Mensaje formateado para SMS
+    */
     formatDisconnectionAlertsForSMS(alerts) {
         const count = alerts.length;
-        let message = `ALERTA DESCONEXION: ${count} sensor${count > 1 ? 'es' : ''} offline. `;
+        let message = `ALERTA DESCONEXION: ${count} sensor${count > 1 ? 'es' : ''} reportados. `;
 
         // Obtener límite máximo de alertas detalladas desde configuración
         const maxSizePerBatch = this.config.sms?.queue?.maxSizePerBatch || 3;
@@ -933,26 +725,34 @@ class NotificationController {
     }
 
     /**
-     * Limpia contadores antiguos
+     * Formatea alertas de temperatura para SMS
+     * Actualizado para el nuevo formato de alertas por hora
+     * @param {Array} alerts - Alertas formateadas
+     * @returns {string} - Mensaje formateado para SMS
      */
-    cleanupOldCounters() {
-        const now = new Date();
-        const cutoffTime = new Date(now.getTime() - (this.cleanupInterval * 60 * 1000));
+    formatTemperatureAlertsForSMS(alerts) {
+        const count = alerts.length;
+        let message = `ALERTA TEMPERATURA: ${count} sensor${count > 1 ? 'es' : ''} fuera de rango. `;
 
-        let cleanupCount = 0;
+        // Obtener límite máximo de alertas detalladas desde configuración
+        const maxSizePerBatch = this.config.sms?.queue?.maxSizePerBatch || 3;
 
-        // Limpiar contadores de temperatura
-        for (const channelId in this.tempAlertCounters) {
-            const counter = this.tempAlertCounters[channelId];
-            if (counter.lastUpdate < cutoffTime) {
-                delete this.tempAlertCounters[channelId];
-                cleanupCount++;
-            }
+        // Incluir detalles para los primeros N sensores
+        const detailLimit = Math.min(maxSizePerBatch, count);
+        for (let i = 0; i < detailLimit; i++) {
+            const alert = alerts[i];
+            message += `${alert.name}: ${alert.temperature}°C. `;
         }
 
-        if (cleanupCount > 0) {
-            console.log(`Limpiados ${cleanupCount} contadores de temperatura antiguos.`);
+        // Si hay más de N, agregar resumen
+        if (count > detailLimit) {
+            message += `Y ${count - detailLimit} más. `;
         }
+
+        // Añadir timestamp
+        message += `${moment().tz(this.timeZone).format("DD/MM HH:mm")}`;
+
+        return message;
     }
 
     /**
