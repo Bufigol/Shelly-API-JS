@@ -1,658 +1,492 @@
-// src/services/emailService.js
+// src/services/email/emailService.js
 
 const sgMail = require("@sendgrid/mail");
-const fs = require("fs");
-const path = require("path");
-const BaseAlertService = require("../baseAlertService");
+const BaseAlertService = require("../baseAlertService"); // Hereda de BaseAlertService
 const config = require("../../config/js_files/config-loader");
 const moment = require("moment-timezone");
-const notificationController = require("../../controllers/notificationController");
+const notificationController = require("../../controllers/notificationController"); // Para isWithinWorkingHours
 
 /**
- * Servicio centralizado para el envío de correos electrónicos
+ * Servicio centralizado para el envío de correos electrónicos utilizando SendGrid.
+ * Hereda funcionalidades base de BaseAlertService.
  */
 class EmailService extends BaseAlertService {
   constructor() {
-    super();
-    this.initialized = false;
-    this.config = config.getConfig();
-    this.sgMail = sgMail;
-    this.sgMail.setApiKey(this.config.email.SENDGRID_API_KEY);
-
-    // Cargar configuración de email desde el config-loader
-    this.fromEmail = this.config.email?.email_contacto?.from_verificado;
-    this.defaultRecipients = this.config.email?.email_contacto?.destinatarios || [];
-
-    // Horarios laborales desde la configuración centralizada
-    this.timeZone = this.config.alertSystem?.timeZone || "America/Santiago";
-
-    // Imprimir información de diagnóstico
-    console.log(`Email Service - TimeZone: ${this.timeZone}`);
+    super(); // Llama al constructor de BaseAlertService
+    this.sgMail = sgMail; // Usar la instancia importada
+    this.config = null;
+    this.fromEmail = null;
+    this.defaultRecipients = [];
+    this.timeZone = "America/Santiago"; // Default, se actualizará en initialize
+    this.appName = "Sistema de Monitoreo";
+    this.companyName = "The Next Security";
+    // La inicialización se llamará desde BaseAlertService o explícitamente si es necesario
+    // pero la configuración de sgMail se hará en initialize()
   }
 
+  /**
+   * Inicializa el servicio de Email.
+   * Carga la configuración y configura la API Key de SendGrid.
+   * Sobrescribe el método de BaseAlertService si es necesario o complementa.
+   */
   async initialize() {
     if (this.initialized) return;
 
+    console.log("Inicializando EmailService...");
     try {
-      // Inicializar temporizadores del servicio base
-      this.initializeTimers();
+      // 1. Cargar Configuración específica de Email
+      const appConfig = config.getConfig(); // Obtener configuración general
+
+      if (!appConfig.email || !appConfig.email.SENDGRID_API_KEY) {
+        throw new Error("Configuración de email o SENDGRID_API_KEY no encontrada.");
+      }
+
+      // Validar formato de API Key
+      if (!appConfig.email.SENDGRID_API_KEY.startsWith("SG.")) {
+        console.warn("⚠️ La API Key de SendGrid no parece tener el formato correcto (debe empezar con 'SG.').");
+        // Continuar de todos modos, pero advertir.
+      }
+
+      this.config = appConfig.email; // Guardar solo la sección de email
+      this.appName = appConfig.appInfo?.appName || this.appName;
+      this.companyName = appConfig.appInfo?.companyName || this.companyName;
+      this.timeZone = appConfig.alertSystem?.timeZone || this.timeZone;
+      this.fromEmail = this.config.email_contacto?.from_verificado;
+      this.defaultRecipients = this.config.email_contacto?.destinatarios || [];
+
+      if (!this.fromEmail) {
+        console.warn("⚠️ Email remitente (from_verificado) no configurado en email.email_contacto.");
+        // Considerar lanzar un error si es crítico: throw new Error("Email remitente no configurado");
+      }
+
+      // 2. Configurar SendGrid API Key
+      this.sgMail.setApiKey(this.config.SENDGRID_API_KEY);
+      console.log("EmailService: SendGrid API Key configurada.");
+
+      // 3. Inicializar Timers (llamando al método de BaseAlertService)
+      super.initializeTimers(); // Asegura que los timers de la clase base se inicien
+
       this.initialized = true;
-      console.log("✅ EmailService inicializado correctamente");
+      console.log("✅ EmailService inicializado correctamente.");
+
     } catch (error) {
-      console.error("❌ Error inicializando EmailService:", error);
-      throw error;
+      console.error("❌ Error inicializando EmailService:", error.message);
+      this.initialized = false; // Marcar como no inicializado en caso de error
+      // Podrías querer re-lanzar el error si la inicialización es crítica para el arranque
+      // throw error;
     }
   }
 
-  async processAlert(alert) {
-    if (!this.initialized) {
-      throw new Error("EmailService no inicializado");
+  /**
+   * Verifica si el servicio de email está correctamente configurado.
+   * @returns {boolean} True si está listo para enviar correos.
+   */
+  isConfigured() {
+    const configured = this.initialized &&
+      this.config &&
+      this.config.SENDGRID_API_KEY &&
+      this.config.SENDGRID_API_KEY.startsWith("SG.") && // Verificar formato básico
+      this.fromEmail; // Asegurar que el remitente está definido
+
+    if (!configured && this.initialized) {
+      // Loguear detalles si está inicializado pero no configurado
+      console.warn("EmailService está inicializado pero no completamente configurado.");
+      if (!this.config?.SENDGRID_API_KEY?.startsWith("SG.")) console.warn("- API Key inválida o faltante.");
+      if (!this.fromEmail) console.warn("- Email remitente (from_verificado) faltante.");
     }
+    return configured;
+  }
+
+  /**
+   * Método privado para enviar correos usando la instancia configurada de sgMail.
+   * Incluye manejo básico de errores.
+   * @param {Object} message - Objeto de mensaje compatible con SendGrid (to, subject, text, html, [from])
+   * @returns {Promise<boolean>} True si el envío fue exitoso.
+   * @private
+   */
+  async _sendMail(message) {
+    if (!this.isConfigured()) {
+      console.error("EmailService no está configurado para enviar correos.");
+      this.metrics.failedAlerts++;
+      this.metrics.lastError = "Servicio no configurado";
+      return false;
+    }
+
+    // Asegurar remitente por defecto si no se proporciona
+    if (!message.from) {
+      message.from = this.fromEmail;
+    }
+
+    // Asegurar que 'to' es un array o string válido
+    if (!message.to || (Array.isArray(message.to) && message.to.length === 0)) {
+      console.error("Error: No se especificaron destinatarios para el correo.");
+      this.metrics.failedAlerts++;
+      this.metrics.lastError = "Sin destinatarios";
+      return false;
+    }
+
+    // Asegurar contenido mínimo
+    if (!message.text && !message.html) {
+      console.warn("Advertencia: El correo no tiene contenido 'text' ni 'html'. Se enviará vacío.");
+      message.text = ' '; // Contenido mínimo requerido por SendGrid
+    } else if (!message.text) {
+      message.text = this._stripHtml(message.html || ' '); // Generar texto plano si falta
+    }
+
+
+    try {
+      await this.sgMail.send(message);
+      const recipients = Array.isArray(message.to) ? message.to.join(', ') : message.to;
+      console.log(`Correo "${message.subject}" enviado exitosamente a: ${recipients}`);
+      // No incrementar sentAlerts aquí, se hace en processAlert o métodos públicos
+      return true;
+    } catch (error) {
+      console.error(`Error al enviar correo "${message.subject}" vía SendGrid:`, error.message);
+      // Log detallado si la respuesta de SendGrid está disponible
+      if (error.response && error.response.body && error.response.body.errors) {
+        console.error("SendGrid Response Errors:", JSON.stringify(error.response.body.errors));
+      } else if (error.response) {
+        console.error("SendGrid Response Status:", error.response.statusCode);
+        console.error("SendGrid Response Body:", error.response.body);
+      }
+      // Registrar error para métricas
+      this.metrics.failedAlerts++; // Incrementar aquí podría ser redundante si processAlert ya lo hace
+      this.metrics.lastError = `SendGrid Error: ${error.message}`;
+      return false; // Indicar fallo
+    }
+  }
+
+  /**
+   * Procesa una alerta de la cola (método sobrescrito/implementado de BaseAlertService).
+   * Formatea el contenido y utiliza _sendMail para el envío.
+   * @param {Object} alert - Objeto de alerta con { type, data, recipients? }
+   */
+  async processAlert(alert) {
+    // Verificar inicialización primero
+    if (!this.initialized) {
+      console.error("EmailService no inicializado. No se puede procesar alerta.");
+      this.metrics.failedAlerts++;
+      this.metrics.lastError = "Servicio no inicializado";
+      // Considerar lanzar un error si el procesamiento debe detenerse
+      // throw new Error("EmailService no inicializado");
+      return; // Salir si no está listo
+    }
+
+    console.log(`Procesando alerta de email tipo: ${alert.type}`);
 
     try {
       const { type, data, recipients } = alert;
-
-      // Verificar que haya destinatarios, usar los predeterminados si no hay
       const emailRecipients = recipients || this.defaultRecipients;
 
       if (!emailRecipients || emailRecipients.length === 0) {
-        throw new Error("No hay destinatarios configurados para la alerta");
+        console.error(`No hay destinatarios para alerta tipo ${type}.`);
+        this.metrics.failedAlerts++;
+        this.metrics.lastError = `Sin destinatarios para ${type}`;
+        return; // No se puede enviar
       }
 
-      // Generar contenido del correo basado en el tipo de alerta
+      // Generar contenido específico del tipo de alerta
       const { subject, htmlContent, plainText } = this.generateEmailContent(type, data);
 
       const msg = {
         to: emailRecipients,
-        from: this.fromEmail,
         subject: subject,
         text: plainText,
         html: htmlContent
+        // 'from' será añadido por _sendMail si no está aquí
       };
 
-      await this.sgMail.send(msg);
-      this.metrics.sentAlerts++;
-      this.metrics.lastSuccessTime = new Date();
-    } catch (error) {
-      console.error("Error enviando alerta por email:", error);
-      this.metrics.failedAlerts++;
-      this.metrics.lastError = error.message;
-      throw error;
-    }
-  }
+      // Delegar el envío al método privado
+      const success = await this._sendMail(msg);
 
-  generateEmailContent(type, data) {
-    let subject, htmlContent, plainText;
-
-    switch (type) {
-      case "temperature":
-        subject = `Alerta de Temperatura - ${data.location}`;
-        htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-            <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Temperatura</h2>
-            <p>Se ha detectado una temperatura fuera del rango permitido:</p>
-            <ul>
-              <li>Ubicación: ${data.location}</li>
-              <li>Temperatura actual: ${data.temperature}°C</li>
-              <li>Límite mínimo: ${data.minThreshold}°C</li>
-              <li>Límite máximo: ${data.maxThreshold}°C</li>
-            </ul>
-            <p>Fecha y hora: ${new Date().toLocaleString()}</p>
-          </div>
-        `;
-        plainText = `Alerta de Temperatura\nUbicación: ${data.location}\nTemperatura: ${data.temperature}°C\nLímites: ${data.minThreshold}°C - ${data.maxThreshold}°C`;
-        break;
-
-      case "disconnection":
-        subject = `Alerta de Desconexión - ${data.device}`;
-        htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-            <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Desconexión</h2>
-            <p>Se ha detectado una desconexión en el dispositivo:</p>
-            <ul>
-              <li>Dispositivo: ${data.device}</li>
-              <li>Última conexión: ${data.lastConnection}</li>
-              <li>Tiempo sin conexión: ${data.disconnectionTime}</li>
-            </ul>
-            <p>Fecha y hora: ${new Date().toLocaleString()}</p>
-          </div>
-        `;
-        plainText = `Alerta de Desconexión\nDispositivo: ${data.device}\nÚltima conexión: ${data.lastConnection}\nTiempo sin conexión: ${data.disconnectionTime}`;
-        break;
-
-      default:
-        subject = data.subject || "Alerta del Sistema";
-        htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-            <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">${subject}</h2>
-            <p>${data.message || "Se ha generado una alerta en el sistema."}</p>
-            <p>Fecha y hora: ${new Date().toLocaleString()}</p>
-          </div>
-        `;
-        plainText = `${subject}\n${data.message || "Se ha generado una alerta en el sistema."}`;
-    }
-
-    return { subject, htmlContent, plainText };
-  }
-
-  async sendAlert(subject, data, templateName) {
-    if (!this.initialized) {
-      throw new Error("EmailService no inicializado");
-    }
-
-    let alert;
-
-    // Si se recibe un objeto completo (nuevo formato)
-    if (typeof subject === 'object') {
-      alert = subject;
-    } else {
-      // Formato antiguo (subject, data, templateName)
-      alert = {
-        type: templateName,
-        data: { ...data, subject },
-        recipients: this.defaultRecipients,
-        priority: data?.priority || "normal",
-        timestamp: new Date()
-      };
-    }
-
-    return this.processAlert(alert);
-  }
-
-  getStatus() {
-    return {
-      ...super.getStatus(),
-      service: "email",
-      config: {
-        fromEmail: this.fromEmail,
-        recipients: this.defaultRecipients
+      // Actualizar métricas basadas en el resultado del envío
+      if (success) {
+        this.metrics.sentAlerts++; // Incrementar solo si _sendMail tuvo éxito
+        this.metrics.lastSuccessTime = new Date();
+      } else {
+        // _sendMail ya incrementó failedAlerts y actualizó lastError
+        console.warn(`Fallo al enviar alerta tipo ${type}`);
       }
-    };
-  }
 
-  /**
-   * Verifica si estamos dentro del horario laboral para enviar notificaciones
-   * Usa NotificationController como fuente centralizada
-   * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar (opcional)
-   * @returns {boolean} true si estamos en horario laboral
-   */
-  isWithinWorkingHours(checkTime = null) {
-    // Usar NotificationController como fuente centralizada
-    return notificationController.isWithinWorkingHours();
-  }
-
-  /**
-   * Verifica si el servicio de email está correctamente configurado
-   */
-  isConfigured() {
-    const hasApiKey = !!this.config.email?.SENDGRID_API_KEY;
-    const hasFromEmail = !!this.fromEmail;
-
-    if (!hasApiKey) {
-      console.error("Email Service - Error: SendGrid API key no configurada");
+    } catch (error) {
+      // Capturar errores inesperados durante el formateo o la lógica previa al envío
+      console.error(`Error general procesando alerta de email (tipo ${alert.type}):`, error);
+      this.metrics.failedAlerts++;
+      this.metrics.lastError = `Error procesando ${alert.type}: ${error.message}`;
+      // No relanzar para no detener el procesamiento de otras alertas en la cola
     }
-
-    if (!hasFromEmail) {
-      console.error("Email Service - Error: Email de remitente no configurado");
-    }
-
-    return hasApiKey && hasFromEmail;
   }
 
-  /**
-   * Convierte una hora en formato decimal a texto (8.5 -> "8:30")
-   */
-  _formatHourToText(hourDecimal) {
-    const hours = Math.floor(hourDecimal);
-    const minutes = Math.round((hourDecimal - hours) * 60);
-    return `${hours}:${minutes.toString().padStart(2, "0")}`;
-  }
+  // --- Métodos Específicos de Envío (Usan _sendMail) ---
 
-  /**
-   * Devuelve una descripción de texto del horario laboral
-   */
-  getWorkingHoursDescription() {
-    // Obtener la configuración desde notificationController
-    const workingHours = notificationController.workingHours;
-
-    const weekdayStart = this._formatHourToText(
-      workingHours.weekdays.start
-    );
-    const weekdayEnd = this._formatHourToText(workingHours.weekdays.end);
-    const saturdayStart = this._formatHourToText(
-      workingHours.saturday.start
-    );
-    const saturdayEnd = this._formatHourToText(workingHours.saturday.end);
-
-    return `Lunes a Viernes de ${weekdayStart} a ${weekdayEnd}, Sábados de ${saturdayStart} a ${saturdayEnd}`;
-  }
-
-  /**
-   * Envía un correo para restablecer la contraseña
-   */
   async sendPasswordResetEmail(email, resetToken, resetUrl) {
     if (!email || !resetUrl) {
-      console.error(
-        "Error: Correo o URL de restablecimiento no proporcionados"
-      );
+      console.error("EmailService: Correo o URL de restablecimiento no proporcionados");
       return false;
     }
+    const subject = `${this.appName} - Restablecimiento de Contraseña`;
+    const html = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+                <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Restablecimiento de Contraseña</h2>
+                <p>Se ha solicitado un restablecimiento de contraseña para tu cuenta en <strong>${this.appName}</strong>.</p>
+                <p>Para continuar con el proceso, haz clic en el siguiente enlace:</p>
+                <p style="margin: 20px 0;">
+                <a href="${resetUrl}" style="background-color: #4CAF50; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                    Restablecer Contraseña
+                </a>
+                </p>
+                <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+                <p>Este enlace expirará en 1 hora por seguridad.</p>
+                <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e1e1e1; font-size: 12px; color: #777;">
+                <p>Este es un mensaje automático del sistema de ${this.companyName}. Por favor no responda a este correo.</p>
+                </div>
+            </div>
+        `;
+    const text = this._stripHtml(html); // Generar texto plano
 
-    if (!this.isConfigured() || !this.initialize()) {
-      return false;
+    const success = await this._sendMail({ to: email, subject, text, html });
+    if (success) {
+      this.recordEmailSuccess(subject, 1); // Actualizar métricas manualmente si es necesario
+    } else {
+      this.recordEmailError(subject, this.metrics.lastError || "Error desconocido");
     }
-
-    const appConfig = config.getConfig();
-    const appName = appConfig.appName || "Sistema de Monitoreo";
-    const companyName = appConfig.companyName || "The Next Security";
-
-    const message = {
-      to: email,
-      from: this.fromEmail,
-      subject: `${appName} - Restablecimiento de Contraseña`,
-      text: `Para restablecer tu contraseña en ${appName}, haz clic en el siguiente enlace: ${resetUrl}. Este enlace expirará en 1 hora por seguridad.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-          <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Restablecimiento de Contraseña</h2>
-          <p>Se ha solicitado un restablecimiento de contraseña para tu cuenta en <strong>${appName}</strong>.</p>
-          <p>Para continuar con el proceso, haz clic en el siguiente enlace:</p>
-          <p style="margin: 20px 0;">
-            <a href="${resetUrl}" style="background-color: #4CAF50; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; display: inline-block;">
-              Restablecer Contraseña
-            </a>
-          </p>
-          <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
-          <p>Este enlace expirará en 1 hora por seguridad.</p>
-          <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e1e1e1; font-size: 12px; color: #777;">
-            <p>Este es un mensaje automático del sistema de ${companyName}. Por favor no responda a este correo.</p>
-          </div>
-        </div>
-      `,
-    };
-
-    try {
-      await this.sgMail.send(message);
-      console.log(`Correo de restablecimiento enviado a: ${email}`);
-      this.recordEmailSuccess(message.subject, 1);
-      return true;
-    } catch (error) {
-      console.error("Error al enviar correo de restablecimiento:", error);
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.body);
-      }
-      this.recordEmailError(message.subject, error.message);
-      return false;
-    }
+    return success;
   }
 
-  /**
-   * Envía un correo de confirmación después de restablecer la contraseña
-   */
   async sendPasswordResetConfirmationEmail(email) {
-    if (!this.isConfigured() || !this.initialize()) {
+    if (!email) {
+      console.error("EmailService: Correo no proporcionado para confirmación.");
       return false;
     }
+    const subject = `${this.appName} - Contraseña restablecida con éxito`;
+    const html = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+                <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Contraseña Restablecida</h2>
+                <p>Tu contraseña ha sido restablecida exitosamente.</p>
+                <p>Si tú no realizaste este cambio, contacta a soporte inmediatamente.</p>
+                <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e1e1e1; font-size: 12px; color: #777;">
+                <p>Este es un mensaje automático del sistema de ${this.companyName}. Por favor no responda a este correo.</p>
+                </div>
+            </div>
+        `;
+    const text = this._stripHtml(html);
 
-    const appConfig = config.getConfig();
-    const appName = appConfig.appName || "Sistema de Monitoreo";
-    const companyName = appConfig.companyName || "The Next Security";
-
-    const message = {
-      to: email,
-      from: this.fromEmail,
-      subject: `${appName} - Contraseña restablecida con éxito`,
-      text: `Su contraseña ha sido restablecida exitosamente.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-          <h2 style="color: #333; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Contraseña Restablecida</h2>
-          <p>Tu contraseña ha sido restablecida exitosamente.</p>
-          <p>Si tú no realizaste este cambio, contacta a soporte inmediatamente.</p>
-          <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e1e1e1; font-size: 12px; color: #777;">
-            <p>Este es un mensaje automático del sistema de ${companyName}. Por favor no responda a este correo.</p>
-          </div>
-        </div>
-      `,
-    };
-
-    try {
-      await this.sgMail.send(message);
-      console.log(`Correo de confirmación enviado a: ${email}`);
-      this.recordEmailSuccess(message.subject, 1);
-      return true;
-    } catch (error) {
-      console.error("Error al enviar correo de confirmación:", error);
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.body);
-      }
-      this.recordEmailError(message.subject, error.message);
-      return false;
+    const success = await this._sendMail({ to: email, subject, text, html });
+    if (success) {
+      this.recordEmailSuccess(subject, 1);
+    } else {
+      this.recordEmailError(subject, this.metrics.lastError || "Error desconocido");
     }
+    return success;
   }
 
-  /**
- * Envía un correo con todos los canales fuera del rango de temperatura
- * Adaptado para funcionar con el nuevo formato de alertas agrupadas
- *
- * @param {Array} outOfRangeChannels - Array de objetos con información de canales fuera de rango
- * @param {Date} [currentTime=null] - Hora actual
- * @param {Array} [recipients=null] - Lista de destinatarios
- * @param {boolean} [forceOutsideWorkingHours=false] - Forzar envío incluso en horario laboral
- * @returns {Promise<boolean>} true si el correo se envió exitosamente
- */
-  async sendTemperatureRangeAlertsEmail(
-    outOfRangeChannels,
-    currentTime = null,
-    recipients = null,
-    forceOutsideWorkingHours = false
-  ) {
-    if (!this.isConfigured() || !this.initialized) {
-      return false;
-    }
-
-    // CAMBIO CRÍTICO: Usar NotificationController para verificar horario laboral
-    if (!forceOutsideWorkingHours && notificationController.isWithinWorkingHours()) {
-      console.log(
-        `Email Service - Dentro de horario laboral. Posponiendo alertas de temperatura para fuera de horario.`
-      );
-      return false;
+  async sendTemperatureRangeAlertsEmail(outOfRangeChannels, currentTime = null, recipients = null, forceOutsideWorkingHours = false) {
+    // Usar NotificationController para verificar horario laboral
+    if (!forceOutsideWorkingHours && notificationController.isWithinWorkingHours(currentTime)) {
+      console.log("EmailService: Dentro de horario laboral. Posponiendo alerta de temperatura.");
+      return false; // No enviar si estamos en horario laboral y no se fuerza
     }
 
     if (!outOfRangeChannels || outOfRangeChannels.length === 0) {
-      console.log(
-        "Email Service - No hay canales fuera de rango para reportar."
-      );
+      console.log("EmailService: No hay canales fuera de rango para reportar.");
       return false;
     }
 
-    // Usar destinatarios proporcionados o los predeterminados
     const emailRecipients = recipients || this.defaultRecipients;
-
     if (!emailRecipients || emailRecipients.length === 0) {
-      console.error(
-        "Email Service - No hay destinatarios configurados para la alerta de temperatura."
-      );
+      console.error("EmailService: No hay destinatarios para alerta de temperatura.");
       return false;
     }
 
-    const formattedTime = moment()
-      .tz(this.timeZone)
-      .format("DD/MM/YYYY HH:mm:ss");
-    let textContent = `Alerta: ${outOfRangeChannels.length} canales tienen temperaturas fuera de los límites establecidos.\n\n`;
-    let htmlRows = "";
+    const subject = `Alerta de Temperatura - ${outOfRangeChannels.length} canales fuera de rango`;
+    const { html, text } = this._formatTemperatureAlertContent(outOfRangeChannels);
 
-    // CAMBIO: Adaptado para trabajar con el nuevo formato de alertas
-    outOfRangeChannels.forEach((channel) => {
-      // Verificar si tenemos múltiples lecturas
-      const hasMultipleReadings = channel.allReadings && channel.allReadings.length > 1;
-
-      const status =
-        channel.temperature < channel.minThreshold
-          ? "Por debajo"
-          : "Por encima";
-
-      const readTime = moment(channel.timestamp)
-        .tz(this.timeZone)
-        .format("DD/MM/YYYY HH:mm:ss");
-
-      textContent += `- ${channel.name}: ${channel.temperature}°C (${status} del rango permitido: ${channel.minThreshold}°C - ${channel.maxThreshold}°C). Leído a las ${readTime}\n`;
-
-      // Usar colores para destacar el tipo de alerta
-      const statusColor =
-        channel.temperature < channel.minThreshold ? "#0000FF" : "#FF0000";
-
-      // Crear fila principal
-      htmlRows += `
-          <tr>
-              <td style="padding: 8px; border: 1px solid #ddd;">${channel.name}</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${channel.temperature}°C</td>
-              <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${status}</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${channel.minThreshold}°C - ${channel.maxThreshold}°C</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${readTime}</td>
-          </tr>
-      `;
-
-      // Si hay múltiples lecturas, agregar detalles de cada una (opcional)
-      if (hasMultipleReadings) {
-        channel.allReadings.forEach((reading, index) => {
-          if (index === channel.allReadings.length - 1) return; // Omitir la última que ya está en la fila principal
-
-          const readingStatus = reading.temperature < reading.minThreshold ? "Por debajo" : "Por encima";
-          const readingColor = reading.temperature < reading.minThreshold ? "#0000FF" : "#FF0000";
-          const readingTime = moment(reading.timestamp).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss");
-
-          htmlRows += `
-                  <tr style="background-color: #f9f9f9;">
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${channel.name} (lectura previa)</td>
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${reading.temperature}°C</td>
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; color: ${readingColor}; font-weight: bold; font-size: 0.9em;">${readingStatus}</td>
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${reading.minThreshold}°C - ${reading.maxThreshold}°C</td>
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${readingTime}</td>
-                  </tr>
-              `;
-        });
-      }
-    });
-
-    const message = {
-      to: emailRecipients,
-      from: this.fromEmail,
-      subject: `Alerta de Temperatura - ${outOfRangeChannels.length} canales fuera de rango`,
-      text: textContent,
-      html: `
-          <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-              <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Temperatura</h2>
-              <p>Se han detectado <strong>${outOfRangeChannels.length} canales</strong> con temperaturas fuera de los límites establecidos.</p>
-              <p>Fecha y hora de la alerta: ${formattedTime}</p>
-              
-              <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-                  <thead style="background-color: #f2f2f2;">
-                      <tr>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Temperatura</th>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Estado</th>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Rango Permitido</th>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Lectura</th>
-                      </tr>
-                  </thead>
-                  <tbody>
-                      ${htmlRows}
-                  </tbody>
-              </table>
-              
-              <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente. Por favor, tome las medidas necesarias.</p>
-          </div>
-      `,
-    };
-
-    try {
-      await this.sgMail.send(message);
-      console.log(
-        `Correo de alerta de temperatura enviado a: ${emailRecipients.join(
-          ", "
-        )}`
-      );
-
-      // Registrar el éxito en las métricas o log
-      this.recordEmailSuccess(message.subject, emailRecipients.length);
-      return true;
-    } catch (error) {
-      console.error("Error al enviar correo de alerta de temperatura:", error);
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.body);
-      }
-
-      // Registrar el error en las métricas o log
-      this.recordEmailError(message.subject, error.message);
-      return false;
+    const success = await this._sendMail({ to: emailRecipients, subject, text, html });
+    if (success) {
+      this.recordEmailSuccess(subject, emailRecipients.length);
+    } else {
+      this.recordEmailError(subject, this.metrics.lastError || "Error desconocido");
     }
+    return success;
   }
 
-  /**
- * Envía un correo con todos los canales desconectados
- * Adaptado para funcionar con el nuevo formato de alertas agrupadas
- * @param {Array} disconnectedChannels - Canales desconectados
- * @param {Array} [recipients=null] - Destinatarios personalizados
- * @returns {Promise<boolean>} true si el envío fue exitoso
- */
   async sendDisconnectedSensorsEmail(disconnectedChannels, recipients = null) {
-    if (!this.isConfigured() || !this.initialized) {
-      return false;
-    }
-
+    // Nota: Las alertas de desconexión generalmente se envían sin importar el horario.
     if (!disconnectedChannels || disconnectedChannels.length === 0) {
-      console.log(
-        "Email Service - No hay canales desconectados para reportar."
-      );
+      console.log("EmailService: No hay canales desconectados para reportar.");
       return false;
     }
 
-    // Usar destinatarios proporcionados o los predeterminados
     const emailRecipients = recipients || this.defaultRecipients;
-
     if (!emailRecipients || emailRecipients.length === 0) {
-      console.error(
-        "Email Service - No hay destinatarios configurados para la alerta de desconexión."
-      );
+      console.error("EmailService: No hay destinatarios para alerta de desconexión.");
       return false;
     }
 
-    // Registrar datos del envío (ayuda en diagnóstico)
-    console.log(
-      `Email Service - Enviando alerta de ${disconnectedChannels.length} sensores desconectados a ${emailRecipients.length} destinatarios.`
-    );
+    const subject = `Alerta de Conexión - ${disconnectedChannels.length} dispositivos con eventos`;
+    const { html, text } = this._formatDisconnectionAlertContent(disconnectedChannels);
 
-    const formattedTime = moment()
-      .tz(this.timeZone)
-      .format("DD/MM/YYYY HH:mm:ss");
-    let textContent = `Alerta: ${disconnectedChannels.length} sensores de temperatura tienen eventos de conexión reportados.\n\n`;
+    const success = await this._sendMail({ to: emailRecipients, subject, text, html });
+    if (success) {
+      this.recordEmailSuccess(subject, emailRecipients.length);
+    } else {
+      this.recordEmailError(subject, this.metrics.lastError || "Error desconocido");
+    }
+    return success;
+  }
+
+
+  // --- Métodos de Ayuda ---
+
+  /**
+   * Genera el contenido HTML y Texto para alertas de temperatura.
+   * @param {Array} outOfRangeChannels
+   * @returns {{html: string, text: string}}
+   * @private
+   */
+  _formatTemperatureAlertContent(outOfRangeChannels) {
+    const formattedTime = moment().tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss");
     let htmlRows = "";
+    let textContent = `Alerta: ${outOfRangeChannels.length} canales con temperaturas fuera de límites.\nFecha: ${formattedTime}\n\nDetalles:\n`;
 
-    // CAMBIO: Adaptado para el nuevo formato con eventos agrupados
-    disconnectedChannels.forEach((channel) => {
-      // Determinar si tuvo eventos de desconexión y reconexión
-      const hadDisconnection = channel.disconnectTime !== undefined;
-      const hadReconnection = channel.reconnectTime !== undefined;
+    outOfRangeChannels.forEach((channel) => {
+      const status = channel.temperature < channel.minThreshold ? "Por debajo" : "Por encima";
+      const statusColor = channel.temperature < channel.minThreshold ? "#0000FF" : "#FF0000";
+      const readTime = moment(channel.timestamp).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss");
 
-      // Formatear tiempos
-      const disconnectFormatted = hadDisconnection ?
-        moment(channel.disconnectTime).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss") :
-        "No en este período";
-
-      const reconnectFormatted = hadReconnection ?
-        moment(channel.reconnectTime).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss") :
-        "No en este período";
-
-      // Determinar estado final
-      const finalStatus = channel.lastEvent === "disconnected" ?
-        "DESCONECTADO" : "CONECTADO";
-
-      // Texto plano del mensaje
-      textContent += `- ${channel.name}: Estado actual: ${finalStatus}\n`;
-      textContent += `  Desconexión: ${disconnectFormatted}\n`;
-      textContent += `  Reconexión: ${reconnectFormatted}\n\n`;
-
-      // Formatear fila HTML
-      const statusColor = channel.lastEvent === "disconnected" ? "#FF0000" : "#00AA00";
+      textContent += `- ${channel.name}: ${channel.temperature}°C (${status} del rango ${channel.minThreshold}°C - ${channel.maxThreshold}°C). Leído: ${readTime}\n`;
 
       htmlRows += `
-          <tr>
-              <td style="padding: 8px; border: 1px solid #ddd;">${channel.name}</td>
-              <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${finalStatus}</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${disconnectFormatted}</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${reconnectFormatted}</td>
-          </tr>
-      `;
-
-      // Añadir detalles de cada evento (opcional)
-      if (channel.events && channel.events.length > 1) {
-        channel.events.forEach((event, index) => {
-          const eventTime = moment(event.timestamp).tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss");
-          const eventColor = event.event === "disconnected" ? "#FF0000" : "#00AA00";
-
-          htmlRows += `
-                  <tr style="background-color: #f9f9f9;">
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;">${channel.name} (evento ${index + 1})</td>
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; color: ${eventColor}; font-weight: bold; font-size: 0.9em;">${event.event.toUpperCase()}</td>
-                      <td style="padding: 4px 8px; border: 1px solid #ddd; font-size: 0.9em;" colspan="2">${eventTime}</td>
-                  </tr>
-              `;
-        });
-      }
+                 <tr>
+                     <td style="padding: 8px; border: 1px solid #ddd;">${channel.name || 'N/A'}</td>
+                     <td style="padding: 8px; border: 1px solid #ddd;">${channel.temperature !== undefined ? channel.temperature + '°C' : 'N/A'}</td>
+                     <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${status}</td>
+                     <td style="padding: 8px; border: 1px solid #ddd;">${channel.minThreshold !== undefined ? channel.minThreshold + '°C' : 'N/A'} - ${channel.maxThreshold !== undefined ? channel.maxThreshold + '°C' : 'N/A'}</td>
+                     <td style="padding: 8px; border: 1px solid #ddd;">${readTime}</td>
+                 </tr>
+             `;
     });
 
-    const message = {
-      to: emailRecipients,
-      from: this.fromEmail,
-      subject: `Alerta de Conexión de Sensores - ${disconnectedChannels.length} dispositivos con eventos reportados`,
-      text: textContent,
-      html: `
-          <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
-              <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Conexión de Sensores</h2>
-              <p>Se han detectado <strong>${disconnectedChannels.length} sensores</strong> con eventos de conexión o desconexión.</p>
-              <p>Fecha y hora de la alerta: ${formattedTime}</p>
-              
-              <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-                  <thead style="background-color: #f2f2f2;">
-                      <tr>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Estado Actual</th>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Desconexión</th>
-                          <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Reconexión</th>
-                      </tr>
-                  </thead>
-                  <tbody>
-                      ${htmlRows}
-                  </tbody>
-              </table>
-              
-              <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente y se envía fuera del horario laboral.</p>
-          </div>
-      `,
-    };
+    const html = `
+            <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+                <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Temperatura</h2>
+                <p>Se han detectado <strong>${outOfRangeChannels.length} canales</strong> con temperaturas fuera de los límites establecidos.</p>
+                <p>Fecha y hora de la alerta: ${formattedTime}</p>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                    <thead style="background-color: #f2f2f2;">
+                        <tr>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Temperatura</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Estado</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Rango Permitido</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Lectura</th>
+                        </tr>
+                    </thead>
+                    <tbody>${htmlRows}</tbody>
+                </table>
+                <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente.</p>
+            </div>`;
 
-    try {
-      await this.sgMail.send(message);
-      console.log(
-        `Correo de alerta de conexión de sensores enviado a: ${emailRecipients.join(
-          ", "
-        )}`
-      );
-
-      // Registrar el éxito en las métricas o log
-      this.recordEmailSuccess(message.subject, emailRecipients.length);
-      return true;
-    } catch (error) {
-      console.error(
-        "Error al enviar correo de alerta de sensores desconectados:",
-        error
-      );
-      if (error.response) {
-        console.error("Datos de respuesta:", error.response.body);
-      }
-
-      // Registrar el error en las métricas o log
-      this.recordEmailError(message.subject, error.message);
-      return false;
-    }
+    return { html, text: textContent };
   }
 
   /**
-   * Registra una operación exitosa de envío de correo (para métricas)
+   * Genera el contenido HTML y Texto para alertas de desconexión.
+   * @param {Array} disconnectedChannels
+   * @returns {{html: string, text: string}}
+   * @private
    */
+  _formatDisconnectionAlertContent(disconnectedChannels) {
+    const formattedTime = moment().tz(this.timeZone).format("DD/MM/YYYY HH:mm:ss");
+    let htmlRows = "";
+    let textContent = `Alerta: ${disconnectedChannels.length} sensores con eventos de conexión reportados.\nFecha: ${formattedTime}\n\nDetalles:\n`;
+
+    disconnectedChannels.forEach((channel) => {
+      const finalStatus = channel.lastEvent === "disconnected" ? "DESCONECTADO" : "CONECTADO";
+      const statusColor = channel.lastEvent === "disconnected" ? "#FF0000" : "#00AA00";
+      const disconnectFormatted = channel.disconnectTime ? moment(channel.disconnectTime).tz(this.timeZone).format("DD/MM HH:mm:ss") : "N/A en periodo";
+      const reconnectFormatted = channel.reconnectTime ? moment(channel.reconnectTime).tz(this.timeZone).format("DD/MM HH:mm:ss") : "N/A en periodo";
+
+      textContent += `- ${channel.name}: Estado Actual: ${finalStatus}. Desconexión: ${disconnectFormatted}. Reconexión: ${reconnectFormatted}\n`;
+
+      htmlRows += `
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${channel.name || 'N/A'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${finalStatus}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${disconnectFormatted}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${reconnectFormatted}</td>
+                </tr>
+            `;
+    });
+
+    const html = `
+            <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 5px;">
+                <h2 style="color: #D32F2F; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px;">Alerta de Conexión de Sensores</h2>
+                <p>Se han detectado <strong>${disconnectedChannels.length} sensores</strong> con eventos de conexión o desconexión.</p>
+                <p>Fecha y hora de la alerta: ${formattedTime}</p>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                    <thead style="background-color: #f2f2f2;">
+                        <tr>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Canal</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Estado Actual</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Desconexión</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Hora de Reconexión</th>
+                        </tr>
+                    </thead>
+                    <tbody>${htmlRows}</tbody>
+                </table>
+                <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente.</p>
+            </div>`;
+
+    return { html, text: textContent };
+  }
+
+  /**
+   * Utilidad para quitar etiquetas HTML de un texto.
+   * @param {string} html - Texto HTML.
+   * @returns {string} Texto plano.
+   * @private
+   */
+  _stripHtml(html) {
+    return html ? html.replace(/<[^>]*>?/gm, '').replace(/ /g, ' ').trim() : '';
+  }
+
+  // Métodos de ayuda para métricas (pueden ser llamados desde los métodos públicos)
   recordEmailSuccess(subject, recipientCount) {
-    console.log(
-      `Email Service - Métricas: Correo "${subject}" enviado a ${recipientCount} destinatarios a las ${new Date().toLocaleTimeString()}`
-    );
+    console.log(`Métrica: Correo "${subject}" enviado a ${recipientCount} a las ${new Date().toLocaleTimeString()}`);
+    // Podrías incrementar contadores específicos aquí si lo necesitas
   }
 
-  /**
-   * Registra un error de envío de correo (para métricas)
-   */
   recordEmailError(subject, errorMessage) {
-    console.error(
-      `Email Service - Métricas: Error enviando "${subject}" - ${errorMessage}`
-    );
+    console.error(`Métrica: Error enviando "${subject}" - ${errorMessage}`);
+    // Podrías incrementar contadores específicos aquí
   }
+
+  // generateEmailContent puede permanecer aquí si es lógica específica del servicio
+  generateEmailContent(type, data) {
+    // ... (la lógica existente para generar subject, htmlContent, plainText según el type)
+    // Asegúrate de que devuelve { subject, htmlContent, plainText }
+    let subject = "Alerta del Sistema"; // Valor predeterminado
+    let htmlContent = `<p>Alerta tipo: ${type}</p><p>Datos: ${JSON.stringify(data)}</p>`; // Contenido predeterminado
+    let plainText = `Alerta tipo: ${type}\nDatos: ${JSON.stringify(data)}`; // Contenido predeterminado
+
+    // Añadir lógica específica para 'temperature', 'disconnection', etc.
+    switch (type) {
+      case "temperature":
+      case "disconnection":
+        // Reutilizar la lógica de formateo
+        const formatted = type === "temperature" ? this._formatTemperatureAlertContent([data]) : this._formatDisconnectionAlertContent([data]);
+        subject = `Alerta de ${type === "temperature" ? "Temperatura" : "Conexión"} - ${data.channelName || data.name || data.device || 'Dispositivo desconocido'}`;
+        htmlContent = formatted.html;
+        plainText = formatted.text;
+        break;
+      // Añadir más casos si es necesario
+    }
+
+    // Asegurarse de devolver siempre el objeto esperado
+    return { subject, htmlContent, plainText };
+  }
+
 }
 
-module.exports = new EmailService();
+module.exports = new EmailService(); // Exportar instancia única
