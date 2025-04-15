@@ -1,902 +1,574 @@
-// src/services/smsService.js
+// src/services/sms/smsService.js
 
 const axios = require("axios");
-const BaseAlertService = require("../baseAlertService");
+const BaseAlertService = require("../baseAlertService"); // Hereda de BaseAlertService
 const config = require("../../config/js_files/config-loader");
 const moment = require("moment-timezone");
-const notificationController = require("../../controllers/notificationController");
+const notificationController = require("../../controllers/notificationController"); // Para isWithinWorkingHours
 
 /**
- * Servicio para envío de SMS a través de un módem remoto.
- * Proporciona capacidades de envío individual, grupal, y procesamiento por lotes.
+ * Servicio centralizado para el envío de SMS a través de un módem remoto.
+ * Hereda funcionalidades base de BaseAlertService.
  */
 class SmsService extends BaseAlertService {
-  constructor() {
-    super();
-    this.initialized = false;
-    this.config = config.getConfig();
-    this.axios = axios;
-    this.metrics = {
-      sentAlerts: 0,
-      failedAlerts: 0,
-      lastError: null,
-      lastSuccessTime: null,
-      queueStats: {
-        added: 0,
-        processed: 0,
-        failed: 0
-      }
-    };
+    constructor() {
+        super(); // Llama al constructor de BaseAlertService
+        this.axios = axios; // Usar la instancia importada
+        this.config = null; // Se cargará en initialize
+        this.defaultRecipients = [];
+        this.timeZone = "America/Santiago"; // Se actualizará en initialize
+        // Métricas y Cola se inicializan en BaseAlertService y aquí si es necesario
+         this.metrics = { // Reinicializar métricas específicas si es necesario
+             sentAlerts: 0,
+             failedAlerts: 0,
+             lastError: null,
+             lastSuccessTime: null,
+             queueStats: {
+                 added: 0,
+                 processed: 0,
+                 failed: 0
+             }
+         };
+        this.messageQueue = { // Reinicializar cola específica si es necesario
+            createdAt: new Date(),
+            temperatureAlerts: [], // Cola específica para alertas de temperatura SMS
+            lastProcessed: null,
+        };
+        // La inicialización se hará explícitamente
+    }
 
-    // Intentar cargar la configuración
-    this.loadConfiguration();
+    /**
+     * Inicializa el servicio SMS.
+     * Carga la configuración específica de SMS.
+     */
+    async initialize() {
+        if (this.initialized) return;
 
-    // Cola de mensajes
-    this.messageQueue = {
-      createdAt: new Date(),
-      temperatureAlerts: [],
-      lastProcessed: null,
-    };
-  }
-
-  /**
-   * Carga la configuración desde config-loader
-   */
-  loadConfiguration() {
-    try {
-      const appConfig = config.getConfig();
-
-      // Cargar configuración SMS si existe
-      if (appConfig && appConfig.sms) {
-        this.config = appConfig.sms;
-
-        // Cargar destinatarios de los archivos JSON existentes si no están en la nueva config
+        console.log("Inicializando SmsService...");
         try {
-          const smsConfigRecipients = require("../../config/jsons/destinatariosSmsUbibot.json");
-          this.defaultRecipients = smsConfigRecipients.sms_destinatarios || [];
-        } catch (e) {
-          console.warn("⚠️ No se pudo cargar destinatarios SMS:", e.message);
-          this.defaultRecipients = [];
-        }
+            // 1. Cargar Configuración específica de SMS
+            const appConfig = config.getConfig(); // Obtener configuración general
+
+            if (!appConfig.sms || !appConfig.sms.modem || !appConfig.sms.modem.url) {
+                console.warn("⚠️ Configuración de SMS o del módem no encontrada/incompleta. Intentando usar valores por defecto o respaldo.");
+                // Intentar usar una configuración mínima por defecto o lanzar error
+                this.config = { // Configuración mínima de respaldo/defecto
+                    modem: { url: null, apiPath: '/api', host: '192.168.8.1', timeout: 15000, retry: { maxRetries: 2, retryDelays: [10000, 7000], timeBetweenRecipients: 8000 } },
+                    workingHours: { weekdays: { start: 8.5, end: 18.5 }, saturday: { start: 8.5, end: 14.5 } },
+                    timeZone: 'America/Santiago',
+                    queue: { maxAgeHours: 24, maxSizePerBatch: 3 },
+                    recipients: { default: [], disconnectionAlerts: [], temperatureAlerts: [], activacion: null, confirmacion: null }
+                };
+                // Intentar poblar desde la config cargada si alguna parte existe
+                if (appConfig.sms) this.config = { ...this.config, ...appConfig.sms };
+                if (appConfig.sms?.modem) this.config.modem = { ...this.config.modem, ...appConfig.sms.modem };
+                if (appConfig.sms?.workingHours) this.config.workingHours = { ...this.config.workingHours, ...appConfig.sms.workingHours };
+                if (appConfig.sms?.timeZone) this.config.timeZone = appConfig.sms.timeZone;
+                if (appConfig.sms?.queue) this.config.queue = { ...this.config.queue, ...appConfig.sms.queue };
+                if (appConfig.sms?.recipients) this.config.recipients = { ...this.config.recipients, ...appConfig.sms.recipients };
+
+                 if (!this.config.modem.url) {
+                    throw new Error("Configuración crítica faltante: URL del módem SMS no definida.");
+                 }
+
+            } else {
+                 // Configuración encontrada, usarla
+                 this.config = appConfig.sms;
+                 // Asegurar valores por defecto si alguna sub-propiedad falta
+                 // Usamos operador ?? para valores por defecto, más seguro que || para booleanos/números 0
+                 this.config.modem = {
+                    url: this.config.modem?.url ?? '', // Necesitamos una URL base
+                    apiPath: this.config.modem?.apiPath ?? '/api',
+                    host: this.config.modem?.host ?? '192.168.8.1',
+                    timeout: this.config.modem?.timeout ?? 15000,
+                    retry: {
+                        maxRetries: this.config.modem?.retry?.maxRetries ?? 2,
+                        retryDelays: this.config.modem?.retry?.retryDelays ?? [10000, 7000],
+                        timeBetweenRecipients: this.config.modem?.retry?.timeBetweenRecipients ?? 8000
+                    },
+                    ...(this.config.modem ?? {}) // Sobrescribir con lo existente
+                };
+                 this.config.workingHours = { weekdays: { start: 8.5, end: 18.5 }, saturday: { start: 8.5, end: 14.5 }, ...(this.config.workingHours ?? {}) };
+                 this.config.timeZone = this.config.timeZone ?? 'America/Santiago';
+                 this.config.queue = { maxAgeHours: 24, maxSizePerBatch: 3, ...(this.config.queue ?? {}) };
+                 this.config.recipients = { default: [], disconnectionAlerts: [], temperatureAlerts: [], activacion: null, confirmacion: null, ...(this.config.recipients ?? {}) };
+            }
+
+
+            this.timeZone = this.config.timeZone;
+            this.defaultRecipients = this.config.recipients?.default || [];
+
+            // Cargar destinatarios adicionales si es necesario (ej. desde archivo legacy)
+             if (this.defaultRecipients.length === 0) {
+                 try {
+                     const smsConfigRecipients = require("../../config/jsons/destinatariosSmsUbibot.json");
+                     this.defaultRecipients = smsConfigRecipients.sms_destinatarios || [];
+                     this.config.recipients.default = this.defaultRecipients; // Actualizar config
+                 } catch (e) {
+                     console.warn("⚠️ No se pudo cargar archivo legacy de destinatarios SMS:", e.message);
+                 }
+             }
+
+            // 3. Inicializar Timers de BaseAlertService
+            super.initializeTimers();
+
+            this.initialized = true;
+            console.log("✅ SmsService inicializado correctamente.");
+            console.log(`- URL Módem: ${this.config.modem.url}`);
+            console.log(`- Destinatarios Default: ${this.defaultRecipients.length}`);
 
-        console.log("✅ Configuración SMS cargada correctamente");
-        return true;
-      } else {
-        console.warn("⚠️ No se encontró configuración SMS en config-loader");
-        return false;
-      }
-    } catch (error) {
-      console.error("Error al cargar configuración SMS:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Inicializa el servicio SMS
-   * @returns {boolean} True si la inicialización fue exitosa
-   */
-  async initialize() {
-    if (this.initialized) return;
-
-    try {
-      // Inicializar temporizadores del servicio base
-      this.initializeTimers();
-      this.initialized = true;
-      console.log("✅ SmsService inicializado correctamente");
-    } catch (error) {
-      console.error("❌ Error inicializando SmsService:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Verifica si estamos dentro del horario laboral
-   * Usa NotificationController como fuente centralizada
-   * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar
-   * @returns {boolean} true si estamos en horario laboral
-   */
-  isWithinWorkingHours(checkTime = null) {
-    // Usar NotificationController como fuente centralizada
-    return notificationController.isWithinWorkingHours();
-  }
-
-  /**
-   * Verifica la conexión con el módem
-   * @returns {Promise<boolean>} True si el módem está conectado
-   */
-  async checkModemConnection() {
-    try {
-      const response = await this.axios.get(`${this.config.modem.url}${this.config.modem.apiPath}/status`, {
-        timeout: this.config.modem.timeout
-      });
-      return response.data.connected === true;
-    } catch (error) {
-      console.error("Error verificando conexión del módem:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Obtiene los headers básicos para las solicitudes
-   * @returns {Object} Headers básicos
-   */
-  getBasicHeaders() {
-    return {
-      Accept: "*/*",
-      "X-Requested-With": "XMLHttpRequest",
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache"
-    };
-  }
-
-  /**
-   * Obtiene un token de autenticación del módem
-   * @returns {Promise<{sessionId: string, token: string}>} Sesión y token
-   */
-  async getToken() {
-    // Asegurarnos de que tenemos la configuración
-    if (!this.config || !this.config.modem) {
-      await this.loadConfiguration();
-      if (!this.config || !this.config.modem) {
-        throw new Error("No se pudo cargar la configuración del módem");
-      }
-    }
-
-    const { url, apiPath, timeout } = this.config.modem;
-
-    try {
-      const response = await this.axios.get(
-        `${url}${apiPath || "/api"}/webserver/SesTokInfo`,
-        {
-          headers: this.getBasicHeaders(),
-          timeout: timeout || 5000
-        }
-      );
-
-      const responseText = response.data;
-      const sessionIdMatch = responseText.match(/<SesInfo>(.*?)<\/SesInfo>/);
-      const tokenMatch = responseText.match(/<TokInfo>(.*?)<\/TokInfo>/);
-
-      if (!sessionIdMatch || !tokenMatch) {
-        throw new Error("No se pudo obtener el token y la sesión (formato de respuesta inválido)");
-      }
-
-      return {
-        sessionId: sessionIdMatch[1].replace("SessionID=", ""),
-        token: tokenMatch[1],
-      };
-    } catch (error) {
-      console.error("Error obteniendo token:", error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Verifica y refresca el token si es necesario
-   * @returns {Promise<{headers: Object}>} Headers con el token actualizado
-   */
-  async verifyAndRefreshToken() {
-    // Asegurarnos de que tenemos la configuración
-    if (!this.config || !this.config.modem) {
-      await this.loadConfiguration();
-      if (!this.config || !this.config.modem) {
-        throw new Error("No se pudo cargar la configuración del módem");
-      }
-    }
-
-    try {
-      const { sessionId, token } = await this.getToken();
-      const { url, host } = this.config.modem;
-
-      return {
-        headers: {
-          ...this.getBasicHeaders(),
-          "Accept-Encoding": "gzip, deflate",
-          "Accept-Language": "es-ES,es;q=0.9",
-          Connection: "keep-alive",
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          Cookie: `SessionID=${sessionId}`,
-          Host: host || "192.168.8.1",
-          Origin: url,
-          Referer: `${url}/html/smsinbox.html`,
-          __RequestVerificationToken: token,
-        },
-        sessionId,
-        token,
-      };
-    } catch (error) {
-      console.error("Error al verificar/refrescar token:", error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Formatea un número de teléfono para asegurar que tiene formato internacional
-   * @param {string} phone - Número de teléfono
-   * @returns {string} Número formateado
-   */
-  formatPhoneNumber(phone) {
-    if (!phone) return null;
-
-    let formatted = phone.toString().replace(/\s+/g, "");
-    if (!formatted.startsWith("+")) {
-      formatted = "+" + formatted;
-    }
-    return formatted;
-  }
-
-  /**
-   * Envía un SMS a un destinatario específico con reintentos
-   * @param {string} destinatario - Número de teléfono
-   * @param {string} message - Mensaje a enviar
-   * @param {number} [retryAttempt=0] - Número de intento actual
-   * @returns {Promise<boolean>} True si el envío fue exitoso
-   */
-  async sendSMSToRecipient(destinatario, message, retryAttempt = 0) {
-    // Asegurarnos de que tenemos la configuración
-    if (!this.config || !this.config.modem) {
-      await this.loadConfiguration();
-      if (!this.config || !this.config.modem) {
-        throw new Error("No se pudo cargar la configuración del módem");
-      }
-    }
-
-    const formattedPhone = this.formatPhoneNumber(destinatario);
-    if (!formattedPhone) {
-      console.error("Número de teléfono inválido:", destinatario);
-      return false;
-    }
-
-    const { retry, url, apiPath, timeout } = this.config.modem;
-    const maxRetries = retry ? retry.maxRetries : 2;
-    const retryDelays = retry ? retry.retryDelays : [10000, 7000];
-
-    try {
-      // Si es un reintento, esperar antes de proceder
-      if (retryAttempt > 0) {
-        console.log(`Reintento ${retryAttempt} para ${formattedPhone}`);
-        const waitTime = retryDelays[retryAttempt - 1] || 5000;
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-      }
-
-      // Obtener headers actualizados
-      const { headers } = await this.verifyAndRefreshToken();
-
-      // Preparar el XML para el SMS
-      const smsData = this.prepareSmsXml(formattedPhone, message);
-
-      // Enviar la solicitud al módem
-      const response = await this.axios({
-        method: "post",
-        url: `${url}${apiPath || "/api"}/sms/send-sms`,
-        data: smsData,
-        headers: headers,
-        transformRequest: [(data) => data],
-        validateStatus: null, // No lanzar error por códigos de estado
-        timeout: timeout || 10000,
-      });
-
-      // Verificar respuesta
-      if (response.data && response.data.includes("<response>OK</response>")) {
-        console.log(`SMS enviado exitosamente a ${formattedPhone}`);
-        this.metrics.sentAlerts++;
-        this.metrics.lastSuccessTime = new Date();
-        return true;
-      }
-
-      // Si hay error de autenticación, reintentar
-      if (response.data && response.data.includes("<code>113018</code>")) {
-        console.log(`Error de autenticación detectado, renovando sesión...`);
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-
-        // Verificar si podemos reintentar
-        if (retryAttempt < maxRetries) {
-          return this.sendSMSToRecipient(
-            destinatario,
-            message,
-            retryAttempt + 1
-          );
-        }
-      }
-
-      // Si llegamos aquí, hubo un error en la respuesta
-      const errorMsg = this.extractErrorFromResponse(response.data) || "Error desconocido";
-      throw new Error(`Error en respuesta del módem: ${errorMsg}`);
-    } catch (error) {
-      // Si podemos reintentar, hacerlo
-      if (retryAttempt < maxRetries) {
-        console.warn(
-          `Error en intento ${retryAttempt + 1}/${maxRetries + 1}: ${error.message}`
-        );
-        return this.sendSMSToRecipient(destinatario, message, retryAttempt + 1);
-      }
-
-      // Si agotamos los reintentos, registrar el error y fallar
-      console.error(
-        `Error al enviar SMS a ${formattedPhone} después de ${maxRetries + 1} intentos:`,
-        error.message
-      );
-      this.metrics.failedAlerts++;
-      this.metrics.lastError = error.message;
-      return false;
-    }
-  }
-
-  /**
-   * Prepara el XML para enviar un SMS
-   * @param {string} phoneNumber - Número de teléfono formateado
-   * @param {string} message - Mensaje a enviar
-   * @returns {string} XML formateado
-   */
-  prepareSmsXml(phoneNumber, message) {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-      <request>
-          <Index>-1</Index>
-          <Phones>
-              <Phone>${phoneNumber}</Phone>
-          </Phones>
-          <Sca></Sca>
-          <Content>${message}</Content>
-          <Length>${message.length}</Length>
-          <Reserved>1</Reserved>
-          <Date>${new Date().toISOString().replace("T", " ").split(".")[0]}</Date>
-      </request>`;
-  }
-
-  /**
-   * Extrae mensajes de error de la respuesta XML
-   * @param {string} responseData - Respuesta XML del módem
-   * @returns {string|null} Mensaje de error o null si no se encontró
-   */
-  extractErrorFromResponse(responseData) {
-    if (!responseData) return null;
-
-    try {
-      const codeMatch = responseData.match(/<code>(.*?)<\/code>/);
-      const messageMatch = responseData.match(/<message>(.*?)<\/message>/);
-
-      if (codeMatch && messageMatch) {
-        return `Código: ${codeMatch[1]}, Mensaje: ${messageMatch[1]}`;
-      } else if (codeMatch) {
-        return `Código: ${codeMatch[1]}`;
-      } else if (messageMatch) {
-        return messageMatch[1];
-      }
-    } catch (e) {
-      console.warn("Error al parsear respuesta de error:", e);
-    }
-
-    return null;
-  }
-
-  /**
-   * Envía un SMS a múltiples destinatarios
-   * @param {string} message - Mensaje a enviar
-   * @param {Array<string>} [recipients=null] - Lista de destinatarios (opcional, usa la lista por defecto)
-   * @param {boolean} [forceOutsideWorkingHours=false] - Forzar envío incluso en horario laboral
-   * @returns {Promise<{success: boolean, sentCount: number, failedCount: number}>} Resultado del envío
-   */
-  async sendSMS(message, recipients = null, forceOutsideWorkingHours = false) {
-    // Asegurarnos de que estamos inicializados
-    if (!this.initialized) {
-      this.initialize();
-    }
-
-    // Verificar si estamos fuera del horario laboral (a menos que se fuerce el envío)
-    // Usar NotificationController para verificar horario laboral
-    if (!forceOutsideWorkingHours && notificationController.isWithinWorkingHours()) {
-      console.log(
-        "SMS Service - Dentro de horario laboral. Posponiendo envío de SMS para fuera de horario."
-      );
-      return {
-        success: false,
-        sentCount: 0,
-        failedCount: 0,
-        reason: "working_hours",
-      };
-    }
-
-    // Validar mensaje
-    if (!message || typeof message !== 'string' || message.trim() === '') {
-      console.error("Error: No se proporcionó mensaje válido para enviar");
-      return {
-        success: false,
-        sentCount: 0,
-        failedCount: 0,
-        reason: "invalid_message",
-      };
-    }
-
-    // Usar destinatarios proporcionados o predeterminados
-    const smsRecipients = recipients || this.defaultRecipients;
-
-    if (!smsRecipients || !Array.isArray(smsRecipients) || smsRecipients.length === 0) {
-      console.error("Error: No hay destinatarios configurados para SMS");
-      return {
-        success: false,
-        sentCount: 0,
-        failedCount: 0,
-        reason: "no_recipients",
-      };
-    }
-
-    // Resultados del envío
-    const results = {
-      success: true,
-      sentCount: 0,
-      failedCount: 0,
-      recipients: {},
-      timestamp: new Date()
-    };
-
-    console.log(`Enviando SMS a ${smsRecipients.length} destinatarios`);
-
-    // Asegurarse de que tenemos la configuración para los tiempos de espera
-    const timeBetweenRecipients = this.config && this.config.modem && this.config.modem.retry ?
-      this.config.modem.retry.timeBetweenRecipients : 8000;
-
-    // Enviar a cada destinatario con pausa entre envíos
-    for (const destinatario of smsRecipients) {
-      try {
-        const sent = await this.sendSMSToRecipient(destinatario, message);
-
-        if (sent) {
-          results.sentCount++;
-          results.recipients[destinatario] = "enviado";
-        } else {
-          results.failedCount++;
-          results.recipients[destinatario] = "fallido";
-          results.success = false;
-        }
-
-        // Esperar entre envíos para no sobrecargar el módem
-        if (smsRecipients.length > 1) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, timeBetweenRecipients)
-          );
-        }
-      } catch (error) {
-        console.error(
-          `Error general al enviar SMS a ${destinatario}:`,
-          error.message
-        );
-        results.failedCount++;
-        results.recipients[destinatario] = "error";
-        results.success = false;
-      }
-    }
-
-    // Registrar resultado final
-    console.log(
-      `Resultado de envío SMS: ${results.sentCount} enviados, ${results.failedCount} fallidos`
-    );
-    return results;
-  }
-
-  /**
-  * Agrega una alerta de temperatura a la cola
-  * Adaptado para trabajar con el nuevo formato de alertas agrupadas
-  * @param {string} channelName - Nombre del canal
-  * @param {number} temperature - Temperatura detectada
-  * @param {string} timestamp - Timestamp de la medición
-  * @param {number} minThreshold - Umbral mínimo
-  * @param {number} maxThreshold - Umbral máximo
-  * @returns {boolean} - true si se agregó correctamente
-  */
-  addTemperatureAlertToQueue(
-    channelName,
-    temperature,
-    timestamp,
-    minThreshold,
-    maxThreshold
-  ) {
-    // Validaciones
-    if (!channelName || typeof channelName !== 'string') {
-      console.error('Nombre de canal inválido:', channelName);
-      return false;
-    }
-
-    if (isNaN(temperature)) {
-      console.error('Temperatura inválida:', temperature);
-      return false;
-    }
-
-    // Limpiar alertas antiguas
-    this.cleanupStaleAlerts();
-
-    // Agregar a la cola
-    this.messageQueue.temperatureAlerts.push({
-      channelName,
-      temperature,
-      timestamp,
-      minThreshold,
-      maxThreshold,
-      queuedAt: new Date(),
-    });
-
-    // Actualizar métricas
-    this.metrics.queueStats.added++;
-
-    console.log(
-      `SMS Service - Alerta de temperatura para ${channelName} agregada a la cola (${this.messageQueue.temperatureAlerts.length} alertas en cola)`
-    );
-    return true;
-  }
-
-  /**
-   * Limpia alertas antiguas de la cola
-   */
-  cleanupStaleAlerts() {
-    // Asegurarnos de que tenemos la configuración
-    if (!this.config || !this.config.queue) {
-      this.loadConfiguration();
-    }
-
-    // Obtener la edad máxima en horas de las alertas en la cola
-    const maxAgeHours = this.config && this.config.queue ?
-      this.config.queue.maxAgeHours : 24;
-
-    const now = new Date();
-    const ageLimit = new Date(now.getTime() - maxAgeHours * 60 * 60 * 1000);
-
-    const initialLength = this.messageQueue.temperatureAlerts.length;
-
-    this.messageQueue.temperatureAlerts = this.messageQueue.temperatureAlerts.filter(
-      alert => alert.queuedAt && alert.queuedAt > ageLimit
-    );
-
-    const removedCount = initialLength - this.messageQueue.temperatureAlerts.length;
-    if (removedCount > 0) {
-      console.log(`SMS Service - Limpieza de cola: ${removedCount} alertas antiguas eliminadas`);
-    }
-  }
-
-  /**
-   * Envía las alertas de temperatura acumuladas
-   * @param {boolean} [forceOutsideWorkingHours=false] - Forzar envío incluso en horario laboral
-   * @returns {Promise<{success: boolean, processed: number}>} Resultado del procesamiento
-   */
-  async processTemperatureAlertQueue(forceOutsideWorkingHours = false) {
-    // Verificar si hay alertas para procesar
-    if (this.messageQueue.temperatureAlerts.length === 0) {
-      return { success: true, processed: 0 };
-    }
-
-    // Verificar si estamos fuera del horario laboral usando NotificationController
-    if (!forceOutsideWorkingHours && notificationController.isWithinWorkingHours()) {
-      console.log(
-        "SMS Service - Dentro de horario laboral. Posponiendo procesamiento de alertas SMS."
-      );
-      return { success: false, processed: 0, reason: "working_hours" };
-    }
-
-    // Asegurarnos de que tenemos la configuración
-    if (!this.config || !this.config.queue) {
-      this.loadConfiguration();
-    }
-
-    // Obtener el número máximo de alertas detalladas por lote
-    const maxSizePerBatch = this.config && this.config.queue ?
-      this.config.queue.maxSizePerBatch : 3;
-
-    // Crear un resumen de las alertas para enviar un único SMS
-    const alertCount = this.messageQueue.temperatureAlerts.length;
-    let message = `ALERTA: ${alertCount} sensor${alertCount > 1 ? "es" : ""
-      } fuera de rango. `;
-
-    // Incluir solo los primeros N canales con detalle para no exceder límite de SMS
-    const detailLimit = Math.min(maxSizePerBatch, alertCount);
-    for (let i = 0; i < detailLimit; i++) {
-      const alert = this.messageQueue.temperatureAlerts[i];
-      message += `${alert.channelName}: ${alert.temperature}°C. `;
-    }
-
-    // Agregar resumen si hay más alertas
-    if (alertCount > detailLimit) {
-      message += `Y ${alertCount - detailLimit} más. `;
-    }
-
-    // Añadir timestamp
-    message += `${moment().format("DD/MM HH:mm")}`;
-
-    // Enviar el SMS consolidado
-    const result = await this.sendSMS(message, null, forceOutsideWorkingHours);
-
-    if (result.success) {
-      // Limpiar la cola y actualizar métricas
-      const processedCount = this.messageQueue.temperatureAlerts.length;
-      this.messageQueue.temperatureAlerts = [];
-      this.messageQueue.lastProcessed = new Date();
-      this.metrics.queueStats.processed += processedCount;
-
-      console.log(
-        `SMS Service - Cola de alertas procesada: ${processedCount} alertas enviadas en un SMS consolidado`
-      );
-      return { success: true, processed: processedCount };
-    } else {
-      // Actualizar métricas de fallo
-      this.metrics.queueStats.failed += this.messageQueue.temperatureAlerts.length;
-
-      console.error(
-        "SMS Service - Error al enviar alertas consolidadas:",
-        result
-      );
-      return { success: false, processed: 0, error: result };
-    }
-  }
-
-  /**
- * Envía un SMS de alerta de temperatura inmediatamente o lo agrega a la cola
- * Adaptado para el nuevo formato de alertas agrupadas
- * @param {Array} formattedAlerts - Alertas formateadas
- * @param {Array<string>} [recipients=null] - Destinatarios personalizados
- * @param {boolean} [forceOutsideWorkingHours=true] - Forzar envío incluso en horario laboral
- * @returns {Promise<{success: boolean}>} - Resultado de la operación
- */
-  async sendTemperatureAlert(formattedAlerts, recipients = null, forceOutsideWorkingHours = true) {
-    if (!this.isConfigured()) {
-      console.error('El servicio SMS no está configurado correctamente');
-      return { success: false, reason: 'not_configured' };
-    }
-
-    if (!formattedAlerts || formattedAlerts.length === 0) {
-      console.log('No hay alertas de temperatura para reportar');
-      return { success: false, reason: 'no_alerts' };
-    }
-
-    // Usar destinatarios específicos para temperatura o predeterminados
-    const smsRecipients = recipients ||
-      this.config.recipients.temperatureAlerts ||
-      this.config.recipients.default;
-
-    if (!smsRecipients || smsRecipients.length === 0) {
-      console.error('No hay destinatarios configurados para alertas de temperatura');
-      return { success: false, reason: 'no_recipients' };
-    }
-
-    // Crear mensaje formateado para SMS
-    let message = `TEMPERATURA: ${formattedAlerts.length} sensor${formattedAlerts.length > 1 ? 'es' : ''} fuera de rango. `;
-
-    // Obtener límite máximo de alertas detalladas desde configuración
-    const maxSizePerBatch = this.config.queue?.maxSizePerBatch || 3;
-
-    // Incluir detalles para los primeros N sensores
-    const detailLimit = Math.min(maxSizePerBatch, formattedAlerts.length);
-    for (let i = 0; i < detailLimit; i++) {
-      const alert = formattedAlerts[i];
-      message += `${alert.name}: ${alert.temperature}°C. `;
-    }
-
-    // Si hay más de N, agregar resumen
-    if (formattedAlerts.length > detailLimit) {
-      message += `Y ${formattedAlerts.length - detailLimit} más. `;
-    }
-
-    // Añadir timestamp
-    const moment = require('moment-timezone');
-    message += `${moment().tz(this.config.timeZone).format("DD/MM HH:mm")}`;
-
-    // Enviar el SMS
-    const result = await this.sendSMS(message, smsRecipients, forceOutsideWorkingHours);
-
-    return {
-      success: result.success,
-      sentCount: result.sentCount,
-      failedCount: result.failedCount,
-    };
-  }
-  /**
- * Envía un SMS de alerta de desconexión
- * Adaptado para el nuevo formato de alertas agrupadas
- * @param {Array} disconnectedChannels - Canales con eventos de conexión
- * @param {Array<string>} [recipients=null] - Destinatarios personalizados
- * @param {boolean} [forceOutsideWorkingHours=true] - Forzar envío incluso en horario laboral
- * @returns {Promise<{success: boolean}>} - Resultado de la operación
- */
-  async sendDisconnectionAlert(
-    disconnectedChannels,
-    recipients = null,
-    forceOutsideWorkingHours = true
-  ) {
-    if (!this.isConfigured()) {
-      console.error('El servicio SMS no está configurado correctamente');
-      return { success: false, reason: 'not_configured' };
-    }
-
-    if (!disconnectedChannels || disconnectedChannels.length === 0) {
-      console.log('No hay canales con eventos de conexión para reportar');
-      return { success: false, reason: 'no_channels' };
-    }
-
-    // Usar destinatarios personalizados o los específicos para alertas de desconexión o los predeterminados
-    const smsRecipients = recipients ||
-      this.config.recipients.disconnectionAlerts ||
-      this.config.recipients.default;
-
-    if (!smsRecipients || smsRecipients.length === 0) {
-      console.error('No hay destinatarios configurados para alertas de desconexión');
-      return { success: false, reason: 'no_recipients' };
-    }
-
-    // Crear mensaje
-    let message = `CONEXION: ${disconnectedChannels.length} sensor${disconnectedChannels.length > 1 ? 'es' : ''} con eventos. `;
-
-    // Obtener límite máximo de alertas detalladas desde configuración
-    const maxSizePerBatch = this.config.queue?.maxSizePerBatch || 3;
-
-    // Incluir detalles para los primeros N sensores
-    const detailLimit = Math.min(maxSizePerBatch, disconnectedChannels.length);
-    for (let i = 0; i < detailLimit; i++) {
-      const alert = disconnectedChannels[i];
-      const status = alert.lastEvent === "disconnected" ? "DESCONECT" : "CONECTADO";
-      message += `${alert.name}: ${status}. `;
-    }
-
-    // Si hay más de N, agregar resumen
-    if (disconnectedChannels.length > detailLimit) {
-      message += `Y ${disconnectedChannels.length - detailLimit} más. `;
-    }
-
-    // Añadir timestamp
-    const moment = require('moment-timezone');
-    message += `${moment().tz(this.config.timeZone).format("DD/MM HH:mm")}`;
-
-    // Enviar el SMS
-    const result = await this.sendSMS(message, smsRecipients, forceOutsideWorkingHours);
-
-    return {
-      success: result.success,
-      sentCount: result.sentCount,
-      failedCount: result.failedCount,
-    };
-  }
-
-  /**
-   * Devuelve las métricas del servicio SMS
-   * @returns {Object} Métricas de envíos
-   */
-  getMetrics() {
-    return {
-      ...this.metrics,
-      queuedAlerts: this.messageQueue.temperatureAlerts.length,
-      lastProcessed: this.messageQueue.lastProcessed,
-      queueCreated: this.messageQueue.createdAt,
-      successRate:
-        this.metrics.sentAlerts + this.metrics.failedAlerts > 0
-          ? (
-            (this.metrics.sentAlerts /
-              (this.metrics.sentAlerts + this.metrics.failedAlerts)) *
-            100
-          ).toFixed(2) + "%"
-          : "N/A",
-      initialized: this.initialized,
-      configLoaded: this.config !== null,
-      timestamp: new Date(),
-    };
-  }
-
-  /**
-   * Permite reiniciar el servicio y sus métricas
-   */
-  reset() {
-    // Reiniciar métricas
-    this.metrics = {
-      sentAlerts: 0,
-      failedAlerts: 0,
-      lastError: null,
-      lastSuccessTime: null,
-      queueStats: {
-        added: 0,
-        processed: 0,
-        failed: 0
-      }
-    };
-
-    // Reiniciar cola
-    this.messageQueue = {
-      createdAt: new Date(),
-      temperatureAlerts: [],
-      lastProcessed: null,
-    };
-
-    // Reiniciar estado
-    this.initialized = false;
-
-    // Recargar configuración
-    this.loadConfiguration();
-
-    console.log("SMS Service - Servicio reiniciado");
-    return true;
-  }
-
-  async processAlert(alert) {
-    if (!this.initialized) {
-      throw new Error("SmsService no inicializado");
-    }
-
-    try {
-      const { type, data, recipients } = alert;
-      const message = this.formatMessage(type, data);
-
-      // Verificar conexión del módem
-      if (!await this.checkModemConnection()) {
-        throw new Error("Módem no disponible");
-      }
-
-      // Enviar SMS a cada destinatario
-      for (const recipient of recipients) {
-        try {
-          await this.sendSms(recipient, message);
-          this.metrics.sentAlerts++;
         } catch (error) {
-          console.error(`Error enviando SMS a ${recipient}:`, error);
-          this.metrics.failedAlerts++;
+            console.error("❌ Error inicializando SmsService:", error.message);
+            this.initialized = false;
+            // throw error; // Opcional: relanzar si es crítico
         }
-      }
-
-      this.metrics.lastSuccessTime = new Date();
-    } catch (error) {
-      console.error("Error procesando alerta SMS:", error);
-      this.metrics.failedAlerts++;
-      this.metrics.lastError = error.message;
-      throw error;
     }
-  }
 
-  formatMessage(type, data) {
-    switch (type) {
-      case "temperature":
-        return `Alerta de temperatura: ${data.temperature}°C en ${data.location}`;
-      case "disconnection":
-        return `Alerta de desconexión: ${data.device} desconectado`;
-      default:
-        return data.message || "Alerta del sistema";
-    }
-  }
+    /**
+     * Verifica si el servicio SMS está correctamente configurado.
+     * @returns {boolean} True si está listo para enviar SMS.
+     */
+    isConfigured() {
+        const configured = this.initialized &&
+               this.config &&
+               this.config.modem &&
+               this.config.modem.url && // Al menos la URL debe estar presente
+               this.defaultRecipients && // Asegurar que hay una lista (puede estar vacía)
+               Array.isArray(this.defaultRecipients);
 
-  async sendSms(recipient, message) {
-    try {
-      await this.axios.post(
-        `${this.config.modem.url}${this.config.modem.apiPath}/send`,
-        {
-          recipient,
-          message
-        },
-        {
-          timeout: this.config.modem.timeout
+        if (!configured && this.initialized) {
+             console.warn("SmsService está inicializado pero no completamente configurado.");
+             if (!this.config?.modem?.url) console.warn("- URL del módem faltante.");
+             if (!Array.isArray(this.defaultRecipients)) console.warn("- Lista de destinatarios predeterminados inválida.");
         }
-      );
-    } catch (error) {
-      throw new Error(`Error enviando SMS: ${error.message}`);
-    }
-  }
-
-  async sendAlert(subject, data, templateName) {
-    if (!this.initialized) {
-      throw new Error("SmsService no inicializado");
+        return configured;
     }
 
-    const alert = {
-      type: templateName,
-      data: { ...data, subject },
-      recipients: this.config.recipients,
-      priority: data.priority || "normal",
-      timestamp: new Date()
-    };
+    /**
+     * Verifica si estamos dentro del horario laboral.
+     * Delega a NotificationController.
+     * @param {Date|string|null} [checkTime=null] - Tiempo específico a verificar.
+     * @returns {boolean} true si estamos en horario laboral.
+     */
+    isWithinWorkingHours(checkTime = null) {
+        // Usar NotificationController como fuente centralizada
+        return notificationController.isWithinWorkingHours(checkTime);
+    }
 
-    return this.addAlertToQueue(alert);
-  }
 
-  getStatus() {
-    return {
-      ...super.getStatus(),
-      service: "sms",
-      config: {
-        modemUrl: this.config.modem?.url,
-        recipients: this.defaultRecipients
-      }
-    };
-  }
+    // --- Métodos de Interacción con el Módem ---
+
+    async checkModemConnection() {
+        if (!this.isConfigured()) return false;
+        try {
+            const { url, apiPath, timeout } = this.config.modem;
+            // Asegurarse que la URL es válida antes de usarla
+            if (!url) throw new Error("URL del módem no configurada");
+            const targetUrl = `${url}${apiPath}/status`;
+            console.log(`Verificando conexión a: ${targetUrl}`); // Log para depuración
+            const response = await this.axios.get(targetUrl, { timeout });
+            return response.data?.connected === true;
+        } catch (error) {
+            // Loguear más detalles del error de conexión
+            if (error.code) {
+                 console.error(`Error de conexión (${error.code}) verificando módem: ${error.message}`);
+            } else {
+                 console.error("Error verificando conexión del módem:", error.message);
+            }
+            return false;
+        }
+    }
+
+    getBasicHeaders() {
+        return { Accept: "*/*", "X-Requested-With": "XMLHttpRequest", "Cache-Control": "no-cache", Pragma: "no-cache" };
+    }
+
+    async getToken() {
+        if (!this.isConfigured()) throw new Error("Servicio SMS no configurado");
+        const { url, apiPath, timeout } = this.config.modem;
+        if (!url) throw new Error("URL del módem no configurada para obtener token");
+        try {
+            const targetUrl = `${url}${apiPath}/webserver/SesTokInfo`;
+            const response = await this.axios.get(targetUrl, { headers: this.getBasicHeaders(), timeout: timeout || 5000 });
+            const responseText = response.data;
+            // Añadir validación de que responseText es un string
+            if (typeof responseText !== 'string') {
+                 throw new Error('Respuesta inesperada del módem al obtener token (no es string)');
+            }
+            const sessionIdMatch = responseText.match(/<SesInfo>(.*?)<\/SesInfo>/);
+            const tokenMatch = responseText.match(/<TokInfo>(.*?)<\/TokInfo>/);
+            if (!sessionIdMatch || !tokenMatch) throw new Error("No se pudo obtener token/sesión (respuesta inválida o vacía)");
+            return { sessionId: sessionIdMatch[1].replace("SessionID=", ""), token: tokenMatch[1] };
+        } catch (error) {
+            console.error(`Error obteniendo token desde ${this.config.modem.url}:`, error.message);
+            throw error; // Relanzar para manejo superior
+        }
+    }
+
+    async verifyAndRefreshToken() {
+        if (!this.isConfigured()) throw new Error("Servicio SMS no configurado");
+        try {
+            const { sessionId, token } = await this.getToken(); // Ya maneja error si falla
+            const { url, host } = this.config.modem;
+            if (!url) throw new Error("URL del módem no configurada para verificar token");
+            return {
+                headers: {
+                    ...this.getBasicHeaders(),
+                    "Accept-Encoding": "gzip, deflate", "Accept-Language": "es-ES,es;q=0.9",
+                    Connection: "keep-alive", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    Cookie: `SessionID=${sessionId}`, Host: host || "192.168.8.1", Origin: url,
+                    Referer: `${url}/html/smsinbox.html`, __RequestVerificationToken: token,
+                },
+                sessionId, token,
+            };
+        } catch (error) {
+            // El error ya fue logueado en getToken
+            console.error("Fallo final al verificar/refrescar token.");
+            throw error; // Relanzar
+        }
+    }
+
+    formatPhoneNumber(phone) {
+        if (!phone) return null;
+        let formatted = phone.toString().replace(/\s+/g, "");
+        if (!formatted.startsWith("+")) formatted = "+" + formatted;
+        // Podría añadirse validación de longitud o patrón aquí si es necesario
+        return formatted;
+    }
+
+    prepareSmsXml(phoneNumber, message) {
+        // Escapar caracteres especiales en el mensaje para XML
+        const escapedMessage = (message || '') // Asegurar que message es string
+            .replace(/&/g, '&')
+            .replace(/</g, '<')            
+            .replace(/>/g, '>')
+            .replace(/"/g, '"')
+            .replace(/'/g, '\'');
+
+        return `<?xml version="1.0" encoding="UTF-8"?>
+          <request>
+              <Index>-1</Index>
+              <Phones><Phone>${phoneNumber}</Phone></Phones>
+              <Sca></Sca>
+              <Content>${escapedMessage}</Content>
+              <Length>${escapedMessage.length}</Length> <!-- Usar longitud del mensaje escapado -->
+              <Reserved>1</Reserved>
+              <Date>${new Date().toISOString().replace("T", " ").split(".")[0]}</Date>
+          </request>`;
+    }
+
+    extractErrorFromResponse(responseData) {
+        if (!responseData || typeof responseData !== 'string') return null;
+        try {
+            // Intentar extraer código y mensaje
+            const codeMatch = responseData.match(/<code>(.*?)<\/code>/);
+            const messageMatch = responseData.match(/<message>(.*?)<\/message>/);
+            if (codeMatch && messageMatch) return `Código: ${codeMatch[1]}, Mensaje: ${messageMatch[1]}`;
+            if (codeMatch) return `Código: ${codeMatch[1]}`;
+            if (messageMatch) return messageMatch[1];
+            // Si no hay etiquetas XML, buscar patrones comunes de error
+            if (responseData.includes('Unauthorized') || responseData.includes('forbidden')) return 'Error de autenticación/autorización';
+            if (responseData.includes('timeout')) return 'Timeout';
+        } catch (e) { /* Ignorar error de parseo */ }
+        // Devolver una parte del error si no se pudo parsear
+        return responseData.substring(0, 100) + (responseData.length > 100 ? '...' : '');
+    }
+
+    /**
+     * Método interno para enviar SMS a un destinatario con lógica de reintentos.
+     * NO actualiza métricas generales, eso lo hace el método público que lo llama.
+     * @private
+     */
+    async _sendSingleSmsWithRetry(destinatario, message, retryAttempt = 0) {
+        // Nota: isConfigured ya se valida en el método público
+        const formattedPhone = this.formatPhoneNumber(destinatario);
+        if (!formattedPhone) {
+            console.error("Número de teléfono inválido para _sendSingleSmsWithRetry:", destinatario);
+            return false;
+        }
+
+        const { retry, url, apiPath, timeout } = this.config.modem;
+        const maxRetries = retry?.maxRetries ?? 2;
+        const retryDelays = retry?.retryDelays ?? [10000, 7000];
+        const effectiveTimeout = timeout || 15000;
+
+        if (!url) {
+             console.error("URL del módem no configurada en _sendSingleSmsWithRetry");
+             return false;
+        }
+
+        try {
+            if (retryAttempt > 0) {
+                const waitTime = retryDelays[retryAttempt - 1] || 5000;
+                console.log(`Reintento SMS ${retryAttempt}/${maxRetries} para ${formattedPhone} tras ${waitTime}ms`);
+                await new Promise((resolve) => setTimeout(resolve, waitTime));
+            }
+
+            // Obtener token y headers frescos para cada intento (importante si hay errores de sesión)
+            const { headers } = await this.verifyAndRefreshToken();
+            const smsData = this.prepareSmsXml(formattedPhone, message);
+            const targetUrl = `${url}${apiPath}/sms/send-sms`;
+
+            console.log(`Intentando enviar SMS a ${formattedPhone} (Intento ${retryAttempt + 1})`); // Log
+            const response = await this.axios({
+                method: "post",
+                url: targetUrl,
+                data: smsData,
+                headers: headers,
+                transformRequest: [(data) => data], // Necesario para enviar XML como string
+                validateStatus: (status) => status >= 200 && status < 500, // Aceptar 4xx como respuesta válida para análisis
+                timeout: effectiveTimeout,
+            });
+
+             // Analizar la respuesta
+            if (response.status === 200 && response.data?.includes("<response>OK</response>")) {
+                // Éxito explícito del módem
+                console.log(`Éxito enviando SMS a ${formattedPhone} (Intento ${retryAttempt + 1})`);
+                return true;
+            }
+
+            // Si no es OK, intentar extraer error
+            const errorMsg = this.extractErrorFromResponse(response.data) || `Estado HTTP ${response.status}`;
+            console.warn(`Respuesta no OK del módem para ${formattedPhone} (Intento ${retryAttempt + 1}): ${errorMsg}`);
+
+            // Lógica de reintento para errores específicos
+             // Código 113018 podría ser error de token/sesión
+            const shouldRetry = response.data?.includes("<code>113018</code>") || response.status >= 500; // Reintentar en errores de servidor también
+
+            if (shouldRetry && retryAttempt < maxRetries) {
+                console.log(`Reintentando debido a: ${errorMsg}`);
+                 // Espera corta antes de reintentar si es error de autenticación
+                 if (response.data?.includes("<code>113018</code>")) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                 }
+                 return this._sendSingleSmsWithRetry(destinatario, message, retryAttempt + 1);
+            }
+
+            // Si no es OK y no se reintenta, lanzar error para el catch externo
+            throw new Error(`Error final del módem: ${errorMsg}`);
+
+        } catch (error) {
+            // Captura errores de red, timeouts, o el error lanzado arriba
+            console.error(`Error en _sendSingleSmsWithRetry para ${formattedPhone} (Intento ${retryAttempt + 1}):`, error.message);
+            // Reintentar si es un error de red/timeout y quedan intentos
+            const isNetworkError = error.code && ['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN'].includes(error.code);
+            if (isNetworkError && retryAttempt < maxRetries) {
+                 return this._sendSingleSmsWithRetry(destinatario, message, retryAttempt + 1);
+            } else {
+                 // Fallo final después de reintentos o error no recuperable
+                 return false;
+            }
+        }
+    }
+
+    // --- Métodos Públicos de Envío ---
+
+    /**
+     * Envía un SMS a múltiples destinatarios, manejando métricas.
+     */
+    async sendSMS(message, recipients = null, forceOutsideWorkingHours = false) {
+        if (!this.isConfigured()) {
+             console.error("SmsService no configurado.");
+             return { success: false, sentCount: 0, failedCount: 0, reason: "not_configured" };
+        }
+        if (!forceOutsideWorkingHours && this.isWithinWorkingHours()) {
+            console.log("SMS Service: Dentro de horario laboral. Envío pospuesto.");
+            return { success: false, sentCount: 0, failedCount: 0, reason: "working_hours" };
+        }
+        if (!message || typeof message !== 'string' || message.trim() === '') {
+             console.error("Mensaje SMS inválido.");
+             return { success: false, sentCount: 0, failedCount: 0, reason: "invalid_message" };
+        }
+
+        const smsRecipients = recipients || this.defaultRecipients;
+        if (!smsRecipients || !Array.isArray(smsRecipients) || smsRecipients.length === 0) {
+             console.error("No hay destinatarios SMS configurados.");
+             return { success: false, sentCount: 0, failedCount: 0, reason: "no_recipients" };
+        }
+
+        const results = { success: true, sentCount: 0, failedCount: 0, recipients: {}, timestamp: new Date() };
+        console.log(`Enviando SMS a ${smsRecipients.length} destinatarios...`);
+        const timeBetween = this.config.modem.retry?.timeBetweenRecipients ?? 8000;
+
+        for (const destinatario of smsRecipients) {
+            // Llamar al método interno con reintentos
+            const sent = await this._sendSingleSmsWithRetry(destinatario, message);
+            if (sent) {
+                results.sentCount++;
+                results.recipients[destinatario] = "enviado";
+                 this.metrics.sentAlerts++; // Actualizar métrica global
+                 this.metrics.lastSuccessTime = new Date();
+            } else {
+                results.failedCount++;
+                results.recipients[destinatario] = "fallido";
+                results.success = false;
+                 this.metrics.failedAlerts++; // Actualizar métrica global
+                 this.metrics.lastError = `Fallo final al enviar a ${destinatario}`;
+            }
+            // Esperar entre destinatarios solo si hay más de uno y el envío anterior no falló inmediatamente
+            if (smsRecipients.length > 1 && sent) {
+                await new Promise(resolve => setTimeout(resolve, timeBetween));
+            } else if (smsRecipients.length > 1 && !sent) {
+                 // Opcional: esperar menos si falló, para no bloquear tanto
+                 await new Promise(resolve => setTimeout(resolve, Math.min(timeBetween, 2000)));
+            }
+        }
+        console.log(`Resultado envío SMS: ${results.sentCount} enviados, ${results.failedCount} fallidos.`);
+        return results;
+    }
+
+     /**
+      * Envía un SMS de alerta de temperatura.
+      */
+     async sendTemperatureAlert(formattedAlerts, recipients = null, forceOutsideWorkingHours = true) {
+        if (!this.isConfigured()) return { success: false, reason: 'not_configured' };
+        if (!formattedAlerts || formattedAlerts.length === 0) return { success: false, reason: 'no_alerts' };
+
+        const smsRecipients = recipients || this.config.recipients?.temperatureAlerts || this.defaultRecipients;
+        if (!smsRecipients || smsRecipients.length === 0) return { success: false, reason: 'no_recipients' };
+
+        // Formatear el mensaje consolidado
+        let message = `TEMPERATURA: ${formattedAlerts.length} sensor${formattedAlerts.length > 1 ? 'es' : ''} fuera de rango. `;
+        const maxSizePerBatch = this.config.queue?.maxSizePerBatch || 3;
+        const detailLimit = Math.min(maxSizePerBatch, formattedAlerts.length);
+        for (let i = 0; i < detailLimit; i++) {
+            message += `${formattedAlerts[i].name}: ${formattedAlerts[i].temperature}°C. `;
+        }
+        if (formattedAlerts.length > detailLimit) message += `Y ${formattedAlerts.length - detailLimit} más. `;
+        message += `${moment().tz(this.timeZone).format("DD/MM HH:mm")}`;
+
+        return await this.sendSMS(message, smsRecipients, forceOutsideWorkingHours);
+     }
+
+     /**
+      * Envía un SMS de alerta de desconexión.
+      */
+     async sendDisconnectionAlert(disconnectedChannels, recipients = null, forceOutsideWorkingHours = true) {
+         if (!this.isConfigured()) return { success: false, reason: 'not_configured' };
+         if (!disconnectedChannels || disconnectedChannels.length === 0) return { success: false, reason: 'no_channels' };
+
+         const smsRecipients = recipients || this.config.recipients?.disconnectionAlerts || this.defaultRecipients;
+         if (!smsRecipients || smsRecipients.length === 0) return { success: false, reason: 'no_recipients' };
+
+         // Formatear mensaje consolidado
+         let message = `CONEXION: ${disconnectedChannels.length} sensor${disconnectedChannels.length > 1 ? 'es' : ''} con eventos. `;
+         const maxSizePerBatch = this.config.queue?.maxSizePerBatch || 3;
+         const detailLimit = Math.min(maxSizePerBatch, disconnectedChannels.length);
+         for (let i = 0; i < detailLimit; i++) {
+             const status = disconnectedChannels[i].lastEvent === "disconnected" ? "DESCONECT" : "CONECTADO";
+             message += `${disconnectedChannels[i].name}: ${status}. `;
+         }
+         if (disconnectedChannels.length > detailLimit) message += `Y ${disconnectedChannels.length - detailLimit} más. `;
+         message += `${moment().tz(this.timeZone).format("DD/MM HH:mm")}`;
+
+         return await this.sendSMS(message, smsRecipients, forceOutsideWorkingHours);
+     }
+
+    // --- Métodos de Manejo de Cola ---
+
+    addTemperatureAlertToQueue(channelName, temperature, timestamp, minThreshold, maxThreshold) {
+        if (!channelName || isNaN(temperature)) {
+             console.error('Datos de alerta de temperatura inválidos para encolar.');
+             return false;
+        }
+        this.cleanupStaleAlerts();
+        this.messageQueue.temperatureAlerts.push({ channelName, temperature, timestamp, minThreshold, maxThreshold, queuedAt: new Date() });
+        this.metrics.queueStats.added++;
+        console.log(`SMS Service: Alerta temp para ${channelName} encolada (${this.messageQueue.temperatureAlerts.length} en cola)`);
+        return true;
+    }
+
+    cleanupStaleAlerts() {
+        const maxAgeHours = this.config.queue?.maxAgeHours ?? 24;
+        const now = new Date();
+        const ageLimit = new Date(now.getTime() - maxAgeHours * 60 * 60 * 1000);
+        const initialLength = this.messageQueue.temperatureAlerts.length;
+        this.messageQueue.temperatureAlerts = this.messageQueue.temperatureAlerts.filter(a => a.queuedAt > ageLimit);
+        const removedCount = initialLength - this.messageQueue.temperatureAlerts.length;
+        if (removedCount > 0) console.log(`SMS Service: Limpieza de cola, ${removedCount} alertas antiguas eliminadas.`);
+    }
+
+    async processTemperatureAlertQueue(forceOutsideWorkingHours = false) {
+        const queue = this.messageQueue.temperatureAlerts;
+        if (queue.length === 0) return { success: true, processed: 0 };
+
+        if (!forceOutsideWorkingHours && this.isWithinWorkingHours()) {
+            console.log("SMS Service: Dentro de horario laboral, procesamiento de cola pospuesto.");
+            return { success: false, processed: 0, reason: "working_hours" };
+        }
+
+        // Tomar una copia de las alertas a procesar ahora
+        const alertsToProcess = [...queue];
+        // Limpiar la cola original inmediatamente para evitar procesamiento duplicado si hay concurrencia
+        this.messageQueue.temperatureAlerts = [];
+
+
+        // Reutilizar la lógica de sendTemperatureAlert para formatear y enviar
+        const result = await this.sendTemperatureAlert(alertsToProcess, null, forceOutsideWorkingHours);
+
+        if (result.success) {
+            const processedCount = alertsToProcess.length;
+            this.messageQueue.lastProcessed = new Date();
+            this.metrics.queueStats.processed += processedCount;
+            console.log(`SMS Service: Cola procesada, ${processedCount} alertas enviadas.`);
+            return { success: true, processed: processedCount };
+        } else {
+            this.metrics.queueStats.failed += alertsToProcess.length;
+            console.error("SMS Service: Error al procesar cola de alertas SMS:", result);
+             // Opcional: Re-encolar las alertas fallidas si tiene sentido
+             // this.messageQueue.temperatureAlerts.unshift(...alertsToProcess);
+            return { success: false, processed: 0, error: result };
+        }
+    }
+
+    // --- Métodos Heredados / Otros ---
+
+    // processAlert (de BaseAlertService): Decide qué hacer con una alerta genérica
+    async processAlert(alert) {
+         // Por ahora, solo manejamos la cola de temperatura explícitamente
+        if (alert.type === 'queued_temperature') {
+             return this.processTemperatureAlertQueue(false); // Respetar horario
+        } else {
+             console.warn(`SmsService: Tipo de alerta no manejado en processAlert: ${alert.type}`);
+             // Opcional: intentar enviar como mensaje genérico si tiene 'message'
+             if (alert.data?.message) {
+                 return this.sendSMS(alert.data.message, alert.recipients, false);
+             }
+        }
+         return { success: false, reason: 'unhandled_type' };
+    }
+
+    getMetrics() {
+        // Combina métricas base con las específicas de esta clase
+        const baseMetrics = super.getMetrics ? super.getMetrics() : {}; // Llamar a super si existe
+        return {
+            ...baseMetrics,
+            service: "sms", // Identificar el servicio
+            queuedAlerts: this.messageQueue?.temperatureAlerts?.length ?? 0, // Cola específica
+            lastProcessedQueue: this.messageQueue?.lastProcessed,
+            // Usar métricas locales que se actualizan correctamente
+            sentAlerts: this.metrics.sentAlerts,
+            failedAlerts: this.metrics.failedAlerts,
+            lastError: this.metrics.lastError,
+            lastSuccessTime: this.metrics.lastSuccessTime,
+            queueStats: this.metrics.queueStats,
+            initialized: this.initialized,
+            configLoaded: this.config !== null && this.config.modem?.url !== null, // Mejor indicador
+            timestamp: new Date()
+        };
+    }
+
+     reset() {
+         if (super.reset) super.reset(); // Llama al reset de BaseAlertService si existe
+         // Reiniciar estado/métricas/cola específicos de SmsService
+         this.metrics = { sentAlerts: 0, failedAlerts: 0, lastError: null, lastSuccessTime: null, queueStats: { added: 0, processed: 0, failed: 0 } };
+         this.messageQueue = { createdAt: new Date(), temperatureAlerts: [], lastProcessed: null };
+         this.initialized = false;
+         this.initialize(); // Re-inicializar
+         console.log("SmsService: Servicio reiniciado.");
+         return true;
+     }
+
 }
 
-module.exports = new SmsService();
+module.exports = new SmsService(); // Exportar instancia única

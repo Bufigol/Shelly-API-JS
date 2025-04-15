@@ -1,138 +1,131 @@
+// server.js
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+
+// Importar Collectors y Servicios principales
 const ShellyCollector = require("./collectors/shelly-collector");
 const UbibotCollector = require("./collectors/ubibot-collector");
-const OnPremiseCollector = require("./collectors/onPremise-collector");
+// const OnPremiseCollector = require("./collectors/onPremise-collector"); // Descomentar si se usa
 const databaseService = require("./src/services/database-service");
 const energyAveragesService = require("./src/services/energy-averages-service");
 const totalEnergyService = require("./src/services/total-energy-service");
+
+// Importar Rutas
 const deviceRoutes = require("./src/routes/deviceRoutes");
 const configRoutes = require("./src/routes/configRoutes");
+const totalesRoutes = require("./src/routes/totalesRoutes");
+const analysisRoutes = require("./src/routes/analysisRoutes");
+const usuariosRoutes = require("./src/routes/usuariosRoutes");
+const personalRoutes = require("./src/routes/personalRoutes");
+const smsRoutes = require("./src/routes/smsRoutes");
+const sectoresRoutes = require("./src/routes/sectoresRoutes.js");
+const powerAnalysisRoutes = require("./src/routes/powerAnalysisRoutes");
+const gpsRoutes = require("./src/routes/gpsRoutes");
+const beaconsRoutes = require("./src/routes/beaconsRoutes");
+const ubibotRoutes = require("./src/routes/ubibotRoutes");
+const gpsDataRoutes = require("./src/routes/gpsDataRoutes");
+const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
+const outRoutes = require("./src/routes/outRoutes");
+
+// Importar Config Loader (¡Importante!)
+const configLoader = require('./src/config/js_files/config-loader');
+
+// Importar servicios de notificación (asegurarse de importar los correctos después de la refactorización)
+const emailService = require("./src/services/email/emailService");
+const smsService = require("./src/services/sms/smsService");
+
+
 class Server {
   /**
    * Initializes a new instance of the Server class.
-   * Sets up the Express application, configures the port,
-   * initializes data collectors, and defines services to be used.
-   * Also sets up middleware, routes, and error handling for the server.
    */
-
   constructor() {
+    console.log("[Server] Constructor: Creando instancia del servidor...");
     this.app = express();
+    // Considerar obtener el puerto de la config si es necesario: configLoader.getConfig().server?.port || 1337
     this.port = process.env.PORT || 1337;
     this.shellyCollector = new ShellyCollector();
     this.ubibotCollector = new UbibotCollector();
+    // this.onPremiseCollector = new OnPremiseCollector(); // Descomentar si se usa
     this.services = {
       database: databaseService,
       energyAverages: energyAveragesService,
       totalEnergy: totalEnergyService,
+      // Podrías añadir los servicios de email y sms aquí si quieres un acceso centralizado
+      // email: emailService,
+      // sms: smsService,
     };
     this.setupMiddleware();
     this.setupRoutes();
     this.setupErrorHandling();
+    console.log("[Server] Constructor: Configuración básica completada.");
   }
 
   /**
    * Configures middleware for the application.
-   *
-   * Uses the `cors` middleware to allow cross-origin requests
-   * from the specified origin. Uses the `express.json()` middleware
-   * to parse JSON bodies. Serves files from the `dist` and `src`
-   * directories. Configures Content Security Policy (CSP)
-   * to prevent XSS attacks. Finally, logs all incoming requests.
    */
   setupMiddleware() {
+    console.log("[Server] setupMiddleware: Configurando middleware...");
     const corsOptions = {
-      origin: ["http://localhost:3000", "http://localhost:8080"],
+      // Ajustar origins según sea necesario para producción
+      origin: ["http://localhost:3000", "http://localhost:8080", /* añadir URL de producción */],
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     };
     this.app.use(cors(corsOptions));
-    this.app.use(express.json());
+    this.app.use(express.json()); // Para parsear JSON bodies
 
+    // Header Content-Type para rutas API (ya se hace en setupRoutes implícitamente con express.json,
+    // pero mantener si hay alguna razón específica)
     this.app.use("/api", (req, res, next) => {
       res.header("Content-Type", "application/json");
       next();
     });
 
-    // Servir archivos estÃ¡ticos
+    // Servir archivos estáticos desde 'public'
+    console.log("[Server] setupMiddleware: Sirviendo estáticos desde 'public'");
     this.app.use(express.static(path.join(__dirname, "public")));
-    this.app.use;
+    // La línea 'this.app.use;' solitaria no tiene efecto, la elimino.
 
-    // ConfiguraciÃ³n de CSP
+    // Configuración de CSP
     this.setupContentSecurityPolicy();
 
-    // Logging middleware
+    // Logging básico de requests
     this.app.use((req, res, next) => {
-      console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+      console.log(`[Request] ${new Date().toISOString()} - ${req.method} ${req.originalUrl}`); // Usar originalUrl
       next();
     });
+    console.log("[Server] setupMiddleware: Middleware configurado.");
   }
 
   /**
-   * Configures the Content Security Policy (CSP) for the application.
-   *
-   * This sets the CSP headers to restrict resource loading:
-   * - Allows default resources to be loaded only from the same origin.
-   * - Permits fonts to be loaded from the same origin and data URIs.
-   * - Allows scripts to be loaded from the same origin and permits inline scripts and eval.
-   *
+   * Configures the Content Security Policy (CSP).
    * @private
    */
-
   setupContentSecurityPolicy() {
+    // Considerar políticas CSP más específicas y menos permisivas para producción
+    // 'unsafe-inline' y 'unsafe-eval' pueden ser riesgosos.
+    // Podrías usar hashes o nonces para scripts si es posible.
     this.app.use((req, res, next) => {
       res.setHeader(
         "Content-Security-Policy",
-        "default-src 'self'; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
+        "default-src 'self'; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" // Añadir style-src y img-src
       );
       next();
     });
   }
 
-
   /**
-   * Configura las rutas del servidor
-   *
-   * El servidor tiene un endpoint status en /
-   * y utiliza los siguientes módulos de rutas:
-   *
-   * - deviceRoutes
-   * - configRoutes
-   * - totalesRoutes
-   * - analysisRoutes
-   * - usuariosRoutes
-   * - personalRoutes
-   * - smsRoutes
-   * - sectoresRoutes
-   * - powerAnalysisRoutes
-   * - gpsRoutes
-   * - beaconsRoutes
-   * - ubibotRoutes
-   * - gpsDataRoutes
-   *
-   * @memberof Server
+   * Configura las rutas del servidor.
    */
   setupRoutes() {
-    // Importar rutas
-    const deviceRoutes = require("./src/routes/deviceRoutes");
-    const configRoutes = require("./src/routes/configRoutes");
-    const totalesRoutes = require("./src/routes/totalesRoutes");
-    const analysisRoutes = require("./src/routes/analysisRoutes");
-    const usuariosRoutes = require("./src/routes/usuariosRoutes");
-    const personalRoutes = require("./src/routes/personalRoutes");
-    const smsRoutes = require("./src/routes/smsRoutes");
-    const sectoresRoutes = require("./src/routes/sectoresRoutes.js");
-    const powerAnalysisRoutes = require("./src/routes/powerAnalysisRoutes");
-    const gpsRoutes = require("./src/routes/gpsRoutes");
-    const beaconsRoutes = require("./src/routes/beaconsRoutes");
-    const ubibotRoutes = require("./src/routes/ubibotRoutes");
-    const gpsDataRoutes = require("./src/routes/gpsDataRoutes");
-    const blindSpotRoutes = require("./src/routes/blindSpotRoutes");
-    const outRoutes = require("./src/routes/outRoutes");
+    console.log("[Server] setupRoutes: Configurando rutas...");
+    // Las rutas ya se importaron arriba
 
-    // Primero configurar todas las rutas de la API
+    // Montar rutas de la API
     this.app.use("/api/devices", deviceRoutes);
     this.app.use("/api/config", configRoutes);
     this.app.use("/api/totals", totalesRoutes);
@@ -146,225 +139,227 @@ class Server {
     this.app.use("/api/beacons", beaconsRoutes);
     this.app.use("/api/ubibot", ubibotRoutes);
     this.app.use("/api/blindspot", blindSpotRoutes);
-    this.app.use("/gps-data", gpsDataRoutes);
-    this.app.use("/api/out", outRoutes); //para ser utilizado desde fuera
+    this.app.use("/gps-data", gpsDataRoutes); // ¿Debería estar bajo /api?
+    this.app.use("/api/out", outRoutes);
 
-    // Servir archivos estáticos después de las rutas de la API
-    this.app.use(express.static(path.join(__dirname, "public")));
+    console.log("[Server] setupRoutes: Rutas API montadas.");
 
-    // Ruta específica para la página principal
-    this.app.get("/", (req, res) => {
-      res.sendFile(path.join(__dirname, "public", "index.html"));
-    });
+    // Servir archivos estáticos (ya configurado en setupMiddleware, pero redundante no daña)
+    // this.app.use(express.static(path.join(__dirname, "public")));
 
-    // Catch-all route para React Router debe ser lo último
+    // Ruta específica para la página principal (SPA entry point)
+    // Se manejará por el catch-all
+
+    // Catch-all route para SPA (React Router) - ¡Debe ser el último middleware de rutas!
     this.app.get("*", (req, res, next) => {
-      // Si la petición es para la API, pasar al siguiente middleware
-      if (req.url.startsWith("/api/")) {
-        return next();
+      // Si la petición busca explícitamente un archivo estático conocido o una ruta API, no enviar index.html
+      if (req.url.startsWith("/api/") || req.url.includes('.') || req.url.startsWith("/static/")) { // Ajustar patrones según necesidad
+        return next(); // Pasar al siguiente middleware (probablemente un 404 si no coincide nada más)
       }
-      // Si no es una petición de API, enviar el index.html
+      // Para cualquier otra ruta GET, enviar el index.html para que React Router maneje el frontend routing
+      console.log(`[Server] Catch-all: Sirviendo index.html para la ruta ${req.url}`);
       res.sendFile(path.join(__dirname, "public", "index.html"));
     });
+    console.log("[Server] setupRoutes: Rutas configuradas (incluyendo catch-all).");
   }
 
   /**
-   * Sets up error handling for the server. This method is used to
-   * install a middleware function that will catch any async errors
-   * and send a 500 response with a JSON body containing an error
-   * message and the original error message (if in development mode).
-   * @see https://expressjs.com/en/guide/error-handling.html
+   * Configura el manejo de errores global.
    * @private
    */
   setupErrorHandling() {
-    // Error handler for async errors
+    // Middleware de manejo de errores (debe definirse DESPUÉS de todas las rutas)
     this.app.use((err, req, res, next) => {
-      console.error("Error:", err);
-      res.status(500).json({
-        error: "Internal server error",
-        message:
-          process.env.NODE_ENV === "development"
-            ? err.message
-            : "An unexpected error occurred",
+      // Loguear el error completo en el servidor
+      console.error("💥 [Error Handler] Error no controlado:", err.stack || err);
+
+      // Enviar respuesta genérica al cliente
+      res.status(err.status || 500).json({ // Usar err.status si está disponible
+        error: "Internal Server Error",
+        message: (process.env.NODE_ENV === "development" && err.message) ? err.message : "Ocurrió un error inesperado en el servidor.",
+        // No exponer err.stack en producción
       });
     });
+    console.log("[Server] setupErrorHandling: Manejador de errores global configurado.");
   }
 
-  /**
-   * Wraps a route handler function to catch any async errors and call
-   * `next(err)` with the error.
-   *
-   * @param {Function} fn - The route handler function to wrap.
-   * @return {Function} A new route handler function that wraps the original
-   *   one and catches any errors.
-   */
-  handleAsyncRoute(fn) {
-    return (req, res, next) => {
-      Promise.resolve(fn(req, res, next)).catch(next);
-    };
-  }
-
-  /**
-   * Returns an object with information about the current status of the server's services.
-   *
-   * @return {Object} Object with the following properties:
-   * - collector: Object with information about the Shelly and Ubibot collectors.
-   *   - shelly: Object with properties running (a boolean indicating if the collector is running) and stats (an object with collector statistics).
-   *   - ubibot: Object with properties running (a boolean indicating if the collector is running) and stats (an object with collector statistics).
-   * - database: Object with a single property connected (a boolean indicating if the database connection is established).
-   * - energyAverages: Object with a single property initialized (a boolean indicating if the energy averages service has been initialized).
-   * - totalEnergy: Object with a single property initialized (a boolean indicating if the total energy service has been initialized).
-   * - server: Object with properties about the server's runtime environment.
-   *   - uptime: Number of seconds the server has been running.
-   *   - memory: Object with properties rss, heapTotal, and heapUsed, with the memory usage of the server in bytes.
-   *   - nodeVersion: String with the version of Node.js running the server.
-   */
-  getServiceStatus() {
-    return {
-      collector: {
-        shelly: {
-          running: this.shellyCollector.isRunning,
-          stats: this.shellyCollector.getCollectorStats(),
-        },
-        ubibot: {
-          running: this.ubibotCollector.isRunning,
-          stats: this.ubibotCollector.getCollectorStats(),
-        },
-      },
-      database: {
-        connected: this.services.database.connected,
-      },
-      energyAverages: {
-        initialized: this.services.energyAverages.initialized,
-      },
-      totalEnergy: {
-        initialized: this.services.totalEnergy.initialized,
-      },
-      server: {
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        nodeVersion: process.version,
-      },
-    };
-  }
+  // handleAsyncRoute no parece usarse, se podría eliminar o implementar en las rutas si es necesario.
+  // getServiceStatus podría actualizarse para incluir estado de Email/SMS si se añaden a this.services
 
   /**
    * Initializes all services and collectors necessary for the server.
-   *
-   * This method performs the following actions:
-   * 1. Initializes the database service and tests the connection.
-   * 2. Initializes the energy averages service.
-   * 3. Initializes the total energy service.
-   * 4. Initializes the Email service.
-   * 5. Initializes the SMS service.
-   * 6. Starts the Shelly data collector.
-   * 7. Starts the Ubibot data collector.
-   *
-   * If any of these steps fail, an error is logged and re-thrown to be
-   * handled by the caller.
-   *
-   * @throws {Error} If any service or collector fails to initialize.
    */
-
   async initializeServices() {
-    console.log("Initializing services...");
+    console.log("⏳ [Server] Inicializando servicios..."); // Log 10
 
     try {
+      // 1. Forzar carga/verificación de config primero
+      try {
+        console.log("  [Server] Verificando carga inicial de configuración...");
+        configLoader.getConfig(); // Llama a getConfig para asegurar que se cargó/validó
+        console.log("  [Server] Configuración verificada/cargada.");
+      } catch (configError) {
+        console.error("  [Server] ¡Fallo crítico al cargar configuración inicial!", configError);
+        throw configError; // Relanzar para detener el arranque
+      }
+
+      // 2. Inicializar DatabaseService
+      console.log("  [Server] Inicializando DatabaseService..."); // Log 11
       await this.services.database.initialize();
       const dbConnected = await this.services.database.testConnection();
       if (!dbConnected) {
-        throw new Error("Database connection failed");
+        // El initialize ya debería haber lanzado error, pero doble chequeo
+        throw new Error("Fallo al conectar con la base de datos tras inicialización.");
       }
-      console.log("? Database connected");
+      console.log("  [Server] DatabaseService inicializado y conectado."); // Log 12
 
-      // Inicializar servicios existentes
+      // 3. Inicializar otros servicios que dependen de la BBDD o config
+      console.log("  [Server] Inicializando EnergyAveragesService...");
       await this.services.energyAverages.initialize();
-      console.log("? Energy averages service initialized");
+      console.log("  [Server] EnergyAveragesService inicializado.");
 
+      console.log("  [Server] Inicializando TotalEnergyService...");
       await this.services.totalEnergy.initialize();
-      console.log("? Total energy service initialized");
+      console.log("  [Server] TotalEnergyService inicializado.");
 
-      // Inicializar servicio de Email
-      const emailService = require("./src/services/email/emailService");
-      await emailService.initialize();
-      console.log("? Email service initialized");
+      // 4. Inicializar EmailService (usa la instancia importada)
+      console.log("  [Server] Inicializando EmailService..."); // Log 13
+      await emailService.initialize(); // Asume que initialize es async o devuelve Promise
+      if (!emailService.initialized) { // Chequeo adicional
+        console.warn("  [Server] EmailService no se inicializó correctamente (ver logs anteriores).");
+        // Decidir si continuar o lanzar error
+        // throw new Error("Fallo al inicializar EmailService");
+      } else {
+        console.log("  [Server] EmailService inicializado."); // Log 14
+      }
 
-      // Inicializar nuevo servicio SMS
-      const smsService = require("./src/services/sms/smsService");
-      await smsService.initialize();
-      console.log("? SMS service initialized");
 
-      // Continuar con los recolectores
+      // 5. Inicializar SmsService (usa la instancia importada)
+      console.log("  [Server] Inicializando SmsService..."); // Log 15
+      await smsService.initialize(); // Asume que initialize es async o devuelve Promise
+      if (!smsService.initialized) { // Chequeo adicional
+        console.warn("  [Server] SmsService no se inicializó correctamente (ver logs anteriores).");
+        // Decidir si continuar o lanzar error
+        // throw new Error("Fallo al inicializar SmsService");
+      } else {
+        console.log("  [Server] SmsService inicializado."); // Log 16
+      }
+
+
+      // 6. Inicializar Collectors (pueden depender de config o servicios)
+      console.log("  [Server] Iniciando ShellyCollector...");
       await this.shellyCollector.start();
-      console.log("? Shelly Data collector started");
+      console.log("  [Server] ShellyCollector iniciado.");
 
+      console.log("  [Server] Iniciando UbibotCollector...");
       await this.ubibotCollector.start();
-      console.log("? Ubibot data collector started");
+      console.log("  [Server] UbibotCollector iniciado.");
+
+      // console.log("  [Server] Iniciando OnPremiseCollector..."); // Descomentar si se usa
+      // await this.onPremiseCollector.start();
+      // console.log("  [Server] OnPremiseCollector iniciado.");
+
+
+      console.log("✅ [Server] Todos los servicios y colectores inicializados."); // Log 17
 
     } catch (error) {
-      console.error("Error initializing services:", error);
+      // Captura cualquier error durante la inicialización de CUALQUIER servicio/collector
+      console.error("❌ [Server] Error CRÍTICO durante la inicialización de servicios:", error.message);
+      console.error(error.stack); // Loguear stack trace para depuración
+      // Relanzar para que lo capture el catch de start() y detenga la aplicación
       throw error;
     }
   }
 
   /**
-   * Inicializa los servicios y levanta el servidor. Si ocurre un error,
-   * se registra en la consola y se sale del proceso con estado 1.
-   * @throws {Error} Si ocurre un error al inicializar los servicios o levantar
-   * el servidor.
+   * Inicializa los servicios y arranca el servidor Express.
    */
   async start() {
+    console.log("[Server] start: Iniciando secuencia de arranque...");
     try {
+      // Llama a la inicialización de servicios y colectores
       await this.initializeServices();
 
+      // Arrancar el listener HTTP solo si la inicialización fue exitosa
       this.server = this.app.listen(this.port, () => {
-        console.log(`ðŸš€ Server running on http://localhost:${this.port}`);
+        // Usar console.info o similar para logs importantes
+        console.info(`🚀 Servidor Express escuchando en http://localhost:${this.port}`);
       });
 
-      // Setup graceful shutdown
-      process.on("SIGTERM", () => this.shutdown());
-      process.on("SIGINT", () => this.shutdown());
+      // Configurar cierre ordenado
+      process.on("SIGTERM", () => this.shutdown('SIGTERM')); // Pasar la señal
+      process.on("SIGINT", () => this.shutdown('SIGINT')); // Pasar la señal
+
     } catch (error) {
-      console.error("Error fatal al iniciar el servidor:", error);
-      process.exit(1);
+      // Captura errores de initializeServices
+      console.error("💥 [Server] Error FATAL al iniciar el servidor (fallo en inicialización). La aplicación se detendrá.");
+      // No necesitamos loguear error.message aquí porque initializeServices ya lo hizo.
+      process.exit(1); // Salir con código de error
     }
   }
 
   /**
-   * Gracefully shuts down the server, stopping all services and closing all
-   * database connections.
-   *
-   * This function is called automatically when the process receives a SIGTERM or
-   * SIGINT signal.
-   *
-   * @return {Promise<void>}
+   * Cierre ordenado del servidor y sus componentes.
    */
-  async shutdown() {
-    console.log("\nðŸ›‘ Starting graceful shutdown...");
-    if (this.server) {
-      await new Promise((resolve) => this.server.close(resolve));
-      console.log("âœ… HTTP server stopped");
+  async shutdown(signal) {
+    console.log(`\n⏳ [Server] Recibida señal ${signal}. Iniciando cierre ordenado...`);
+    try {
+      // 1. Detener servidor HTTP para no aceptar nuevas conexiones
+      if (this.server) {
+        await new Promise((resolve, reject) => {
+          this.server.close((err) => {
+            if (err) {
+              console.error("  [Server] Error al cerrar servidor HTTP:", err);
+              return reject(err);
+            }
+            console.log("  ✅ [Server] Servidor HTTP detenido.");
+            resolve();
+          });
+          // Añadir un timeout por si close() se queda colgado
+          setTimeout(() => reject(new Error("Timeout al cerrar servidor HTTP")), 5000);
+        });
+      }
+
+      // 2. Detener colectores
+      console.log("  [Server] Deteniendo colectores...");
+      if (this.shellyCollector?.stop) this.shellyCollector.stop(); // Usar optional chaining
+      console.log("  ✅ [Server] ShellyCollector detenido.");
+      if (this.ubibotCollector?.stop) this.ubibotCollector.stop();
+      console.log("  ✅ [Server] UbibotCollector detenido.");
+      // if (this.onPremiseCollector?.stop) this.onPremiseCollector.stop(); // Descomentar si se usa
+      // console.log("  ✅ [Server] OnPremiseCollector detenido.");
+
+
+      // 3. Cerrar conexión a base de datos
+      console.log("  [Server] Cerrando conexión a base de datos...");
+      if (this.services.database?.close) { // Usar optional chaining
+        await this.services.database.close();
+        console.log("  ✅ [Server] Conexión a base de datos cerrada.");
+      }
+
+
+      // 4. (Opcional) Detener otros servicios si tienen lógica de cleanup
+      // if (emailService?.stop) await emailService.stop();
+      // if (smsService?.stop) await smsService.stop();
+
+      console.log("🏁 [Server] Cierre ordenado completado.");
+      process.exit(0); // Salir sin error
+
+    } catch (error) {
+      console.error("❌ [Server] Error durante el cierre ordenado:", error);
+      process.exit(1); // Salir con error si el cierre falla
     }
-    this.shellyCollector.stop();
-    console.log("âœ… Shelly Data collector stopped");
-
-    this.ubibotCollector.stop();
-    console.log("âœ… Ubibot data collector stopped");
-
-    await this.services.database.close();
-    console.log("âœ… Database connections closed");
-
-    console.log("ðŸ‘‹ Server shutdown complete");
-    process.exit(0);
   }
 }
 
+// --- Arranque del Servidor ---
+console.log("[Init] Creando instancia del servidor...");
 const server = new Server();
-server
-  .start()
-  .catch((err) => console.error("Error al iniciar el servidor:", err));
+console.log("[Init] Llamando a server.start()...");
+server.start(); // start() ahora maneja su propio error fatal y sale.
 
+// Exportar para posibles pruebas o uso programático
 module.exports = {
   server,
-  app: server.app,
+  app: server.app, // Exportar la instancia de app Express
 };

@@ -1,8 +1,8 @@
 // tests/integration/emailService.test.js
-const emailService = require('../../src/services/email/emailService');
-const config = require('../../src/config/js_files/config-loader');
-const notificationController = require('../../src/controllers/notificationController');
-const UbibotCollector = require('../../collectors/ubibot-collector');
+const emailService = require('../../../src/services/email/emailService');
+const config = require('../../../src/config/js_files/config-loader');
+const notificationController = require('../../../src/controllers/notificationController');
+const UbibotCollector = require('../../../collectors/ubibot-collector');
 const moment = require('moment-timezone');
 
 // Mock para interceptar las llamadas a sgMail.send
@@ -320,7 +320,7 @@ describe('UbibotCollector - Integración con EmailService', () => {
         });
 
         // Mock para ubibotService
-        jest.mock('../../src/services/ubibotService', () => ({
+        jest.mock('../../../src/services/ubibotService', () => ({
             processChannelData: jest.fn().mockResolvedValue(true),
             processSensorReadings: jest.fn().mockResolvedValue(true),
             checkParametersAndNotify: jest.fn().mockResolvedValue(true),
