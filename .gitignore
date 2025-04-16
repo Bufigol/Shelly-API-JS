@@ -31,3 +31,4 @@ src/services/email/direct-email-adapter.js
 src/services/email/email-service-adapter.js
 arbol_directorios.txt
 sendgrid.env
+sendgrid.env
