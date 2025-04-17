@@ -1,7 +1,7 @@
 // tests/integration/emailService.test.js
-const emailService = require('../../../src/services/email/emailService');
-const config = require('../../../src/config/js_files/config-loader');
-const notificationController = require('../../../src/controllers/notificationController');
+const emailService = require('../../services/email/emailService');
+const config = require('../../config/js_files/config-loader');
+const notificationController = require('../../controllers/notificationController');
 const UbibotCollector = require('../../../collectors/ubibot-collector');
 const moment = require('moment-timezone');
 
