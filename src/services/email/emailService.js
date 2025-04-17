@@ -384,7 +384,7 @@ class EmailService extends BaseAlertService {
                     </thead>
                     <tbody>${htmlRows}</tbody>
                 </table>
-                <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente.</p>
+                <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente. No conteste a este correo electronico.</p>
             </div>`;
 
     return { html, text: textContent };
@@ -435,7 +435,7 @@ class EmailService extends BaseAlertService {
                     </thead>
                     <tbody>${htmlRows}</tbody>
                 </table>
-                <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente.</p>
+                <p style="margin-top: 20px; font-style: italic;">Esta alerta se genera automáticamente. No conteste a este correo electronico.</p>
             </div>`;
 
     return { html, text: textContent };
