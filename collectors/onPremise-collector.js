@@ -99,8 +99,6 @@ class OnPremiseCollector {
         return;
       }
 
-      console.log(`Processing ${channels.length} active channels`);
-
       for (const channel of channels) {
         try {
           await this.processChannel(channel);
@@ -296,9 +294,6 @@ class OnPremiseCollector {
       await connection.query("INSERT INTO api_channel_feeds SET ?", [feedData]);
 
       await connection.commit();
-      console.log(
-        `Successfully inserted new record for channel ${channelId} at ${timestamp}`
-      );
       return true;
     } catch (error) {
       await connection.rollback();

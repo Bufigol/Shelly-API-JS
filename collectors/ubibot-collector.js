@@ -1,319 +1,346 @@
 // collectors/ubibot-collector.js
 
-const config = require("../src/config/js_files/config-loader");
+const configLoader = require("../src/config/js_files/config-loader"); // Corregido: usar configLoader
 const ubibotController = require("../src/controllers/ubibotController");
 const ubibotService = require("../src/services/ubibotService");
-const databaseService = require("../src/services/database-service");
+// databaseService, emailService, smsService no son usados directamente aquí
+const notificationController = require("../src/controllers/notificationController");
+
+// --- Constantes del Colector ---
+const DEFAULT_COLLECTION_INTERVAL_MS = 240000; // 4 minutos como default si no está en config
+const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_RETRY_DELAY_MS = 5000;
+const DISCONNECTION_THRESHOLD_MINUTES = 95; // Límite para loguear desconexión por tiempo
 
 class UbibotCollector {
-  /**
-   * Initializes a new instance of the UbibotCollector class.
-   * @constructor
-   *
-   * The constructor initializes the UbibotCollector with the following properties:
-   *
-   * - `collectionInterval`: The interval in milliseconds between two consecutive collections. If not specified, defaults to 10 minutes.
-   * - `isRunning`: A boolean indicating whether the collector is currently running. Initially set to false.
-   * - `intervalId`: The ID of the interval used to run the collector. Initially set to null.
-   * - `retryCount`: The number of times the collector has retried to collect data. Initially set to 0.
-   * - `maxRetries`: The maximum number of times the collector will retry to collect data. Defaults to 3.
-   * - `retryDelay`: The delay in milliseconds between two consecutive retries. Defaults to 5 seconds.
-   * - `metrics`: An object to hold metrics about the collector's performance. The object has the following properties:
-   *   - `successfulCollections`: The number of successful collections.
-   *   - `failedCollections`: The number of failed collections.
-   *   - `totalRetries`: The total number of retries.
-   *   - `lastError`: The last error that occurred during data collection.
-   *   - `lastSuccessTime`: The timestamp of the last successful collection.
-   */
   constructor() {
-    const { ubibot: ubibotConfig } = config.getConfig();
-    this.collectionInterval = ubibotConfig.collectionInterval || 240000; // Default 10 minutes
+    console.log("[UbibotCollector] Constructor: Creando instancia...");
+    // Inicializar propiedades a null o valores por defecto seguros.
+    this.config = null; // Se cargará en _loadConfig
+    this.collectionInterval = DEFAULT_COLLECTION_INTERVAL_MS;
     this.isRunning = false;
     this.intervalId = null;
     this.retryCount = 0;
-    this.maxRetries = 3;
-    this.retryDelay = 5000;
+    this.maxRetries = DEFAULT_MAX_RETRIES;
+    this.retryDelay = DEFAULT_RETRY_DELAY_MS;
     this.metrics = {
       successfulCollections: 0,
       failedCollections: 0,
       totalRetries: 0,
       lastError: null,
       lastSuccessTime: null,
+      channelsProcessed: 0,
+      channelsFailed: 0,
     };
   }
 
   /**
-   * Starts the Ubibot data collector.
-   *
-   * If the collector is already running, this method does nothing.
-   *
-   * Otherwise, it sets the collector's `isRunning` property to true and starts the collection process.
-   * The collection process will be repeated at regular intervals using an interval ID stored in the `intervalId` property.
-   * The interval is set to the value of the `collectionInterval` property.
-   *
-   * @returns {void}
+   * Carga y valida la configuración específica para el colector Ubibot.
+   * Se llama antes de iniciar la recolección o al inicio de collect si es necesario.
+   * Lanza un error si la configuración crítica falta.
+   * @private
+   * @throws {Error} Si falta configuración crítica.
    */
-  async start() {
-    if (this.isRunning) {
-      console.log("Ubibot collector already running.");
-      return;
-    }
+  _loadConfig() {
+    if (!this.config) {
+      console.log("[UbibotCollector] _loadConfig: Cargando configuración...");
+      const appConfig = configLoader.getConfig(); // Obtiene la config global
+      const ubibotConfig = appConfig.ubibot;
 
-    console.log("🚀 Starting Ubibot data collector...");
-    this.isRunning = true;
-    await this.collect();
-    this.intervalId = setInterval(
-      () => this.collect(),
-      this.collectionInterval
-    );
+      // Validar configuración de Ubibot
+      if (!ubibotConfig) {
+        const errorMsg = "Sección 'ubibot' faltante en la configuración.";
+        console.error(`❌ [UbibotCollector] _loadConfig: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      // Asignar valores de configuración a propiedades de la instancia
+      this.collectionInterval = ubibotConfig.collectionInterval ?? DEFAULT_COLLECTION_INTERVAL_MS;
+      // Podríamos cargar maxRetries y retryDelay desde config si existieran allí
+      // this.maxRetries = ubibotConfig.maxRetries ?? DEFAULT_MAX_RETRIES;
+      // this.retryDelay = ubibotConfig.retryDelay ?? DEFAULT_RETRY_DELAY_MS;
+
+      // Validar intervalo
+      if (isNaN(parseInt(this.collectionInterval)) || this.collectionInterval <= 0) {
+        console.warn(`⚠️ [UbibotCollector] _loadConfig: collectionInterval inválido (${ubibotConfig.collectionInterval}), usando default ${DEFAULT_COLLECTION_INTERVAL_MS}ms.`);
+        this.collectionInterval = DEFAULT_COLLECTION_INTERVAL_MS;
+      }
+
+      // Guardar la sección de config relevante si se necesita más adelante
+      this.config = ubibotConfig;
+
+      console.log(`[UbibotCollector] _loadConfig: Configuración cargada. Intervalo: ${this.collectionInterval}ms`);
+    }
   }
 
   /**
-   * Stops the Ubibot data collector.
-   *
-   * If the collector is not running, this method does nothing.
-   *
-   * Otherwise, it clears the interval used for data collection, sets the
-   * `isRunning` property to false, nullifies the `intervalId`, and prints
-   * the collection statistics.
-   *
-   * @returns {void}
+   * Inicia el proceso de recolección de datos Ubibot.
    */
+  async start() {
+    if (this.isRunning) {
+      console.log("[UbibotCollector] El colector ya está corriendo.");
+      return;
+    }
+    console.log("🚀 Starting Ubibot data collector...");
+    try {
+      // Cargar y validar configuración ANTES de empezar cualquier ciclo
+      this._loadConfig();
 
+      this.isRunning = true;
+      console.log(`[UbibotCollector] Iniciando primer ciclo de recolección... Intervalo: ${this.collectionInterval}ms`);
+      await this.collect(); // Primera recolección inmediata
+
+      // Iniciar el intervalo
+      this.intervalId = setInterval(
+        () => this.collect(),
+        this.collectionInterval
+      );
+      console.log("[UbibotCollector] Intervalo de recolección iniciado.");
+
+    } catch (error) {
+      // Captura errores de _loadConfig o del primer collect
+      console.error("❌ [UbibotCollector] Error crítico durante el inicio:", error.message);
+      this.isRunning = false;
+    }
+  }
+
+  /**
+   * Detiene el proceso de recolección.
+   */
   stop() {
-    if (!this.isRunning) return;
-
+    if (!this.isRunning) {
+      console.log("[UbibotCollector] El colector no estaba corriendo.");
+      return;
+    }
     console.log("🛑 Stopping Ubibot data collector...");
-    clearInterval(this.intervalId);
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+      console.log("[UbibotCollector] Intervalo detenido.");
+    }
     this.isRunning = false;
-    this.intervalId = null;
     this.printCollectionStats();
   }
 
   /**
-   * Collects data from Ubibot channels and processes it.
-   *
-   * Retrieves a list of enabled channels from the Ubibot controller and
-   * iterates over them. For each channel, it retrieves the channel data
-   * and processes it using the `ubibotService`. Additionally checks for
-   * disconnected sensors and sends alerts when needed.
-   *
-   * @async
-   * @returns {void}
+   * Realiza un ciclo completo de recolección de datos para todos los canales Ubibot.
    */
   async collect() {
+    // Verificar estado de ejecución
+    if (!this.isRunning) {
+      console.warn("[UbibotCollector] collect() llamado pero el colector no está corriendo.");
+      return;
+    }
+    // Asegurar que la configuración está cargada (salvaguarda)
+    if (!this.config) {
+      try { this._loadConfig(); } catch (configError) {
+        console.error("❌ [UbibotCollector] Error fatal al cargar config en collect:", configError.message);
+        this.stop(); // Detener si la config falla
+        return;
+      }
+    }
+
+    console.log(`\n📥 [UbibotCollector] Iniciando ciclo de recolección Ubibot... (${new Date().toISOString()})`);
+    let cycleErrors = false; // Para rastrear si hubo errores en algún canal
+    this.metrics.channelsProcessed = 0;
+    this.metrics.channelsFailed = 0;
+
     try {
-      console.log("\n📥 Starting Ubibot data collection cycle...");
+      // 1. Obtener lista de canales
       const channels = await ubibotController.getChannels();
 
       if (!channels || channels.length === 0) {
-        console.log(`No se encontraron canales habilitados para procesar`);
-        this.updateMetrics(
-          false,
-          Date.now(),
-          `No se encontraron canales habilitados para procesar`
-        );
+        console.log("[UbibotCollector] No se encontraron canales habilitados para procesar.");
+        // Considerar esto un éxito del ciclo, pero sin datos
+        this.updateMetrics(true, Date.now());
+        this.retryCount = 0; // Resetear reintentos del ciclo general
+        console.log("✅ [UbibotCollector] Ciclo completado (sin canales activos encontrados).\n");
         return;
       }
+      console.log(`[UbibotCollector] Procesando ${channels.length} canales...`);
 
-      // Procesamiento regular de canales
+      // 2. Procesar cada canal
       for (const channel of channels) {
+        let channelSuccess = true;
         try {
-          const channelData = await ubibotController.getChannelData(
-            channel.channel_id
-          );
-          if (channelData) {
-            await ubibotService.processChannelData(channelData);
-            await ubibotService.processSensorReadings(
-              channelData.channel_id,
-              JSON.parse(channelData.last_values)
-            );
-          }
-        } catch (error) {
-          console.error(
-            `Error processing channel ${channel.channel_id}:`,
-            error.message
-          );
-          this.handleCollectionError(error);
-        }
-      }
+          console.log(`  -> Procesando Canal ID: ${channel.channel_id} (Nombre: ${channel.name || 'N/A'})`);
+          // Obtener datos detallados del canal
+          const channelData = await ubibotController.getChannelData(channel.channel_id);
 
-      // Detección de sensores desconectados
-      const disconnectedChannels = [];
-      const INTERVALO_SIN_CONEXION_SENSOR = 95; // minutos
+          if (channelData && channelData.last_values) {
+            // Parsear last_values (asegurándose de que es string antes)
+            let lastValuesParsed = null;
+            if (typeof channelData.last_values === 'string') {
+              try { lastValuesParsed = JSON.parse(channelData.last_values); } catch (parseError) {
+                console.error(`     ❌ Error parseando last_values para canal ${channel.channel_id}:`, parseError.message);
+                throw new Error(`JSON inválido en last_values`); // Lanzar para marcar fallo de canal
+              }
+            } else { lastValuesParsed = channelData.last_values; } // Asumir objeto si no es string
 
-      for (const channel of channels) {
-        try {
-          const lastReading = await ubibotService.getLastSensorReading(
-            channel.channel_id
-          );
-          if (lastReading && lastReading.external_temperature_timestamp) {
-            const now = new Date();
-            const lastTimestamp = new Date(
-              lastReading.external_temperature_timestamp
-            );
-
-            // Calcular la diferencia en minutos
-            const diffMinutes = (now - lastTimestamp) / (1000 * 60);
-
-            if (diffMinutes > INTERVALO_SIN_CONEXION_SENSOR) {
-              console.log(
-                `Canal ${channel.name} desconectado por ${diffMinutes.toFixed(
-                  2
-                )} minutos (límite: ${INTERVALO_SIN_CONEXION_SENSOR})`
-              );
-
-              disconnectedChannels.push({
-                name: channel.name || `Canal ${channel.channel_id}`,
-                lastConnectionTime: lastReading.external_temperature_timestamp,
-                disconnectionInterval: INTERVALO_SIN_CONEXION_SENSOR,
-              });
+            if (lastValuesParsed && typeof lastValuesParsed === 'object') {
+              // Llamar a ubibotService para actualizar estado/insertar lecturas
+              // ubibotService ahora maneja la llamada a notificationController
+              await ubibotService.processChannelData(channelData);
+              await ubibotService.processSensorReadings(channelData.channel_id, lastValuesParsed);
+              console.log(`     ✅ Datos procesados para canal ${channel.channel_id}.`);
+            } else {
+              console.warn(`     ⚠️ last_values inválidos o no parseables para canal ${channel.channel_id}`);
+              // Decidir si esto cuenta como fallo de canal
+              // channelSuccess = false; // Opcional: marcar como fallo si last_values es crítico
             }
+          } else {
+            console.warn(`     ⚠️ No se recibieron datos válidos (channelData o last_values) para el canal ${channel.channel_id}`);
+            channelSuccess = false; // Marcar como fallo si no hay datos
           }
         } catch (error) {
-          console.error(
-            `Error verificando sensor ${channel.channel_id}:`,
-            error.message
-          );
+          // Capturar error procesando UN canal, loguear y marcar fallo para este canal
+          console.error(`     ❌ Error procesando canal ${channel.channel_id || 'desconocido'}:`, error.message);
+          channelSuccess = false;
+        } finally {
+          // Actualizar contadores de canal
+          if (channelSuccess) {
+            this.metrics.channelsProcessed++;
+          } else {
+            this.metrics.channelsFailed++;
+            cycleErrors = true; // Marcar que hubo al menos un error en el ciclo
+          }
         }
-      }
+      } // Fin del bucle for channel
 
-      // Enviar alerta si hay sensores desconectados
-      if (disconnectedChannels.length > 0) {
-        try {
-          const emailService = require("../services/emailService");
-          await emailService.sendDisconnectedSensorsEmail(disconnectedChannels);
-          console.log(
-            `Alerta enviada para ${disconnectedChannels.length} sensores desconectados`
-          );
-        } catch (emailError) {
-          console.error(
-            "Error enviando alerta de sensores desconectados:",
-            emailError
-          );
-        }
-      }
+      // 3. Verificar desconexión por tiempo (SOLO PARA LOGGING)
+      await this.logDisconnectedByTime(channels);
 
-      this.updateMetrics(true, Date.now());
-      console.log("✅ Ubibot collection cycle completed successfully\n");
+      // 4. Finalizar Ciclo
+      this.updateMetrics(!cycleErrors, Date.now(), cycleErrors ? "Errores procesando algunos canales" : null);
+      this.retryCount = 0; // Resetear reintentos si el ciclo principal (getChannels) funcionó
+      console.log(`✅ [UbibotCollector] Ciclo de recolección Ubibot completado ${cycleErrors ? `con ${this.metrics.channelsFailed} errores en canales` : 'exitosamente'}. Procesados: ${this.metrics.channelsProcessed}.\n`);
+
     } catch (error) {
+      // Captura errores generales del ciclo (ej. fallo al obtener lista de canales)
+      console.error(`❌ [UbibotCollector] Error GENERAL en ciclo de recolección: ${error.message}`);
+      // Llamar a handleCollectionError para manejar reintentos del ciclo completo
       this.handleCollectionError(error);
     }
   }
 
   /**
-   * Updates metrics for the UbibotCollector.
-   *
-   * If the collection was successful, increments the count of successful collections
-   * and updates the last successful collection timestamp.
-   * If the collection failed, increments the count of failed collections and updates
-   * the last error message.
-   *
-   * @param {boolean} success - Indicates if the collection was successful.
-   * @param {number} timestamp - The timestamp of the collection attempt.
-   * @param {string|null} [errorMessage=null] - The error message if the collection failed.
+   * Verifica y loguea los canales que no han enviado datos en mucho tiempo.
+   * NO llama a notificationController.
+   * @param {Array<Object>} channels - Lista de canales obtenidos.
+   * @private
    */
+  async logDisconnectedByTime(channels) {
+    if (!channels || channels.length === 0) return;
 
+    console.log(`[UbibotCollector] Verificando desconexión por tiempo (> ${DISCONNECTION_THRESHOLD_MINUTES} min)...`);
+    let disconnectedCount = 0;
+
+    for (const channel of channels) {
+      try {
+        const lastReading = await ubibotService.getLastSensorReading(channel.channel_id);
+        if (lastReading?.external_temperature_timestamp) {
+          const now = new Date();
+          const lastTimestamp = new Date(lastReading.external_temperature_timestamp);
+          const diffMinutes = (now.getTime() - lastTimestamp.getTime()) / (1000 * 60);
+
+          if (diffMinutes > DISCONNECTION_THRESHOLD_MINUTES) {
+            console.log(
+              `  -> LOG INFO: Canal ${channel.name || channel.channel_id} sin lecturas recientes por ${diffMinutes.toFixed(0)} min (Límite: ${DISCONNECTION_THRESHOLD_MINUTES}). Última lectura: ${lastTimestamp.toISOString()}`
+            );
+            disconnectedCount++;
+            // NO LLAMAR A notificationController AQUÍ
+          }
+        }
+      } catch (error) {
+        // No marcar el ciclo completo como error por fallo en esta verificación opcional
+        console.error(`  -> Error verificando desconexión por tiempo para ${channel.channel_id}:`, error.message);
+      }
+    }
+    if (disconnectedCount > 0) {
+      console.log(`[UbibotCollector] ${disconnectedCount} sensores detectados sin lecturas recientes (>${DISCONNECTION_THRESHOLD_MINUTES} min).`);
+    } else {
+      console.log(`[UbibotCollector] Ningún sensor superó umbral de desconexión por tiempo.`);
+    }
+  }
+
+
+  /**
+   * Actualiza las métricas de recolección.
+   * @param {boolean} success - Indica si el ciclo general fue exitoso.
+   * @param {number} timestamp - Timestamp de la operación.
+   * @param {string|null} [errorMessage=null] - Mensaje de error si success es false.
+   */
   updateMetrics(success, timestamp, errorMessage = null) {
     if (success) {
       this.metrics.successfulCollections++;
       this.metrics.lastSuccessTime = timestamp;
+      // this.metrics.lastError = null; // Opcional: limpiar en éxito
     } else {
       this.metrics.failedCollections++;
-      this.metrics.lastError = errorMessage;
+      this.metrics.lastError = errorMessage || "Error desconocido en ciclo de recolección";
     }
   }
+
   /**
-   * Handles errors that occur during the collection cycle.
-   *
-   * Updates the metrics by incrementing the count of failed collections and
-   * setting the last error message.
-   *
-   * Logs an error message with the error details and retries the collection
-   * cycle if the maximum number of retries has not been exceeded.
-   *
-   * @param {Error} error - The error that occurred during the collection cycle.
+   * Maneja errores generales del ciclo de recolección y gestiona reintentos.
+   * @param {Error} error - El error ocurrido.
    */
   async handleCollectionError(error) {
-    this.metrics.lastError = error.message;
-    this.updateMetrics(false, Date.now(), error.message);
+    // Actualizar métricas con el mensaje de error específico
+    this.updateMetrics(false, Date.now(), `Error general del ciclo: ${error.message}`);
+    // Loguear el error
+    console.error(`❌ [UbibotCollector] Error en ciclo de recolección: ${error.message}`);
+    // if (process.env.NODE_ENV === 'development' && error.stack) console.error(error.stack);
 
-    console.error("❌ Ubibot Collection error:", error.message);
-
+    // Incrementar contador de reintento y métrica general
     this.retryCount++;
     this.metrics.totalRetries++;
 
+    // Verificar si quedan reintentos
     if (this.retryCount <= this.maxRetries) {
-      console.log(
-        `🔄 Retry ${this.retryCount}/${this.maxRetries} in ${
-          this.retryDelay / 1000
-        }s...`
-      );
+      const delaySeconds = (this.retryDelay / 1000);
+      console.log(`🔄 [UbibotCollector] Reintento general ${this.retryCount}/${this.maxRetries} en ${delaySeconds}s...`);
       await new Promise((resolve) => setTimeout(resolve, this.retryDelay));
-      await this.collect();
+      // No llamar a collect() aquí directamente para evitar bucles,
+      // dejar que el intervalo principal lo intente de nuevo.
     } else {
-      console.error(
-        `❌ Maximum retries reached (${this.maxRetries}). Waiting for next cycle.`
-      );
-      this.retryCount = 0;
+      console.error(`❌ [UbibotCollector] Máximo de reintentos (${this.maxRetries}) alcanzado para error general. Esperando al próximo ciclo del intervalo.`);
+      this.retryCount = 0; // Resetear para el próximo ciclo
     }
   }
 
   /**
-   * Prints the collection statistics to the console.
-   *
-   * The statistics include the number of successful collections, the number of failed collections, the total number of retries,
-   * the success rate, the last successful collection timestamp, and the last error message, if any.
-   *
-   * @returns {void}
+   * Imprime estadísticas de recolección en la consola.
    */
   printCollectionStats() {
     console.log("\n📊 Ubibot Collection Statistics:");
-    console.log(
-      `Successful collections: ${this.metrics.successfulCollections}`
-    );
-    console.log(`Failed collections: ${this.metrics.failedCollections}`);
-    console.log(`Total retries: ${this.metrics.totalRetries}`);
-    console.log(
-      `Success rate: ${(
-        (this.metrics.successfulCollections /
-          (this.metrics.successfulCollections +
-            this.metrics.failedCollections)) *
-        100
-      ).toFixed(2)}%`
-    );
-    console.log(
-      `Last successful collection: ${
-        this.metrics.lastSuccessTime
-          ? new Date(this.metrics.lastSuccessTime).toISOString()
-          : "Never"
-      }`
-    );
+    console.log(`- Successful Cycles: ${this.metrics.successfulCollections}`);
+    console.log(`- Failed Cycles: ${this.metrics.failedCollections}`);
+    console.log(`- Total Retries (Cycles): ${this.metrics.totalRetries}`);
+    const totalCycles = this.metrics.successfulCollections + this.metrics.failedCollections;
+    if (totalCycles > 0) {
+      const successRate = (this.metrics.successfulCollections / totalCycles) * 100;
+      console.log(`- Cycle Success Rate: ${successRate.toFixed(2)}%`);
+    } else {
+      console.log("- Cycle Success Rate: N/A (no cycles completed yet)");
+    }
+    console.log(`- Channels Processed (Total): ${this.metrics.channelsProcessed}`); // Métricas de canal
+    console.log(`- Channels Failed (Total): ${this.metrics.channelsFailed}`);      // Métricas de canal
+    console.log(`- Last Successful Cycle: ${this.metrics.lastSuccessTime ? new Date(this.metrics.lastSuccessTime).toISOString() : "Never"}`);
     if (this.metrics.lastError) {
-      console.log(`Last error: ${this.metrics.lastError}`);
+      console.log(`- Last Error: ${this.metrics.lastError}`);
     }
   }
 
   /**
-   * Returns the collector statistics as an object.
-   *
-   * The returned object contains the following properties:
-   *
-   * - `isRunning`: A boolean indicating whether the collector is currently running.
-   * - `successfulCollections`: The number of successful collections.
-   * - `failedCollections`: The number of failed collections.
-   * - `totalRetries`: The total number of retries.
-   * - `lastSuccessTime`: The timestamp of the last successful collection, or `null` if there have been no successful collections.
-   * - `lastError`: The error message of the last failed collection, or `null` if there have been no failed collections.
-   * - `collectionInterval`: The interval at which the collector attempts to collect data, in milliseconds.
-   *
-   * @returns {Object} The collector statistics.
+   * Obtiene estadísticas del colector.
+   * @returns {Object} - Estadísticas actuales.
    */
   getCollectorStats() {
     return {
       isRunning: this.isRunning,
-      ...this.metrics,
       collectionInterval: this.collectionInterval,
+      ...this.metrics // Incluir todas las métricas
     };
   }
 }
